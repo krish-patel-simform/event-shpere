@@ -7,16 +7,21 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:update": "drizzle-kit generate && drizzle-kit migrate"
+    "db:update": "drizzle-kit generate && drizzle-kit migrate",
+    "db:seed": "tsx --conditions=react-server scripts/seed.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
+    "@node-rs/argon2": "^2.2.2",
     "@reduxjs/toolkit": "^2.13.0",
     "axios": "^1.20.0",
     "drizzle-orm": "^0.45.4",
     "drizzle-zod": "^0.8.3",
+    "jsonwebtoken": "^9.0.3",
     "next": "16.4.1",
     "pg": "^8.23.1",
     "react": "19.3.0",
@@ -27,6 +32,8 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
@@ -36,9 +43,11 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
     "eslint-config-prettier": "^10.1.8",
+    "jest": "^30.5.2",
     "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
     "typescript": "^5"
   }
