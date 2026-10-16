@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   pgEnum,
@@ -209,6 +210,8 @@ export const authSessionsTable = pgTable(
       .references(() => usersTable.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull().unique(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // Set on logout (or when an admin ends the session); a revoked session never comes back.
+    isRevoked: boolean("is_revoked").notNull().default(false),
     createdAt: createdAt(),
     userAgent: text("user_agent"),
   },

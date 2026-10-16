@@ -1,0 +1,1 @@
+ALTER TABLE "auth_sessions" ADD COLUMN "is_revoked" boolean DEFAULT false NOT NULL;
