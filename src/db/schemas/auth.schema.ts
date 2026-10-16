@@ -17,6 +17,14 @@ export const userStatusEnum = pgEnum("user_status", [
   "pending",
 ]);
 
+// No "guest": a guest has no account/session, so there is no user_roles row to hold it.
+export const roleNameEnum = pgEnum("role_name", [
+  "user",
+  "speaker",
+  "organizer",
+  "admin",
+]);
+
 export const authTokenTypeEnum = pgEnum("auth_token_type", [
   // First password for accounts created by someone else (user/organizer/speaker).
   "account_setup",
@@ -72,7 +80,7 @@ export const userProfilesTable = pgTable("user_profiles", {
 //*  Step 3: named roles (user, speaker, organizer, admin). Guest = no session, not a row. */
 export const rolesTable = pgTable("roles", {
   id: uuid("id").primaryKey().defaultRandom(),
-  name: varchar("name", { length: 50 }).notNull().unique(),
+  role: roleNameEnum("role").notNull().unique(),
   description: text("description").notNull(),
 });
 
@@ -306,6 +314,7 @@ export type User = typeof usersTable.$inferSelect;
 export type NewUser = typeof usersTable.$inferInsert;
 export type UserProfile = typeof userProfilesTable.$inferSelect;
 export type Role = typeof rolesTable.$inferSelect;
+export type RoleName = (typeof roleNameEnum.enumValues)[number];
 export type Permission = typeof permissionsTable.$inferSelect;
 export type OrganizerProfile = typeof organizerProfilesTable.$inferSelect;
 export type Speaker = typeof speakersProfilesTable.$inferSelect;
