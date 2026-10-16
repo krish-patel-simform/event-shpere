@@ -1,8 +1,13 @@
-if (!process.env.POSTGRESS_DB_URL) {
-  console.log("[env config] POSTGRESS_DB_URL is not exist");
-  process.exit(1);
+import { z } from "zod";
+
+const envSchema = z.object({
+  POSTGRESS_DB_URL: z.string().startsWith("postgres"),
+});
+
+const envSchemaParse = envSchema.safeParse(process.env);
+
+if (!envSchemaParse.success) {
+  throw new Error(envSchemaParse.error.message);
 }
 
-export const env = {
-  POSTGRESS_DB_URL: process.env.POSTGRESS_DB_URL,
-};
+export const env = envSchemaParse.data;
