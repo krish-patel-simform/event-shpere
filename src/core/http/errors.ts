@@ -36,12 +36,17 @@ export class UnauthorizedError extends AppError {
   }
 }
 
-/** 403: signed in, but missing the permission. */
+/**
+ * 403: not allowed. Default `FORBIDDEN` (missing permission); pass a specific code when the
+ * client must react differently, e.g. ACCOUNT_SUSPENDED.
+ */
 export class ForbiddenError extends AppError {
   readonly status = 403;
-  readonly code = "FORBIDDEN";
 
-  constructor(message = "You are not allowed to do this") {
+  constructor(
+    message = "You are not allowed to do this",
+    readonly code: string = "FORBIDDEN",
+  ) {
     super(message);
   }
 }
