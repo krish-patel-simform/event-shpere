@@ -39,6 +39,9 @@ const admin: CurrentUser = {
   sessionId: "0b7c2d1e-3f4a-4b5c-8d6e-7f8091a2b3c4",
   role: "admin",
   permissions: new Set(["ORGANIZER_CREATE"]),
+  firstName: "Admin",
+  lastName: "User",
+  email: "admin@example.com",
 };
 
 function get(url = "http://localhost/api/test") {

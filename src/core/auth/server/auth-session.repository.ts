@@ -22,7 +22,13 @@ export const authSessionRepository = {
   /** Used on every request: is the access token's session still alive? */
   async findValidById(sessionId: string, now: Date) {
     const [row] = await db
-      .select({ userId: usersTable.id, status: usersTable.status })
+      .select({
+        userId: usersTable.id,
+        status: usersTable.status,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        email: usersTable.email,
+      })
       .from(authSessionsTable)
       .innerJoin(usersTable, eq(usersTable.id, authSessionsTable.userId))
       .where(

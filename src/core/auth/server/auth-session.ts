@@ -19,6 +19,9 @@ export type CurrentUser = {
   sessionId: string;
   role: RoleName;
   permissions: ReadonlySet<string>;
+  lastName: string;
+  firstName: string;
+  email: string;
 };
 
 export type AuthTokens = {
@@ -124,9 +127,12 @@ export async function resolveCurrentUser(
   }
 
   return {
-    id: claims.userId,
+    id: session.userId,
     sessionId: claims.sessionId,
     role: claims.role,
     permissions: await loadPermissions(claims.role),
+    firstName: session.firstName,
+    lastName: session.lastName,
+    email: session.email,
   };
 }

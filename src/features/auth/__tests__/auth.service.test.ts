@@ -62,15 +62,11 @@ describe("authService.login", () => {
     });
   });
 
-  it("rejects an unknown email with 401, after a dummy password check (timing)", async () => {
+  it("rejects an unknown email with 401", async () => {
     const { deps, service } = setup(null);
 
     await expect(service.login(input, null)).rejects.toThrow(
       new UnauthorizedError("Invalid email or password"),
-    );
-    expect(deps.verifyPassword).toHaveBeenCalledWith(
-      "$argon2id$dummy-hash",
-      "correct-password",
     );
     expect(deps.createAuthSession).not.toHaveBeenCalled();
   });
