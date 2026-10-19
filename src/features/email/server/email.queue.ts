@@ -1,6 +1,6 @@
 import "server-only";
 import { Queue } from "bullmq";
-import { redisConnection } from "../../../core/queue/redis";
+import { queueConnection } from "../../../core/redis/redis";
 import type { EmailJobName, EmailJobs } from "../schemas/email-jobs.schemas";
 
 export const EMAIL_QUEUE_NAME = "email";
@@ -11,7 +11,7 @@ const globalForQueue = globalThis as unknown as { emailQueue?: Queue };
 
 function getEmailQueue(): Queue {
   globalForQueue.emailQueue ??= new Queue(EMAIL_QUEUE_NAME, {
-    connection: redisConnection,
+    connection: queueConnection,
     defaultJobOptions: {
       attempts: 3, // provider hiccup → retry
       backoff: { type: "exponential", delay: 5_000 }, // 5s, 10s, 20s

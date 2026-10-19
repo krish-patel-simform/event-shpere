@@ -1,6 +1,6 @@
 import "server-only";
 import { Worker, type Job } from "bullmq";
-import { redisConnection } from "../../../core/queue/redis";
+import { queueConnection } from "../../../core/redis/redis";
 import { accountSetupJobSchema } from "../schemas/email-jobs.schemas";
 import { accountSetupEmail } from "../templates/account-setup.template";
 import { EMAIL_QUEUE_NAME } from "./email.queue";
@@ -24,7 +24,7 @@ export async function processEmailJob(job: Job): Promise<void> {
 
 export function startEmailWorker(): Worker {
   const worker = new Worker(EMAIL_QUEUE_NAME, processEmailJob, {
-    connection: redisConnection,
+    connection: queueConnection,
     concurrency: 5,
   });
 
