@@ -3,6 +3,7 @@ import type { OrganizerProfile, User } from "../../../db/schemas";
 import type {
   CreateOrganizerResponseDto,
   OrganizerListItemDto,
+  VerifyOrganizerResponseDto,
 } from "../schemas/organizer.schemas";
 
 // Picks fields one by one: passwordHash, the verifier's user id and other internals never leave.
@@ -46,6 +47,29 @@ export function toOrganizerListItemDto(
     organizationName: row.organizationName,
     organizationWebsite: row.organizationWebsite,
     verifiedAt: row.verifiedAt?.toISOString() ?? null,
+    verifiedBy: row.verifiedBy,
+  };
+}
+
+// A verified organizer: by now verifiedAt and verifiedBy are known to be set.
+type VerifiedOrganizerRow = {
+  organizerId: string;
+  organizationName: string;
+  organizerFirstName: string;
+  organizerLastName: string;
+  verifiedAt: Date;
+  verifiedBy: string;
+};
+
+export function toVerifyOrganizerResponseDto(
+  row: VerifiedOrganizerRow,
+): VerifyOrganizerResponseDto {
+  return {
+    organizerId: row.organizerId,
+    organizationName: row.organizationName,
+    organizerFirstName: row.organizerFirstName,
+    organizerLastName: row.organizerLastName,
+    verifiedAt: row.verifiedAt.toISOString(),
     verifiedBy: row.verifiedBy,
   };
 }

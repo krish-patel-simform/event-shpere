@@ -1,4 +1,4 @@
-import { ConflictError } from "../../../core/http/errors";
+import { ConflictError, NotFoundError } from "../../../core/http/errors";
 import { createOrganizerBodySchema } from "../schemas/organizer.schemas";
 import {
   createOrganizerService,
@@ -39,6 +39,15 @@ const setupToken = {
   expiresAt: new Date("2026-10-18T10:00:00.000Z"),
 };
 
+const verifiedRow = {
+  organizerId: profile.id,
+  organizationName: "Acme Events",
+  organizerFirstName: "Olga",
+  organizerLastName: "Organizer",
+  verifiedAt: new Date("2026-10-19T09:00:00.000Z"),
+  verifiedBy: "Ada Admin",
+};
+
 const input = {
   firstName: "Olga",
   lastName: "Organizer",
@@ -52,6 +61,7 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
     organizerRepository: {
       createOrganizerAccount: jest.fn().mockResolvedValue({ ok: true, user, profile }),
       listOrganizers: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
+      verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
@@ -111,6 +121,7 @@ describe("organizerService.createOrganizer", () => {
           .fn()
           .mockResolvedValue({ ok: false, reason: "EMAIL_TAKEN" }),
         listOrganizers: jest.fn(),
+        verifyOrganizer: jest.fn(),
       },
     });
 
@@ -161,5 +172,49 @@ describe("createOrganizerBodySchema", () => {
       createOrganizerBodySchema.safeParse({ ...input, organizationWebsite: undefined })
         .success,
     ).toBe(true);
+  });
+});
+
+describe("organizerService.verifyOrganizer", () => {
+  const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
+
+  it("passes the organizer id and the admin id (from the token) to the repository", async () => {
+    const { deps, service } = setup();
+
+    await service.verifyOrganizer(profile.id, adminId);
+
+    expect(deps.organizerRepository.verifyOrganizer).toHaveBeenCalledWith({
+      organizerId: profile.id,
+      verifierId: adminId,
+    });
+  });
+
+  it("returns the organizer with an ISO date and the verifier's name", async () => {
+    const { service } = setup();
+
+    expect(await service.verifyOrganizer(profile.id, adminId)).toEqual({
+      organizerId: profile.id,
+      organizationName: "Acme Events",
+      organizerFirstName: "Olga",
+      organizerLastName: "Organizer",
+      verifiedAt: "2026-10-19T09:00:00.000Z",
+      verifiedBy: "Ada Admin",
+    });
+  });
+
+  it("returns 404 for an unknown organizer", async () => {
+    const { service } = setup({
+      organizerRepository: {
+        createOrganizerAccount: jest.fn(),
+        listOrganizers: jest.fn(),
+        verifyOrganizer: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    const error = await service
+      .verifyOrganizer(profile.id, adminId)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(NotFoundError);
   });
 });

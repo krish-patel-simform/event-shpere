@@ -80,3 +80,23 @@ export type OrganizerListItemDto = z.infer<typeof organizerListItemSchema>;
 
 // `data` of the list response (pagination `meta` is sent next to it).
 export const getOrganizersResponseSchema = z.array(organizerListItemSchema);
+
+//* POST /api/admin/organizers/[organizerId]: verify the organizer
+export const verifyOrganizerParamsSchema = z.object({
+  /** organizer_profiles.id of the organizer to verify. */
+  organizerId: z.uuid(),
+});
+export type VerifyOrganizerParams = z.infer<typeof verifyOrganizerParamsSchema>;
+
+export const verifyOrganizerResponseSchema = z.object({
+  organizerId: z.uuid(),
+  organizationName: z.string(),
+  organizerFirstName: z.string(),
+  organizerLastName: z.string(),
+  verifiedAt: z.iso.datetime(),
+  /** Full name of the admin who verified. */
+  verifiedBy: z.string(),
+});
+export type VerifyOrganizerResponseDto = z.infer<
+  typeof verifyOrganizerResponseSchema
+>;

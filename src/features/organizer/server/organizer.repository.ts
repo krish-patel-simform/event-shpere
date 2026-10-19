@@ -1,10 +1,12 @@
 import "server-only";
 import {
+  and,
   count,
   desc,
   DrizzleQueryError,
   eq,
   ilike,
+  isNull,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -48,12 +50,20 @@ function escapeLike(value: string): string {
 
 // Search field (DB column name) → how to search it. Typed as a Record over the schema's
 // whitelist, so adding a field there without a condition here is a compile error.
-const searchConditions: Record<OrganizerSearchField, (pattern: string) => SQL> = {
-  organization_name: (pattern) =>
-    ilike(organizerProfilesTable.organizationName, pattern),
-};
+const searchConditions: Record<OrganizerSearchField, (pattern: string) => SQL> =
+  {
+    organization_name: (pattern) =>
+      ilike(organizerProfilesTable.organizationName, pattern),
+  };
 
 export type OrganizerSearch = { field: OrganizerSearchField; value: string };
+
+export type VerifyOrganizerInfo = {
+  /** organizer_profiles.id */
+  organizerId: string;
+  /** users.id of the admin, from the access token (never from the request). */
+  verifierId: string;
+};
 
 export const organizerRepository = {
   /**
@@ -165,6 +175,49 @@ export const organizerRepository = {
         .where(where),
     ]);
     return { rows, total };
+  },
+
+  /**
+   * Marks the organizer verified, then reads it back with both names (organizer and the
+   * verifying admin). Returns null when the organizer does not exist.
+   * Already verified → nothing is overwritten: the first verifier and time are kept.
+   */
+  async verifyOrganizer(input: VerifyOrganizerInfo) {
+    return db.transaction(async (tx) => {
+      // `verified_at IS NULL`: only an unverified organizer is updated (idempotent).
+      // verifiedAt and verifiedBy are set together (the table's check constraint needs both).
+      await tx
+        .update(organizerProfilesTable)
+        .set({ verifiedAt: new Date(), verifiedBy: input.verifierId })
+        .where(
+          and(
+            eq(organizerProfilesTable.id, input.organizerId),
+            isNull(organizerProfilesTable.verifiedAt),
+          ),
+        );
+
+      // .returning() could only give organizer_profiles columns; the names live in users.
+      const [row] = await tx
+        .select({
+          organizerId: organizerProfilesTable.id,
+          organizationName: organizerProfilesTable.organizationName,
+          organizerFirstName: usersTable.firstName,
+          organizerLastName: usersTable.lastName,
+          verifiedAt: organizerProfilesTable.verifiedAt,
+          verifiedBy: sql<
+            string | null
+          >`${verifierTable.firstName} || ' ' || ${verifierTable.lastName}`,
+        })
+        .from(organizerProfilesTable)
+        .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+        .leftJoin(
+          verifierTable,
+          eq(verifierTable.id, organizerProfilesTable.verifiedBy),
+        )
+        .where(eq(organizerProfilesTable.id, input.organizerId));
+
+      return row ?? null;
+    });
   },
 };
 

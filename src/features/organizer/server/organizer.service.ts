@@ -1,7 +1,7 @@
 import "server-only";
 import { env } from "../../../config/env";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
-import { ConflictError } from "../../../core/http/errors";
+import { ConflictError, NotFoundError } from "../../../core/http/errors";
 import type { PageMeta } from "../../../core/http/response";
 import { ACCOUNT_SETUP_TOKEN_TTL_HOURS } from "../../auth";
 import { createAccountSetupToken } from "../../auth/server";
@@ -11,8 +11,13 @@ import type {
   CreateOrganizerResponseDto,
   ListOrganizersQuery,
   OrganizerListItemDto,
+  VerifyOrganizerResponseDto,
 } from "../schemas/organizer.schemas";
-import { toOrganizerDto, toOrganizerListItemDto } from "./organizer.dto";
+import {
+  toOrganizerDto,
+  toOrganizerListItemDto,
+  toVerifyOrganizerResponseDto,
+} from "./organizer.dto";
 import {
   organizerRepository,
   type OrganizerRepository,
@@ -21,7 +26,7 @@ import {
 export type OrganizerServiceDeps = {
   organizerRepository: Pick<
     OrganizerRepository,
-    "createOrganizerAccount" | "listOrganizers"
+    "createOrganizerAccount" | "listOrganizers" | "verifyOrganizer"
   >;
   createAccountSetupToken: typeof createAccountSetupToken;
   enqueueAccountSetupEmail: typeof enqueueAccountSetupEmail;
@@ -99,6 +104,32 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
         items: rows.map(toOrganizerListItemDto),
         meta: { page, pageSize, total },
       };
+    },
+
+    /**
+     * ADM-4: the admin verifies an organizer. `verifierId` is the admin's id from the
+     * access token (currentUser.id), never from the request body.
+     * Verifying again is not an error: the original verifier and time are returned.
+     */
+    async verifyOrganizer(
+      organizerId: string,
+      verifierId: string,
+    ): Promise<VerifyOrganizerResponseDto> {
+      const row = await deps.organizerRepository.verifyOrganizer({
+        organizerId,
+        verifierId,
+      });
+      if (!row) throw new NotFoundError("Organizer not found");
+
+      // After the update both must be set. If not, the data is broken: fail loudly (500).
+      if (!row.verifiedAt || !row.verifiedBy) {
+        throw new Error(`Organizer ${organizerId} has no verifier after verifying`);
+      }
+      return toVerifyOrganizerResponseDto({
+        ...row,
+        verifiedAt: row.verifiedAt,
+        verifiedBy: row.verifiedBy,
+      });
     },
   };
 }
