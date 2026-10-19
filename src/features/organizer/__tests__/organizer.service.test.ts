@@ -51,6 +51,7 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
   const deps = {
     organizerRepository: {
       createOrganizerAccount: jest.fn().mockResolvedValue({ ok: true, user, profile }),
+      listOrganizers: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
@@ -109,6 +110,7 @@ describe("organizerService.createOrganizer", () => {
         createOrganizerAccount: jest
           .fn()
           .mockResolvedValue({ ok: false, reason: "EMAIL_TAKEN" }),
+        listOrganizers: jest.fn(),
       },
     });
 

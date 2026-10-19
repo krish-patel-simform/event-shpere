@@ -1,8 +1,16 @@
 import { PERMISSION } from "@/src/core/auth/permission-catalog";
-import { created, parseBody, route } from "@/src/core/http";
+import {
+  created,
+  paginated,
+  parseBody,
+  parseQuery,
+  route,
+} from "@/src/core/http";
 import {
   createOrganizerBodySchema,
-  organizerResponseSchema,
+  createOrganizerResponseSchema,
+  getOrganizersResponseSchema,
+  organizerQuerySchema,
 } from "@/src/features/organizer";
 import { organizerService } from "@/src/features/organizer/server";
 
@@ -12,6 +20,17 @@ export const POST = route(
   async ({ req }) => {
     const body = await parseBody(req, createOrganizerBodySchema);
     const organizer = await organizerService.createOrganizer(body);
-    return created(organizerResponseSchema.parse(organizer));
+    return created(createOrganizerResponseSchema.parse(organizer));
+  },
+);
+
+//* GET api/auth/organizer
+
+export const GET = route(
+  { auth: "signed-in", permission: [PERMISSION.ORGANIZER_MANAGE] },
+  async ({ req }) => {
+    const query = parseQuery(req, organizerQuerySchema);
+    const { items, meta } = await organizerService.getOrganizerListItem(query);
+    return paginated(getOrganizersResponseSchema.parse(items), meta);
   },
 );
