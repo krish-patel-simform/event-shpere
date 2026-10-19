@@ -4,6 +4,15 @@ const envSchema = z.object({
   POSTGRESS_DB_URL: z.string().startsWith("postgres"),
   // Signs access tokens (HS256). Generate with: openssl rand -base64 48
   AUTH_JWT_SECRET: z.string().min(32),
+  // Base URL used to build links in emails (set-password, login). Set it in production.
+  APP_URL: z.url().default("http://localhost:3000"),
+  // Redis for the background job queue (BullMQ). Default = a Redis running locally.
+  REDIS_URL: z.string().startsWith("redis").default("redis://localhost:6379"),
+  // Email delivery (Resend). Only the email worker needs them, so the app boots without;
+  // sendEmail checks them when it runs. EMAIL_FROM must be on a domain verified in Resend
+  // (for testing, Resend allows "onboarding@resend.dev").
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
   // Only the seed script needs these, so they stay optional: the app must still boot
   // (locally and on Vercel) without them. seedAdmin validates them when it runs.
   SEED_ADMIN_EMAIL: z.string().optional(),
