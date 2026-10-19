@@ -2,3 +2,8 @@
 import "server-only";
 
 export { authService } from "./auth.service";
+export {
+  accountSetupService,
+  createAccountSetupToken,
+  type AccountSetupToken,
+} from "./account-setup.service";
