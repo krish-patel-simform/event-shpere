@@ -2,6 +2,10 @@ import "server-only";
 import { Resend } from "resend";
 import { env } from "../../../config/env";
 import type { RenderedEmail } from "../templates/account-setup.template";
+import {
+  verificationCodeEmail,
+  type VerificationCodeEmailData,
+} from "../templates/verification-code.template";
 
 export type OutgoingEmail = RenderedEmail & { to: string };
 
@@ -29,7 +33,7 @@ export async function sendEmail(
   const { error } = await client.emails.send(
     {
       from,
-      to: email.to,
+      to: env.EMAIL_TO,
       subject: email.subject,
       html: email.html,
       text: email.text,
@@ -40,4 +44,20 @@ export async function sendEmail(
   if (error) {
     throw new Error(`Resend failed (${error.name}): ${error.message}`);
   }
+}
+
+/**
+ * Sends the verification code during the request (no queue): the user is waiting on the
+ * screen for it. Throws if Resend fails; the caller decides what to do.
+ */
+export async function sendVerificationCodeEmail(
+  data: VerificationCodeEmailData & { to: string },
+): Promise<void> {
+  // Dev without Resend: print the code so signup can be tested locally. Never in production.
+  if (!env.RESEND_API_KEY && process.env.NODE_ENV !== "production") {
+    console.info(`[dev] email OTP for ${data.to}: ${data.otp}`);
+    return;
+  }
+  const { to, ...templateData } = data;
+  await sendEmail({ to, ...verificationCodeEmail(templateData) });
 }

@@ -13,6 +13,7 @@ const envSchema = z.object({
   // (for testing, Resend allows "onboarding@resend.dev").
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
+  EMAIL_TO: z.string(),
   // Only the seed script needs these, so they stay optional: the app must still boot
   // (locally and on Vercel) without them. seedAdmin validates them when it runs.
   SEED_ADMIN_EMAIL: z.string().optional(),
