@@ -3,7 +3,7 @@ import "server-only";
 
 export { authService } from "./auth.service";
 export {
-  accountSetupService,
+  accountActivationService,
   createAccountSetupToken,
   type AccountSetupToken,
-} from "./account-setup.service";
+} from "./account-activation.service";

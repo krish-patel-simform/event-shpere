@@ -4,8 +4,19 @@ export {
   accountSetupBodySchema,
   loginResponseSchema,
   loginBodySchema,
+  organizerSignupBodySchema,
+  organizerSignUpResponseSchema,
+  passwordSchema,
+  verifyEmailBodySchema,
   type AccountSetupBody,
   type AuthUserDto,
   type LoginBody,
+  type OrganizerSignupBody,
+  type OrganizerSignUpResponseDto,
+  type VerifyEmailBody,
 } from "./schemas/auth.schemas";
-export { ACCOUNT_SETUP_TOKEN_TTL_HOURS } from "./constants";
+export {
+  ACCOUNT_SETUP_TOKEN_TTL_HOURS,
+  PASSWORD_REGEX,
+  PASSWORD_REGEX_MESSAGE,
+} from "./constants";

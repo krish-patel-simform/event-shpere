@@ -1,16 +1,7 @@
 import type { AccountSetupJob } from "../schemas/email-jobs.schemas";
+import { escapeHtml } from "./escape-html";
 
 export type RenderedEmail = { subject: string; html: string; text: string };
-
-// firstName comes from the admin's input: escape it before putting it into HTML.
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 /** Step 1: set a password (link valid for `expiresInHours`). Step 2: log in. */
 export function accountSetupEmail(

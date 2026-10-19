@@ -3,3 +3,8 @@
 import "server-only";
 
 export { enqueueAccountSetupEmail } from "./email.queue";
+// Email verification codes (OTP): generated and hashed here, stored in Redis, sent directly.
+export { createEmailOtp, hashEmailOtp, type EmailOtp } from "./email-otp";
+export { emailOtpStore, type EmailOtpStore } from "./email-otp.store";
+export { sendVerificationCodeEmail } from "./email.service";
+export { EMAIL_OTP_TTL_MINUTES } from "../constants";
