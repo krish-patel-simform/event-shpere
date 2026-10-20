@@ -7,12 +7,16 @@ export {
   organizerSignupBodySchema,
   organizerSignUpResponseSchema,
   passwordSchema,
+  userSignupBodySchema,
+  userSignupResponseSchema,
   verifyEmailBodySchema,
   type AccountSetupBody,
   type AuthUserDto,
   type LoginBody,
   type OrganizerSignupBody,
   type OrganizerSignUpResponseDto,
+  type UserSignupBody,
+  type UserSignUpResponseDto,
   type VerifyEmailBody,
 } from "./schemas/auth.schemas";
 export {
