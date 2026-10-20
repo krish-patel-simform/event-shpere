@@ -1,14 +1,37 @@
 import type { Metadata } from "next";
-import { LoginForm } from "@/src/features/auth/components/LoginForm";
+import { InvitedNotice } from "@/src/features/auth/components/InvitedNotice";
+import { LoginForm } from "@/src/features/auth/components/forms/LoginForm";
+import { SchedulePreview } from "@/src/features/auth/components/preview/SchedulePreview";
+import { AuthHeading } from "@/src/features/auth/components/shell/AuthHeading";
+import { AuthShell } from "@/src/features/auth/components/shell/AuthShell";
+import { BrandPanel } from "@/src/features/auth/components/shell/BrandPanel";
+import { AUTH_ROUTES } from "@/src/features/auth/routes";
 
-export const metadata: Metadata = { title: "Log in · EventSphere" };
+export const metadata: Metadata = { title: "Log in" };
 
-// Step 2 of the account-setup email, and the normal login page.
 export default function LoginPage() {
   return (
-    <main className="mx-auto max-w-sm px-4 py-12">
-      <h1 className="mb-6 text-2xl font-semibold">Log in</h1>
+    <AuthShell
+      panel={
+        <BrandPanel
+          headline="Plan, run and attend events in one place."
+          subtitle="Registrations, schedules, live polls and updates for attendees, organizers and speakers."
+        >
+          <SchedulePreview />
+        </BrandPanel>
+      }
+      headerLink={{
+        prompt: "New to EventSphere?",
+        label: "Create an account",
+        href: AUTH_ROUTES.signup,
+      }}
+    >
+      <AuthHeading
+        title="Log in"
+        subtitle="Welcome back. Enter your email and password to continue."
+      />
       <LoginForm />
-    </main>
+      <InvitedNotice />
+    </AuthShell>
   );
 }
