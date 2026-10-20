@@ -16,7 +16,7 @@ export function PasswordField(props: Omit<TextFieldProps, "type" | "trailing">) 
           type="button"
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? "Hide password" : "Show password"}
-          className="rounded text-sm font-semibold text-brand"
+          className="rounded text-sm font-semibold text-link"
         >
           {visible ? "Hide" : "Show"}
         </button>

@@ -1,7 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Logo } from "@/src/core/ui";
+import { Logo, ThemeToggle } from "@/src/core/ui";
 import { SITE_ROUTES } from "../../routes";
 
 type AuthShellProps = {
@@ -13,6 +13,8 @@ type AuthShellProps = {
   headerLink?: { prompt: string; label: string; href: string };
   /** `wide` gives long forms room for two or three fields per row. Default `narrow`. */
   width?: "narrow" | "wide";
+  /** Text before the "Contact support" link in the footer. Default "Having trouble?". */
+  supportPrompt?: string;
   /** The screen's heading and form. */
   children: ReactNode;
 };
@@ -21,7 +23,7 @@ type AuthShellProps = {
  * Two-column layout shared by every auth screen: brand panel on the left (lg and up),
  * form column on the right. Below lg the panel is hidden and a compact logo is shown.
  */
-export function AuthShell({ panel, backLink, headerLink, width = "narrow", children }: AuthShellProps) {
+export function AuthShell({ panel, backLink, headerLink, width = "narrow", supportPrompt = "Having trouble?", children }: AuthShellProps) {
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[minmax(0,40fr)_minmax(0,60fr)]">
       {/* Sticky + viewport height: the panel stays put while a long form scrolls. If the panel
@@ -37,21 +39,24 @@ export function AuthShell({ panel, backLink, headerLink, width = "narrow", child
             {backLink && (
               <Link
                 href={backLink.href}
-                className="inline-flex items-center gap-1 text-sm font-semibold text-brand"
+                className="inline-flex items-center gap-1 text-sm font-semibold text-link"
               >
                 <ChevronLeft aria-hidden="true" className="size-4" />
                 {backLink.label}
               </Link>
             )}
           </div>
-          {headerLink && (
-            <p className="ml-auto text-right text-sm text-muted">
-              {headerLink.prompt}{" "}
-              <Link href={headerLink.href} className="font-semibold text-brand underline">
-                {headerLink.label}
-              </Link>
-            </p>
-          )}
+          <div className="ml-auto flex items-center gap-4">
+            {headerLink && (
+              <p className="text-right text-sm text-muted">
+                {headerLink.prompt}{" "}
+                <Link href={headerLink.href} className="font-semibold text-link underline">
+                  {headerLink.label}
+                </Link>
+              </p>
+            )}
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="flex flex-1 items-center justify-center px-4 py-4 sm:px-8">
@@ -59,7 +64,7 @@ export function AuthShell({ panel, backLink, headerLink, width = "narrow", child
         </main>
 
         <footer className="px-4 py-4 text-center text-sm text-muted sm:px-8">
-          Having trouble?{" "}
+          {supportPrompt}{" "}
           <Link href={SITE_ROUTES.support} className="underline">
             Contact support
           </Link>

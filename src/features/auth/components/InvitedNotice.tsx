@@ -13,7 +13,7 @@ export function InvitedNotice() {
         <span className="h-px flex-1 bg-line" />
       </div>
       <p className="flex gap-3 rounded-md border border-line bg-surface-subtle p-4 text-sm text-muted">
-        <Mail aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand" />
+        <Mail aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-link" />
         <span>
           Open the <strong className="text-foreground">set-password link</strong> in your
           invitation email to activate your organizer account. The link is valid for{" "}

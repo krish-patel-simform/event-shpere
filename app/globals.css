@@ -1,87 +1,78 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Components use the semantic utilities (bg-surface, text-muted, border-line,
- * bg-brand ...) and never raw colours, so light and dark stay in sync from this one file.
- * Contrast: text on surface and white on brand are >= 4.5:1 in both themes.
+ * Design tokens, one line per colour: light-dark(<light value>, <dark value>).
+ * Components use the semantic utilities (bg-surface, text-muted, border-field, text-link ...)
+ * and never raw colours, so both themes stay in sync from this one file.
+ *
+ * Which value is used follows `color-scheme`:
+ *   - default: the operating system's setting (light dark)
+ *   - <html data-theme="light"> or "dark": the user's choice, set by the theme switch
+ *     (see src/core/theme). It is applied before first paint by an inline script in the layout.
+ *
+ * Contrast (checked): text on surface/canvas >= 7:1, muted text >= 6:1, links >= 8:1,
+ * white on the brand button >= 4.8:1, input borders >= 3:1 in both themes.
+ *
+ * Dark layers, darkest to lightest: canvas < background < surface < surface-subtle.
+ * Cards sit on the canvas and are lighter than it; a visible border does the rest.
  */
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
-  --background: #ffffff;
-  --foreground: #1a2230;
-  --surface: #ffffff; /* cards, inputs */
-  --surface-subtle: #f5f6f8; /* hint boxes, secondary buttons, disabled */
-  --line: #c9ced6; /* borders, dividers */
-  --muted: #5b6573; /* secondary text */
+  --background: light-dark(#ffffff, #0c121a); /* auth form column, <body> */
+  --foreground: light-dark(#141b27, #f2f6fb);
+  --canvas: light-dark(#f3f5f8, #080c12); /* page behind cards in the signed-in app */
+  --surface: light-dark(#ffffff, #131b27); /* cards, inputs, sidebar, top bar */
+  --surface-subtle: light-dark(#f3f5f8, #1b2535); /* hint boxes, secondary hover, read-only */
+  --line: light-dark(#d3d8e0, #34455d); /* card borders, dividers */
+  --field: light-dark(#8995a6, #71839d); /* input and button borders */
+  --muted: light-dark(#515c6b, #b3bfcf); /* secondary text */
 
-  --brand: #1d4e8f; /* primary button, links */
-  --brand-hover: #173f75;
+  --brand: light-dark(#1d4e8f, #2f73c4); /* primary button */
+  --brand-hover: light-dark(#173f75, #3d82d4);
   --brand-foreground: #ffffff;
-  --brand-soft: #e9eef7; /* tinted badge / icon background */
-  --brand-soft-foreground: #1d4e8f;
+  --link: light-dark(#1d4e8f, #9fc8f6); /* text links and link-like buttons */
+  --brand-soft: light-dark(#e9eef7, #1a2c4a); /* tinted badge / active menu item */
+  --brand-soft-foreground: light-dark(#1d4e8f, #a8cdf7);
 
-  --panel: #14325c; /* left brand panel (navy in both themes) */
-  --panel-foreground: #ffffff;
-  --panel-muted: #b8c4d6;
-  --panel-card: #1d3f6e; /* cards sitting on the panel */
-  --panel-line: #3a5883;
-  --panel-success: #3f8f5f; /* completed step on the panel */
+  /* The navy brand panel on the auth screens; navy in both themes. */
+  --panel: light-dark(#14325c, #0e2441);
+  --panel-foreground: light-dark(#ffffff, #f2f5fa);
+  --panel-muted: light-dark(#b8c4d6, #b0bdd0);
+  --panel-card: light-dark(#1d3f6e, #16335a);
+  --panel-line: light-dark(#3a5883, #2f4a72);
+  --panel-success: light-dark(#3f8f5f, #3a8a5a);
 
-  --success: #1a6b3c;
-  --success-soft: #e6f2ea;
-  --warning: #7a4a0a;
-  --warning-soft: #fdf0d5;
-  --danger: #b3261e;
-  --danger-soft: #fdecea;
-  --info: #1d4e8f;
-  --info-soft: #e9eef7;
+  --success: light-dark(#17653a, #7ddba5);
+  --success-soft: light-dark(#e3f1e8, #123524);
+  --warning: light-dark(#7a4a0a, #f5cb7a);
+  --warning-soft: light-dark(#fdf0d5, #3a2d10);
+  --danger: light-dark(#b3261e, #ff9a91);
+  --danger-soft: light-dark(#fdecea, #421d1d);
+  --info: light-dark(#1d4e8f, #9fc8f6);
+  --info-soft: light-dark(#e9eef7, #1a2c4a);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --background: #0f1620;
-    --foreground: #e6eaf0;
-    --surface: #151e2b;
-    --surface-subtle: #1b2636;
-    --line: #2c3a4e;
-    --muted: #9aa6b6;
-
-    --brand: #2f6db5;
-    --brand-hover: #3a7bc8;
-    --brand-foreground: #ffffff;
-    --brand-soft: #1b2b44;
-    --brand-soft-foreground: #8dbbef;
-
-    --panel: #0e2441;
-    --panel-foreground: #f2f5fa;
-    --panel-muted: #a6b4c8;
-    --panel-card: #16335a;
-    --panel-line: #2f4a72;
-    --panel-success: #3a8a5a;
-
-    --success: #6fcf97;
-    --success-soft: #14301f;
-    --warning: #f0c36b;
-    --warning-soft: #33280f;
-    --danger: #ff8a80;
-    --danger-soft: #3a1a1a;
-    --info: #8dbbef;
-    --info-soft: #1b2b44;
-  }
+/* The user's explicit choice wins over the system setting. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-subtle: var(--surface-subtle);
   --color-line: var(--line);
+  --color-field: var(--field);
   --color-muted: var(--muted);
 
   --color-brand: var(--brand);
+  --color-link: var(--link);
   --color-brand-hover: var(--brand-hover);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-soft: var(--brand-soft);
@@ -115,6 +106,6 @@ body {
 
 /* One visible focus style for every interactive element (keyboard users). */
 :focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--link);
   outline-offset: 2px;
 }

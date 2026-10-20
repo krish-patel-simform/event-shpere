@@ -74,7 +74,7 @@ export function CheckEmailPanel({ pending, onStartAgain }: CheckEmailPanelProps)
 
       <p className="text-sm text-muted">
         Used the wrong email address?{" "}
-        <Link href={AUTH_ROUTES.signup} onClick={onStartAgain} className="font-semibold text-brand underline">
+        <Link href={AUTH_ROUTES.signup} onClick={onStartAgain} className="font-semibold text-link underline">
           Start again
         </Link>
       </p>

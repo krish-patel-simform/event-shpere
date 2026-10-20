@@ -62,7 +62,7 @@ export function TextField({
           className={cn(
             "w-full rounded-md border bg-surface px-3 placeholder:text-muted/70 read-only:bg-surface-subtle",
             size === "lg" ? "py-3 text-2xl" : "py-2 text-sm",
-            error ? "border-danger" : "border-line",
+            error ? "border-danger" : "border-field",
             trailing ? "pr-16" : undefined,
             inputClassName,
           )}

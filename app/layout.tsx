@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { QueryProvider } from "@/src/core/api-client/QueryProvider";
+import { THEME_INIT_SCRIPT } from "@/src/core/theme/theme";
 import { StoreProvider } from "@/src/redux/StoreProvider";
 import "./globals.css";
 
@@ -27,10 +28,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // suppressHydrationWarning: the inline script below sets data-theme on <html> before React
+    // hydrates, which is expected (see "Preventing flash before hydration" in the Next.js docs).
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <StoreProvider>
           <QueryProvider>{children}</QueryProvider>
