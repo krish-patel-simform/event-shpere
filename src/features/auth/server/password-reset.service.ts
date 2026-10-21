@@ -1,11 +1,20 @@
 import "server-only";
 import { env } from "../../../config/env";
-import { hashPassword, verifyPassword } from "../../../core/auth/server/password";
-import { generateOpaqueToken, hashToken } from "../../../core/auth/server/tokens";
+import {
+  hashPassword,
+  verifyPassword,
+} from "../../../core/auth/server/password";
+import {
+  generateOpaqueToken,
+  hashToken,
+} from "../../../core/auth/server/tokens";
 import { ValidationError } from "../../../core/http/errors";
 import { sendPasswordResetEmail } from "../../email/server";
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from "../constants";
-import type { ForgotPasswordBody, ResetPasswordBody } from "../schemas/auth.schemas";
+import type {
+  ForgotPasswordBody,
+  ResetPasswordBody,
+} from "../schemas/auth.schemas";
 import {
   passwordResetRepository,
   type PasswordResetRepository,
@@ -39,9 +48,18 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
      * Always resolves the same way, found or not: the caller (and so the person typing the
      * email) must never be able to tell whether an account exists.
      */
-    async requestReset(input: ForgotPasswordBody, now = new Date()): Promise<void> {
-      const user = await deps.passwordResetRepository.findActiveUserByEmail(input.email);
+    async requestReset(
+      input: ForgotPasswordBody,
+      now = new Date(),
+    ): Promise<void> {
+      const user = await deps.passwordResetRepository.findActiveUserByEmail(
+        input.email,
+      );
       if (!user) return;
+
+      // Admin passwords are never reset by email link. Same quiet return as "not found", so the
+      // response can't be used to tell who is an admin.
+      if (user.role === "admin") return;
 
       // The raw token exists only here and in the email; the database gets its hash.
       const token = generateOpaqueToken();
@@ -77,18 +95,31 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
      * 3. the new password is hashed (slow, so before the transaction);
      * 4. one transaction: use the link, save the password, revoke every session.
      */
-    async resetPassword(input: ResetPasswordBody, now = new Date()): Promise<void> {
+    async resetPassword(
+      input: ResetPasswordBody,
+      now = new Date(),
+    ): Promise<void> {
       const tokenHash = hashToken(input.token);
 
-      const owner = await deps.passwordResetRepository.findValidResetToken({ tokenHash, now });
+      const owner = await deps.passwordResetRepository.findValidResetToken({
+        tokenHash,
+        now,
+      });
       if (!owner) {
-        throw new ValidationError(INVALID_LINK, { fieldErrors: { token: [INVALID_LINK] } });
+        throw new ValidationError(INVALID_LINK, {
+          fieldErrors: { token: [INVALID_LINK] },
+        });
       }
 
       // Hashes are salted, so they cannot be compared: verify the plain new password against
       // the current hash. An account without a password has nothing to be the same as.
-      if (owner.passwordHash && (await deps.verifyPassword(owner.passwordHash, input.password))) {
-        throw new ValidationError(SAME_PASSWORD, { fieldErrors: { password: [SAME_PASSWORD] } });
+      if (
+        owner.passwordHash &&
+        (await deps.verifyPassword(owner.passwordHash, input.password))
+      ) {
+        throw new ValidationError(SAME_PASSWORD, {
+          fieldErrors: { password: [SAME_PASSWORD] },
+        });
       }
 
       const newPasswordHash = await deps.hashPassword(input.password);
@@ -100,7 +131,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
         now,
       });
       if (!done) {
-        throw new ValidationError(INVALID_LINK, { fieldErrors: { token: [INVALID_LINK] } });
+        throw new ValidationError(INVALID_LINK, {
+          fieldErrors: { token: [INVALID_LINK] },
+        });
       }
     },
   };

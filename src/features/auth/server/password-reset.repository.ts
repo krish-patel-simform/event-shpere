@@ -4,6 +4,8 @@ import { db } from "../../../db/dbClient";
 import {
   authSessionsTable,
   authTokensTable,
+  rolesTable,
+  userRolesTable,
   usersTable,
 } from "../../../db/schemas";
 import {
@@ -17,17 +19,26 @@ type ResetPasswordInput = {
   now: Date;
 };
 
+type RoleName = (typeof rolesTable.$inferSelect)["role"];
+
 export const passwordResetRepository = {
-  async findActiveUserByEmail(
-    email: string,
-  ): Promise<{ id: string; email: string; firstName: string } | null> {
+  async findActiveUserByEmail(email: string): Promise<{
+    id: string;
+    email: string;
+    firstName: string;
+    role: RoleName | null;
+  } | null> {
     const [user] = await db
       .select({
         id: usersTable.id,
         email: usersTable.email,
         firstName: usersTable.firstName,
+        role: rolesTable.role,
       })
       .from(usersTable)
+      // leftJoin: an account with no role row must still be found (role = null), not vanish.
+      .leftJoin(userRolesTable, eq(userRolesTable.userId, usersTable.id))
+      .leftJoin(rolesTable, eq(rolesTable.id, userRolesTable.roleId))
       .where(and(eq(usersTable.email, email), eq(usersTable.status, "active")))
       .limit(1);
     return user ?? null;

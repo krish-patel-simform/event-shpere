@@ -20,6 +20,8 @@ const user = {
   id: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
   email: "olga@acme.test",
   firstName: "Olga",
+  // Widened so a test can swap in "admin" or no role at all.
+  role: "user" as "user" | "admin" | null,
 };
 const now = new Date("2026-10-20T10:00:00Z");
 
@@ -75,6 +77,24 @@ describe("passwordResetService.requestReset", () => {
 
     expect(deps.passwordResetRepository.createResetToken).not.toHaveBeenCalled();
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an admin account (same answer as an unknown email, no token, no email)", async () => {
+    const { deps, service } = setup({ user: { ...user, role: "admin" } });
+
+    await expect(service.requestReset({ email: user.email }, now)).resolves.toBeUndefined();
+
+    expect(deps.passwordResetRepository.createResetToken).not.toHaveBeenCalled();
+    expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it("still sends a link to an account that has no role row", async () => {
+    const { deps, service } = setup({ user: { ...user, role: null } });
+
+    await service.requestReset({ email: user.email }, now);
+
+    expect(deps.passwordResetRepository.createResetToken).toHaveBeenCalledTimes(1);
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
   });
 
   it("looks the account up by the email it was given", async () => {
