@@ -1,6 +1,9 @@
 import "server-only";
 import { hashPassword } from "../../../core/auth/server/password";
-import { generateOpaqueToken, hashToken } from "../../../core/auth/server/tokens";
+import {
+  generateOpaqueToken,
+  hashToken,
+} from "../../../core/auth/server/tokens";
 import { ValidationError } from "../../../core/http/errors";
 import {
   emailOtpStore,
@@ -11,7 +14,10 @@ import {
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
   EMAIL_VERIFY_TOKEN_TTL_MINUTES,
 } from "../constants";
-import type { AccountSetupBody, VerifyEmailBody } from "../schemas/auth.schemas";
+import type {
+  AccountSetupBody,
+  VerifyEmailBody,
+} from "../schemas/auth.schemas";
 import {
   accountActivationRepository,
   type AccountActivationRepository,
@@ -39,7 +45,10 @@ function createEmailedToken(ttlMs: number, now: Date): EmailedToken {
 
 /** Set-password link for an account created by an admin (organizer now; speakers/users later). */
 export function createAccountSetupToken(now = new Date()): EmailedToken {
-  return createEmailedToken(ACCOUNT_SETUP_TOKEN_TTL_HOURS * 60 * 60 * 1000, now);
+  return createEmailedToken(
+    ACCOUNT_SETUP_TOKEN_TTL_HOURS * 60 * 60 * 1000,
+    now,
+  );
 }
 
 /** Verify-email link for a self-registered account; the 6-digit code is checked separately in Redis. */
@@ -61,7 +70,9 @@ export type AccountActivationServiceDeps = {
 };
 
 /** Every way a pending account becomes active: setup link (admin-created) or email code (self-signup). */
-export function createAccountActivationService(deps: AccountActivationServiceDeps) {
+export function createAccountActivationService(
+  deps: AccountActivationServiceDeps,
+) {
   return {
     /** Sets the first password from an emailed link; the account becomes active. */
     async completeAccountSetup(input: AccountSetupBody): Promise<void> {
