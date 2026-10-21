@@ -188,3 +188,30 @@ export const userSignupResponseSchema = z.object({
   verificationCodeExpiresInMinutes: z.number().int().positive(),
 });
 export type UserSignUpResponseDto = z.infer<typeof userSignupResponseSchema>;
+
+//* POST Forgot Password
+
+export const forgotPasswordBodySchema = z.object({
+  email: emailSchema,
+});
+
+export type ForgotPasswordBody = z.infer<typeof forgotPasswordBodySchema>;
+
+//* Post reset teh password
+export const resetPasswordBodySchema = z
+  .object({
+    token: z.string().min(1, "Missing link token").max(200),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine(passwordsMatch, PASSWORDS_MATCH_ERROR);
+
+export type ResetPasswordBody = z.infer<typeof resetPasswordBodySchema>;
+
+//* Post the resend OTP
+
+export const resendOtpBodySchema = z.object({
+  email: emailSchema,
+});
+
+export type ResendOtpBody = z.infer<typeof resendOtpBodySchema>;

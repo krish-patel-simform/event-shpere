@@ -2,6 +2,7 @@
 export const ACCOUNT_SETUP_TOKEN_TTL_HOURS = 24;
 /** How long the emailed verify-email link works (the code in it expires sooner, see email/constants). */
 export const EMAIL_VERIFY_TOKEN_TTL_MINUTES = 5;
+export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 10;
 export const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
 export const PASSWORD_REGEX_MESSAGE =
