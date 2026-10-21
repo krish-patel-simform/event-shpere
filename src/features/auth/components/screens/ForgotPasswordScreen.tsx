@@ -15,7 +15,7 @@ import { StatusPanel } from "../states/StatusPanel";
 /**
  * Where "Forgot password?" leads (/forgot-password): ask for the email, then tell the user to
  * check their inbox. The message never says whether the account exists (the API answers the same
- * way either way). UI only for now: the form does not call the API yet.
+ * way either way).
  */
 export function ForgotPasswordScreen() {
   // null = the form; a string = the address the link was requested for.

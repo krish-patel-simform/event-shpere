@@ -5,6 +5,7 @@ import {
   loginResponseSchema,
   type AccountSetupBody,
   type AuthUserDto,
+  type ForgotPasswordBody,
   type LoginBody,
 } from "../schemas/auth.schemas";
 
@@ -19,6 +20,19 @@ export const authApiService = {
 
   /** Step 1 of the setup email: set the first password (204, no body). */
   completeAccountSetup(body: AccountSetupBody): Promise<void> {
-    return apiRequest({ method: "POST", url: "/auth/account-setup", data: body });
+    return apiRequest({
+      method: "POST",
+      url: "/auth/account-setup",
+      data: body,
+    });
+  },
+
+  /** Asks for a password reset link (204, no body; same answer whether or not the email exists). */
+  forgotPassword(body: ForgotPasswordBody): Promise<void> {
+    return apiRequest({
+      method: "POST",
+      url: "/auth/forgot-password",
+      data: body,
+    });
   },
 };
