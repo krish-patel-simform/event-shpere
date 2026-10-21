@@ -1,7 +1,8 @@
-import { PASSWORD_REGEX } from "../constants";
-import { PASSWORD_RULES } from "../utils/password-rules";
+import { PASSWORD_REGEX } from "../../constants";
+import { PASSWORD_RULES } from "../password-rules";
 
-const meetsAllRules = (pw: string) => PASSWORD_RULES.every((rule) => rule.test(pw));
+const meetsAllRules = (pw: string) =>
+  PASSWORD_RULES.every((rule) => rule.test(pw));
 
 describe("PASSWORD_RULES", () => {
   // The checklist and the server's regex must never disagree.

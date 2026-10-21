@@ -4,13 +4,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeStore } from "@/src/redux/store";
 import { renderWithStore } from "@/src/redux/test-utils";
-import { VerifyEmailForm } from "../components/forms/VerifyEmailForm";
-import { ProgressTracker } from "../components/preview/ProgressTracker";
-import { VerifyEmailScreen } from "../components/screens/VerifyEmailScreen";
-import { selectPendingVerification, verificationStarted } from "@/src/redux/slices/auth-flow.slice";
+import { VerifyEmailForm } from "../../forms/VerifyEmailForm";
+import { ProgressTracker } from "../../preview/ProgressTracker";
+import { VerifyEmailScreen } from "../VerifyEmailScreen";
+import {
+  selectPendingVerification,
+  verificationStarted,
+} from "@/src/redux/slices/auth-flow.slice";
 
 const code = () => screen.getByLabelText("Verification code");
-const submit = () => userEvent.click(screen.getByRole("button", { name: "Verify email" }));
+const submit = () =>
+  userEvent.click(screen.getByRole("button", { name: "Verify email" }));
 
 describe("VerifyEmailForm", () => {
   it("keeps only digits while typing, up to 6", async () => {
@@ -25,7 +29,9 @@ describe("VerifyEmailForm", () => {
     await userEvent.type(code(), "123");
     await submit();
 
-    expect(await screen.findByText("Enter the 6-digit code")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Enter the 6-digit code"),
+    ).toBeInTheDocument();
     expect(onVerified).not.toHaveBeenCalled();
   });
 
@@ -35,7 +41,9 @@ describe("VerifyEmailForm", () => {
     await userEvent.type(code(), "000000");
     await submit();
 
-    expect(await screen.findByText(/The code is incorrect or has expired/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/The code is incorrect or has expired/),
+    ).toBeInTheDocument();
     expect(code()).toHaveAttribute("aria-invalid", "true");
     expect(code()).not.toHaveAttribute("readonly");
     expect(onVerified).not.toHaveBeenCalled();
@@ -62,29 +70,48 @@ describe("VerifyEmailScreen", () => {
   it("without a token: shows the invalid-link state and no form", () => {
     renderWithStore(<VerifyEmailScreen token={null} />);
 
-    expect(screen.getByRole("heading", { name: "This link is invalid or has expired" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "This link is invalid or has expired",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Verification code"),
+    ).not.toBeInTheDocument();
     // The "Back to log in" link is in the top bar and in the panel.
-    expect(screen.getAllByRole("link", { name: "Back to log in" }).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: "Back to log in" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("with a token: shows the code form", () => {
     renderWithStore(<VerifyEmailScreen token="abc" />);
-    expect(screen.getByRole("heading", { name: "Verify your email" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Verify your email" }),
+    ).toBeInTheDocument();
   });
 
   it("after a good code: shows 'Email verified' and forgets the stored email", async () => {
     const store = makeStore();
     store.dispatch(
-      verificationStarted({ email: "ananya@example.com", verificationEmailSent: true, expiresInMinutes: 5 }),
+      verificationStarted({
+        email: "ananya@example.com",
+        verificationEmailSent: true,
+        expiresInMinutes: 5,
+      }),
     );
     renderWithStore(<VerifyEmailScreen token="abc" />, store);
 
     await userEvent.type(code(), "482913");
     await submit();
 
-    expect(await screen.findByRole("heading", { name: "Email verified" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to log in" })).toHaveAttribute("href", "/login");
+    expect(
+      await screen.findByRole("heading", { name: "Email verified" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to log in" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
     expect(screen.getByText("Applied as an organizer?")).toBeInTheDocument();
     expect(selectPendingVerification(store.getState())).toBeNull();
   });
@@ -97,7 +124,11 @@ describe("ProgressTracker", () => {
         heading="Your progress"
         steps={[
           { title: "Account created", status: "done" },
-          { title: "Verify your email", description: "In progress", status: "current" },
+          {
+            title: "Verify your email",
+            description: "In progress",
+            status: "current",
+          },
           { title: "Log in", status: "upcoming" },
         ]}
       />,

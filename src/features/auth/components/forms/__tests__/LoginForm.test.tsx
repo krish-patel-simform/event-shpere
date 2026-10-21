@@ -4,14 +4,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
-import { authApiService } from "../api/auth-api.service";
-import { LoginForm } from "../components/forms/LoginForm";
+import { authApiService } from "../../../api/auth-api.service";
+import { LoginForm } from "../LoginForm";
 
-jest.mock("../api/auth-api.service", () => ({ authApiService: { login: jest.fn() } }));
+jest.mock("../../../api/auth-api.service", () => ({
+  authApiService: { login: jest.fn() },
+}));
 const login = jest.mocked(authApiService.login);
 
 function renderForm() {
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  });
   render(
     <QueryClientProvider client={client}>
       <LoginForm />
@@ -19,7 +23,10 @@ function renderForm() {
   );
 }
 
-async function fillAndSubmit(email = "ananya@example.com", password = "Secret123!") {
+async function fillAndSubmit(
+  email = "ananya@example.com",
+  password = "Secret123!",
+) {
   await userEvent.type(screen.getByLabelText("Email address"), email);
   await userEvent.type(screen.getByLabelText("Password"), password);
   await userEvent.click(screen.getByRole("button", { name: "Log in" }));
@@ -37,14 +44,18 @@ describe("LoginForm", () => {
   });
 
   it("wrong details: shows the alert, keeps the email, clears the password, focuses the alert", async () => {
-    login.mockRejectedValue(new ApiError(401, "UNAUTHENTICATED", "Invalid email or password"));
+    login.mockRejectedValue(
+      new ApiError(401, "UNAUTHENTICATED", "Invalid email or password"),
+    );
     renderForm();
     await fillAndSubmit();
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Invalid email or password.");
     expect(alert).toHaveFocus();
-    expect(screen.getByLabelText("Email address")).toHaveValue("ananya@example.com");
+    expect(screen.getByLabelText("Email address")).toHaveValue(
+      "ananya@example.com",
+    );
     expect(screen.getByLabelText("Password")).toHaveValue("");
   });
 
@@ -53,7 +64,9 @@ describe("LoginForm", () => {
     renderForm();
     await fillAndSubmit();
 
-    expect(await screen.findByText("Verify your email first")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Verify your email first"),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toHaveValue("Secret123!");
   });
 
@@ -62,7 +75,9 @@ describe("LoginForm", () => {
     renderForm();
     await fillAndSubmit();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Try again" }),
+    );
 
     await waitFor(() => expect(login).toHaveBeenCalledTimes(2));
     expect(login).toHaveBeenLastCalledWith(

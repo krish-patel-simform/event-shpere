@@ -1,4 +1,4 @@
-import { accountSetupEmail } from "../templates/account-setup.template";
+import { accountSetupEmail } from "../account-setup.template";
 
 const data = {
   firstName: "Olga",
@@ -21,7 +21,10 @@ describe("accountSetupEmail", () => {
   });
 
   it("escapes the name in the HTML so admin input cannot inject markup", () => {
-    const email = accountSetupEmail({ ...data, firstName: '<img src=x onerror="alert(1)">' });
+    const email = accountSetupEmail({
+      ...data,
+      firstName: '<img src=x onerror="alert(1)">',
+    });
 
     expect(email.html).not.toContain("<img");
     expect(email.html).toContain("&lt;img");

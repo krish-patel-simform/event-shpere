@@ -1,24 +1,27 @@
-import { ValidationError } from "../../../core/http/errors";
+import { ValidationError } from "../../../../core/http/errors";
 import {
   accountSetupBodySchema,
   verifyEmailBodySchema,
-} from "../schemas/auth.schemas";
+} from "../../schemas/auth.schemas";
 import {
   createAccountActivationService,
   createAccountSetupToken,
   type AccountActivationServiceDeps,
-} from "../server/account-activation.service";
+} from "../account-activation.service";
 
 // The repository, argon2 and the email feature are replaced by fakes; tokens.ts runs for
 // real (pure crypto), but it imports env for the JWT secret, so that is stubbed.
-jest.mock("../server/account-activation.repository", () => ({}));
-jest.mock("../../../core/auth/server/password", () => ({}));
-jest.mock("../../email/server", () => ({}));
-jest.mock("../../../config/env", () => ({
+jest.mock("../account-activation.repository", () => ({}));
+jest.mock("../../../../core/auth/server/password", () => ({}));
+jest.mock("../../../email/server", () => ({}));
+jest.mock("../../../../config/env", () => ({
   env: { AUTH_JWT_SECRET: "test-secret-that-is-at-least-32-characters" },
 }));
 
-const owner = { userId: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10", email: "olga@acme.test" };
+const owner = {
+  userId: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
+  email: "olga@acme.test",
+};
 
 function setup(
   results: {
@@ -40,7 +43,9 @@ function setup(
     },
     hashPassword: jest.fn().mockResolvedValue("$argon2id$new-hash"),
     hashEmailOtp: jest.fn().mockReturnValue("hashed-otp"),
-    emailOtpStore: { verify: jest.fn().mockResolvedValue(results.codeOk ?? true) },
+    emailOtpStore: {
+      verify: jest.fn().mockResolvedValue(results.codeOk ?? true),
+    },
   } satisfies AccountActivationServiceDeps;
   return { deps, service: createAccountActivationService(deps) };
 }
@@ -71,7 +76,8 @@ describe("accountActivationService.completeAccountSetup", () => {
 
     await service.completeAccountSetup(body);
 
-    const call = deps.accountActivationRepository.completeSetup.mock.calls[0][0];
+    const call =
+      deps.accountActivationRepository.completeSetup.mock.calls[0][0];
     expect(call.passwordHash).toBe("$argon2id$new-hash");
     expect(call.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(call.tokenHash).not.toBe("raw-token");
@@ -80,7 +86,9 @@ describe("accountActivationService.completeAccountSetup", () => {
   it("answers an unknown, used or expired link with one 400", async () => {
     const { service } = setup({ completeSetup: false });
 
-    const error = await service.completeAccountSetup(body).catch((e: unknown) => e);
+    const error = await service
+      .completeAccountSetup(body)
+      .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
     expect(error).toMatchObject({
@@ -99,15 +107,20 @@ describe("accountActivationService.verifyEmail", () => {
     await service.verifyEmail(body);
 
     // 1. The DB is asked with the token's HASH, never the raw token.
-    const lookup = deps.accountActivationRepository.findValidToken.mock.calls[0][0];
+    const lookup =
+      deps.accountActivationRepository.findValidToken.mock.calls[0][0];
     expect(lookup.type).toBe("email_verify");
     expect(lookup.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(lookup.tokenHash).not.toBe("raw-verify-token");
     // 2. The code is hashed with the email FROM THE TOKEN and checked in Redis.
     expect(deps.hashEmailOtp).toHaveBeenCalledWith("olga@acme.test", "123456");
-    expect(deps.emailOtpStore.verify).toHaveBeenCalledWith("olga@acme.test", "hashed-otp");
+    expect(deps.emailOtpStore.verify).toHaveBeenCalledWith(
+      "olga@acme.test",
+      "hashed-otp",
+    );
     // 3. The same token hash is consumed (activate + invalidate happen in the repository).
-    const consume = deps.accountActivationRepository.verifyEmail.mock.calls[0][0];
+    const consume =
+      deps.accountActivationRepository.verifyEmail.mock.calls[0][0];
     expect(consume.tokenHash).toBe(lookup.tokenHash);
   });
 
@@ -119,7 +132,9 @@ describe("accountActivationService.verifyEmail", () => {
     expect(error).toBeInstanceOf(ValidationError);
     expect(error).toMatchObject({
       status: 400,
-      details: { fieldErrors: { token: ["This link is invalid or has expired"] } },
+      details: {
+        fieldErrors: { token: ["This link is invalid or has expired"] },
+      },
     });
     expect(deps.emailOtpStore.verify).not.toHaveBeenCalled();
     expect(deps.accountActivationRepository.verifyEmail).not.toHaveBeenCalled();
@@ -132,7 +147,9 @@ describe("accountActivationService.verifyEmail", () => {
 
     expect(error).toMatchObject({
       status: 400,
-      details: { fieldErrors: { otp: ["This code is invalid or has expired"] } },
+      details: {
+        fieldErrors: { otp: ["This code is invalid or has expired"] },
+      },
     });
     // The link stays usable for the next (correct) try.
     expect(deps.accountActivationRepository.verifyEmail).not.toHaveBeenCalled();
@@ -142,7 +159,9 @@ describe("accountActivationService.verifyEmail", () => {
     const { service } = setup({ verifyEmail: false });
 
     await expect(service.verifyEmail(body)).rejects.toMatchObject({
-      details: { fieldErrors: { token: ["This link is invalid or has expired"] } },
+      details: {
+        fieldErrors: { token: ["This link is invalid or has expired"] },
+      },
     });
   });
 });
@@ -173,13 +192,19 @@ describe("accountSetupBodySchema", () => {
 
 describe("verifyEmailBodySchema", () => {
   it("needs the link token and trims the code", () => {
-    expect(verifyEmailBodySchema.parse({ token: "t", otp: " 123456 " }).otp).toBe("123456");
-    expect(verifyEmailBodySchema.safeParse({ token: "", otp: "123456" }).success).toBe(false);
+    expect(
+      verifyEmailBodySchema.parse({ token: "t", otp: " 123456 " }).otp,
+    ).toBe("123456");
+    expect(
+      verifyEmailBodySchema.safeParse({ token: "", otp: "123456" }).success,
+    ).toBe(false);
   });
 
   it("accepts exactly 6 digits", () => {
     for (const otp of ["12345", "1234567", "12a456", ""]) {
-      expect(verifyEmailBodySchema.safeParse({ token: "t", otp }).success).toBe(false);
+      expect(verifyEmailBodySchema.safeParse({ token: "t", otp }).success).toBe(
+        false,
+      );
     }
   });
 });

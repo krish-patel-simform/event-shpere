@@ -1,8 +1,11 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
-import { OrganizerReviewStatus, type OrganizerApplication } from "../components/OrganizerReviewStatus";
-import { formatDate } from "../utils/format-date";
+import {
+  OrganizerReviewStatus,
+  type OrganizerApplication,
+} from "../OrganizerReviewStatus";
+import { formatDate } from "../../utils/format-date";
 
 const application: OrganizerApplication = {
   organisationName: "Acme Events Pvt Ltd",
@@ -16,14 +19,20 @@ const application: OrganizerApplication = {
 describe("formatDate", () => {
   it("prints the same text whatever the machine's time zone (UTC)", () => {
     expect(formatDate("2026-10-20T11:24:00Z")).toBe("20 Oct 2026");
-    expect(formatDate("2026-10-20T11:24:00Z", "long")).toBe("20 October 2026, 11:24");
+    expect(formatDate("2026-10-20T11:24:00Z", "long")).toBe(
+      "20 October 2026, 11:24",
+    );
   });
 });
 
 describe("OrganizerReviewStatus", () => {
   it("says the request is under review", () => {
     render(<OrganizerReviewStatus application={application} />);
-    expect(screen.getByRole("heading", { name: "Your organizer request is under review" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "Your organizer request is under review",
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Pending review")).toBeInTheDocument();
   });
 
@@ -42,18 +51,27 @@ describe("OrganizerReviewStatus", () => {
   it("lists what was submitted", () => {
     render(<OrganizerReviewStatus application={application} />);
     expect(screen.getByText("Acme Events Pvt Ltd")).toBeInTheDocument();
-    expect(screen.getByText("Ananya Rao · ananya.rao@example.com")).toBeInTheDocument();
+    expect(
+      screen.getByText("Ananya Rao · ananya.rao@example.com"),
+    ).toBeInTheDocument();
     expect(screen.getByText("20 October 2026, 11:24")).toBeInTheDocument();
   });
 
   it("says so when no website was given", () => {
-    render(<OrganizerReviewStatus application={{ ...application, website: null }} />);
+    render(
+      <OrganizerReviewStatus application={{ ...application, website: null }} />,
+    );
     expect(screen.getByText("Not provided")).toBeInTheDocument();
   });
 
   it("offers attendee actions while waiting", () => {
     render(<OrganizerReviewStatus application={application} />);
-    expect(screen.getByRole("link", { name: "Browse events" })).toHaveAttribute("href", "/events");
-    expect(screen.getByRole("link", { name: "Complete your profile" })).toHaveAttribute("href", "/profile");
+    expect(screen.getByRole("link", { name: "Browse events" })).toHaveAttribute(
+      "href",
+      "/events",
+    );
+    expect(
+      screen.getByRole("link", { name: "Complete your profile" }),
+    ).toHaveAttribute("href", "/profile");
   });
 });

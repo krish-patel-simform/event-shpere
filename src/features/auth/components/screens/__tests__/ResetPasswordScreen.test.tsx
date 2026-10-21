@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ResetPasswordScreen } from "../components/screens/ResetPasswordScreen";
+import { ResetPasswordScreen } from "../ResetPasswordScreen";
 
 const field = (label: string) =>
   screen.getByLabelText(label, { selector: "input" });

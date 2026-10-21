@@ -1,16 +1,16 @@
-import { hashToken } from "../../../core/auth/server/tokens";
-import { ValidationError } from "../../../core/http/errors";
+import { hashToken } from "../../../../core/auth/server/tokens";
+import { ValidationError } from "../../../../core/http/errors";
 import {
   createPasswordResetService,
   type PasswordResetServiceDeps,
-} from "../server/password-reset.service";
+} from "../password-reset.service";
 
 // The repository and the email feature are replaced by fakes; tokens.ts runs for real (pure
 // crypto) but imports env, which is stubbed. The service module also reads env.APP_URL.
-jest.mock("../server/password-reset.repository", () => ({}));
-jest.mock("../../../core/auth/server/password", () => ({}));
-jest.mock("../../email/server", () => ({}));
-jest.mock("../../../config/env", () => ({
+jest.mock("../password-reset.repository", () => ({}));
+jest.mock("../../../../core/auth/server/password", () => ({}));
+jest.mock("../../../email/server", () => ({}));
+jest.mock("../../../../config/env", () => ({
   env: {
     AUTH_JWT_SECRET: "test-secret-that-is-at-least-32-characters",
     APP_URL: "https://app.test",

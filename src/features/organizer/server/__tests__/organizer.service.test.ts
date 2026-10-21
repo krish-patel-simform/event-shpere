@@ -1,15 +1,15 @@
-import { ConflictError, NotFoundError } from "../../../core/http/errors";
-import { createOrganizerBodySchema } from "../schemas/organizer.schemas";
+import { ConflictError, NotFoundError } from "../../../../core/http/errors";
+import { createOrganizerBodySchema } from "../../schemas/organizer.schemas";
 import {
   createOrganizerService,
   type OrganizerServiceDeps,
-} from "../server/organizer.service";
+} from "../organizer.service";
 
 // Empty factories: env, DB, Redis and the other features' server code are never loaded.
-jest.mock("../../../config/env", () => ({ env: {} }));
-jest.mock("../server/organizer.repository", () => ({}));
-jest.mock("../../auth/server", () => ({}));
-jest.mock("../../email/server", () => ({}));
+jest.mock("../../../../config/env", () => ({ env: {} }));
+jest.mock("../organizer.repository", () => ({}));
+jest.mock("../../../auth/server", () => ({}));
+jest.mock("../../../email/server", () => ({}));
 
 const createdAt = new Date("2026-10-17T10:00:00.000Z");
 const user = {
@@ -59,7 +59,9 @@ const input = {
 function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
   const deps = {
     organizerRepository: {
-      createOrganizerAccount: jest.fn().mockResolvedValue({ ok: true, user, profile }),
+      createOrganizerAccount: jest
+        .fn()
+        .mockResolvedValue({ ok: true, user, profile }),
       listOrganizers: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
     },
@@ -77,10 +79,15 @@ describe("organizerService.createOrganizer", () => {
 
     const result = await service.createOrganizer(input);
 
-    expect(deps.organizerRepository.createOrganizerAccount).toHaveBeenCalledWith(
+    expect(
+      deps.organizerRepository.createOrganizerAccount,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         email: "olga@acme.test",
-        setupToken: { tokenHash: "hashed-token", expiresAt: setupToken.expiresAt },
+        setupToken: {
+          tokenHash: "hashed-token",
+          expiresAt: setupToken.expiresAt,
+        },
       }),
     );
     expect(result).toEqual({
@@ -135,7 +142,9 @@ describe("organizerService.createOrganizer", () => {
   it("still creates the account when the email cannot be queued, and says so", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const { service } = setup({
-      enqueueAccountSetupEmail: jest.fn().mockRejectedValue(new Error("Redis down")),
+      enqueueAccountSetupEmail: jest
+        .fn()
+        .mockRejectedValue(new Error("Redis down")),
     });
 
     const result = await service.createOrganizer(input);
@@ -169,8 +178,10 @@ describe("createOrganizerBodySchema", () => {
 
   it("allows the website to be left out", () => {
     expect(
-      createOrganizerBodySchema.safeParse({ ...input, organizationWebsite: undefined })
-        .success,
+      createOrganizerBodySchema.safeParse({
+        ...input,
+        organizationWebsite: undefined,
+      }).success,
     ).toBe(true);
   });
 });

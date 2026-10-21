@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
 import { Ticket } from "lucide-react";
-import { AccountTypeCard } from "../components/AccountTypeCard";
+import { AccountTypeCard } from "../AccountTypeCard";
 
 describe("AccountTypeCard", () => {
   it("is one link named by its title and described by its text", () => {

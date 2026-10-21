@@ -1,4 +1,4 @@
-import { passwordResetEmail } from "../templates/password-reset.template";
+import { passwordResetEmail } from "../password-reset.template";
 
 const data = {
   firstName: "Olga",
@@ -19,7 +19,10 @@ describe("passwordResetEmail", () => {
   });
 
   it("escapes the first name in the HTML (it comes from a signup form)", () => {
-    const email = passwordResetEmail({ ...data, firstName: '<img src=x onerror="alert(1)">' });
+    const email = passwordResetEmail({
+      ...data,
+      firstName: '<img src=x onerror="alert(1)">',
+    });
 
     expect(email.html).not.toContain("<img");
     expect(email.html).toContain("&lt;img");
