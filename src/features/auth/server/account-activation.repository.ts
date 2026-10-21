@@ -19,7 +19,7 @@ export type AuthTokenType = (typeof authTokenTypeEnum.enumValues)[number];
  * another type, already used or expired. Check and use happen in ONE update, so two
  * requests at the same moment cannot both pass (only one UPDATE matches `used_at IS NULL`).
  */
-async function consumeToken(
+export async function consumeToken(
   tx: Tx,
   input: { tokenHash: string; type: AuthTokenType; now: Date },
 ): Promise<string | null> {
@@ -42,7 +42,7 @@ async function consumeToken(
  * Every other unused token of this type for the user stops working. Example: a link or
  * code was sent twice and the newest one was used, so the older one must fail now.
  */
-async function invalidateUserTokens(
+export async function invalidateUserTokens(
   tx: Tx,
   input: { userId: string; type: AuthTokenType; now: Date },
 ): Promise<void> {
@@ -108,7 +108,11 @@ async function activateWithToken(input: {
       });
       if (!activated) tx.rollback(); // undo the token use too
 
-      await invalidateUserTokens(tx, { userId, type: input.type, now: input.now });
+      await invalidateUserTokens(tx, {
+        userId,
+        type: input.type,
+        now: input.now,
+      });
       return true;
     });
   } catch (error) {

@@ -25,6 +25,7 @@ import type {
   LoginBody,
   OrganizerSignupBody,
   OrganizerSignUpResponseDto,
+  ResendOtpBody,
   UserSignupBody,
   UserSignUpResponseDto,
 } from "../schemas/auth.schemas";
@@ -44,7 +45,11 @@ const emailTaken = () =>
 export type AuthServiceDeps = {
   authRepository: Pick<
     AuthRepository,
-    "findUserForLogin" | "isEmailTaken" | "signUpOrganizer" | "signUpUser"
+    | "findUserForLogin"
+    | "isEmailTaken"
+    | "signUpOrganizer"
+    | "signUpUser"
+    | "resendOtpEmail"
   >;
   hashPassword: typeof hashPassword;
   verifyPassword: typeof verifyPassword;
@@ -173,7 +178,10 @@ export function createAuthService(deps: AuthServiceDeps) {
       if (!result.ok) throw emailTaken();
 
       // 5. Only after the commit: code → Redis, code + link → email.
-      const emailSent = await sendSignupVerification(result.user, verifyToken.token);
+      const emailSent = await sendSignupVerification(
+        result.user,
+        verifyToken.token,
+      );
 
       return toOrganizerSignUpDto(result.user, result.profile, {
         emailSent,
@@ -212,12 +220,40 @@ export function createAuthService(deps: AuthServiceDeps) {
       if (!result.ok) throw emailTaken();
 
       // Only after the commit: code → Redis, code + link → email.
-      const emailSent = await sendSignupVerification(result.user, verifyToken.token);
+      const emailSent = await sendSignupVerification(
+        result.user,
+        verifyToken.token,
+      );
 
       return toUserSignUpDto(result.user, result.profile, {
         emailSent,
         expiresInMinutes: deps.verificationCodeTtlMinutes,
       });
+    },
+
+    /**
+     * Resends the verification code and link to a PENDING account. Always resolves the same way,
+     * found or not: the caller must never be able to tell whether an account exists. Every
+     * resend replaces the code (emailOtpStore.save overwrites it) and the link (the repository
+     * invalidates the old ones), so only the newest email works, however many are requested.
+     */
+    async resendOtp(input: ResendOtpBody, now = new Date()): Promise<void> {
+      const verifyToken = deps.createEmailVerifyToken(now);
+
+      const result = await deps.authRepository.resendOtpEmail({
+        email: input.email,
+        verifyToken: {
+          tokenHash: verifyToken.tokenHash,
+          expiresAt: verifyToken.expiresAt,
+        },
+        now,
+      });
+
+      // No pending account (unknown, already verified, suspended): the same quiet answer.
+      if (!result.ok) return;
+
+      // Only after the new link is saved. Never throws: a failed send is logged inside.
+      await sendSignupVerification(result.user, verifyToken.token);
     },
   };
 }

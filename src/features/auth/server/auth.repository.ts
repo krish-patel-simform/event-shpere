@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../../db/dbClient";
 import {
   authTokensTable,
@@ -9,6 +9,7 @@ import {
   userRolesTable,
   usersTable,
 } from "../../../db/schemas";
+import { invalidateUserTokens } from "./account-activation.repository";
 
 /** What the signup service hands over: hashes only, never the plain password or token. */
 export type NewOrganizerSignup = {
@@ -170,6 +171,54 @@ export const authRepository = {
       });
 
       return { ok: true as const, user, profile };
+    });
+  },
+
+  /**
+   * Resend: for a PENDING account, replaces its verify link in ONE transaction (older links stop
+   * working), so the new email carries the only valid link. Returns the user to email, or
+   * ok:false when no pending account has this email; the service must not tell the caller.
+   */
+  async resendOtpEmail(input: {
+    email: string;
+    verifyToken: {
+      tokenHash: string;
+      expiresAt: Date;
+    };
+    now: Date;
+  }) {
+    return db.transaction(async (tx) => {
+      // Only what the email needs, never the whole row (it holds the password hash).
+      const [user] = await tx
+        .select({
+          id: usersTable.id,
+          email: usersTable.email,
+          firstName: usersTable.firstName,
+        })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.email, input.email),
+            eq(usersTable.status, "pending"),
+          ),
+        );
+      if (!user) {
+        return { ok: false as const, reason: "USER_NOT_EXIST" as const };
+      }
+
+      await invalidateUserTokens(tx, {
+        userId: user.id,
+        type: "email_verify",
+        now: input.now,
+      });
+      await tx.insert(authTokensTable).values({
+        tokenHash: input.verifyToken.tokenHash,
+        type: "email_verify",
+        expiresAt: input.verifyToken.expiresAt,
+        userId: user.id,
+      });
+
+      return { ok: true as const, user };
     });
   },
 };
