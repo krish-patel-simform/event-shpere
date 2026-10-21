@@ -22,6 +22,8 @@ import {
 
 // One answer for unknown, used and expired links: never reveal which.
 const INVALID_LINK = "This link is invalid or has expired";
+const ADMIN_RESET_NOT_ALLOWED =
+  "Password reset by email is not available for this account";
 const SAME_PASSWORD = "Choose a password different from your current one";
 
 export type PasswordResetServiceDeps = {
@@ -45,8 +47,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
   return {
     /**
      * AUTH-6: emails a reset link to an ACTIVE account with this email.
-     * Always resolves the same way, found or not: the caller (and so the person typing the
-     * email) must never be able to tell whether an account exists.
+     * Resolves the same way, found or not: the caller (and so the person typing the email)
+     * must never be able to tell whether an account exists. The one exception is an ADMIN
+     * account, which throws a ValidationError (400): admins never reset by email link.
      */
     async requestReset(
       input: ForgotPasswordBody,
@@ -57,9 +60,12 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
       );
       if (!user) return;
 
-      // Admin passwords are never reset by email link. Same quiet return as "not found", so the
-      // response can't be used to tell who is an admin.
-      if (user.role === "admin") return;
+      // Admin passwords are never reset by email link. Checked before any token is created.
+      if (user.role === "admin") {
+        throw new ValidationError(ADMIN_RESET_NOT_ALLOWED, {
+          fieldErrors: { email: [ADMIN_RESET_NOT_ALLOWED] },
+        });
+      }
 
       // The raw token exists only here and in the email; the database gets its hash.
       const token = generateOpaqueToken();

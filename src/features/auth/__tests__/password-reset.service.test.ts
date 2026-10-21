@@ -1,4 +1,5 @@
 import { hashToken } from "../../../core/auth/server/tokens";
+import { ValidationError } from "../../../core/http/errors";
 import {
   createPasswordResetService,
   type PasswordResetServiceDeps,
@@ -25,7 +26,10 @@ const user = {
 };
 const now = new Date("2026-10-20T10:00:00Z");
 
-const owner = { userId: user.id, passwordHash: "stored-hash-of-the-current-password" };
+const owner = {
+  userId: user.id,
+  passwordHash: "stored-hash-of-the-current-password",
+};
 
 function setup(
   results: {
@@ -73,18 +77,26 @@ describe("passwordResetService.requestReset", () => {
   it("does nothing for an email without an active account (same answer, no token, no email)", async () => {
     const { deps, service } = setup({ user: null });
 
-    await expect(service.requestReset({ email: "nobody@acme.test" }, now)).resolves.toBeUndefined();
+    await expect(
+      service.requestReset({ email: "nobody@acme.test" }, now),
+    ).resolves.toBeUndefined();
 
-    expect(deps.passwordResetRepository.createResetToken).not.toHaveBeenCalled();
+    expect(
+      deps.passwordResetRepository.createResetToken,
+    ).not.toHaveBeenCalled();
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
-  it("does nothing for an admin account (same answer as an unknown email, no token, no email)", async () => {
+  it("rejects an admin account with a validation error (no token, no email)", async () => {
     const { deps, service } = setup({ user: { ...user, role: "admin" } });
 
-    await expect(service.requestReset({ email: user.email }, now)).resolves.toBeUndefined();
+    await expect(
+      service.requestReset({ email: user.email }, now),
+    ).rejects.toBeInstanceOf(ValidationError);
 
-    expect(deps.passwordResetRepository.createResetToken).not.toHaveBeenCalled();
+    expect(
+      deps.passwordResetRepository.createResetToken,
+    ).not.toHaveBeenCalled();
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
@@ -93,21 +105,26 @@ describe("passwordResetService.requestReset", () => {
 
     await service.requestReset({ email: user.email }, now);
 
-    expect(deps.passwordResetRepository.createResetToken).toHaveBeenCalledTimes(1);
+    expect(deps.passwordResetRepository.createResetToken).toHaveBeenCalledTimes(
+      1,
+    );
     expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
   });
 
   it("looks the account up by the email it was given", async () => {
     const { deps, service } = setup();
     await service.requestReset({ email: "olga@acme.test" }, now);
-    expect(deps.passwordResetRepository.findActiveUserByEmail).toHaveBeenCalledWith("olga@acme.test");
+    expect(
+      deps.passwordResetRepository.findActiveUserByEmail,
+    ).toHaveBeenCalledWith("olga@acme.test");
   });
 
   it("stores only the HASH of the token; the raw token is only in the email link", async () => {
     const { deps, service } = setup();
     await service.requestReset({ email: user.email }, now);
 
-    const stored = deps.passwordResetRepository.createResetToken.mock.calls[0][0];
+    const stored =
+      deps.passwordResetRepository.createResetToken.mock.calls[0][0];
     const raw = tokenFromEmail(deps.sendPasswordResetEmail);
 
     expect(stored.tokenHash).toBe(hashToken(raw));
@@ -120,7 +137,8 @@ describe("passwordResetService.requestReset", () => {
     const { deps, service } = setup();
     await service.requestReset({ email: user.email }, now);
 
-    const stored = deps.passwordResetRepository.createResetToken.mock.calls[0][0];
+    const stored =
+      deps.passwordResetRepository.createResetToken.mock.calls[0][0];
     expect(stored.userId).toBe(user.id);
     expect(stored.now).toEqual(now);
     expect(stored.expiresAt).toEqual(new Date("2026-10-20T10:10:00Z"));
@@ -135,7 +153,9 @@ describe("passwordResetService.requestReset", () => {
     expect(mail.to).toBe(user.email);
     expect(mail.firstName).toBe("Olga");
     expect(mail.expiresInMinutes).toBe(10);
-    expect(mail.resetUrl.startsWith("https://app.test/reset-password?token=")).toBe(true);
+    expect(
+      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+    ).toBe(true);
   });
 
   it("every request makes a different token", async () => {
@@ -153,7 +173,8 @@ describe("passwordResetService.requestReset", () => {
     const { deps, service } = setup();
     await service.requestReset({ email: user.email }, now);
 
-    const stored = deps.passwordResetRepository.createResetToken.mock.invocationCallOrder[0];
+    const stored =
+      deps.passwordResetRepository.createResetToken.mock.invocationCallOrder[0];
     const sent = deps.sendPasswordResetEmail.mock.invocationCallOrder[0];
     expect(stored).toBeLessThan(sent);
   });
@@ -162,7 +183,9 @@ describe("passwordResetService.requestReset", () => {
     const { deps, service } = setup({ sendFails: true });
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(service.requestReset({ email: user.email }, now)).resolves.toBeUndefined();
+    await expect(
+      service.requestReset({ email: user.email }, now),
+    ).resolves.toBeUndefined();
 
     // The send failed, but the service still built the link: read the token it tried to send.
     const raw = tokenFromEmail(deps.sendPasswordResetEmail);
@@ -175,9 +198,13 @@ describe("passwordResetService.requestReset", () => {
 
   it("does not send an email when storing the token fails", async () => {
     const { deps, service } = setup();
-    deps.passwordResetRepository.createResetToken.mockRejectedValue(new Error("db down"));
+    deps.passwordResetRepository.createResetToken.mockRejectedValue(
+      new Error("db down"),
+    );
 
-    await expect(service.requestReset({ email: user.email }, now)).rejects.toThrow("db down");
+    await expect(
+      service.requestReset({ email: user.email }, now),
+    ).rejects.toThrow("db down");
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 });
@@ -195,7 +222,8 @@ describe("passwordResetService.resetPassword", () => {
     const { deps, service } = setup();
     await service.resetPassword(input, now);
 
-    const lookup = deps.passwordResetRepository.findValidResetToken.mock.calls[0][0];
+    const lookup =
+      deps.passwordResetRepository.findValidResetToken.mock.calls[0][0];
     expect(lookup).toEqual({ tokenHash: hashToken(input.token), now });
     expect(JSON.stringify(lookup)).not.toContain(input.token);
   });
@@ -216,7 +244,10 @@ describe("passwordResetService.resetPassword", () => {
     const { deps, service } = setup();
     await service.resetPassword(input, now);
 
-    expect(deps.verifyPassword).toHaveBeenCalledWith(owner.passwordHash, input.password);
+    expect(deps.verifyPassword).toHaveBeenCalledWith(
+      owner.passwordHash,
+      input.password,
+    );
   });
 
   it("rejects the same password with fieldErrors.password, and does NOT use up the link", async () => {
@@ -246,7 +277,9 @@ describe("passwordResetService.resetPassword", () => {
   });
 
   it("skips the same-password check for an account that has no password yet", async () => {
-    const { deps, service } = setup({ owner: { userId: user.id, passwordHash: null } });
+    const { deps, service } = setup({
+      owner: { userId: user.id, passwordHash: null },
+    });
 
     await expect(service.resetPassword(input, now)).resolves.toBeUndefined();
 
@@ -266,7 +299,9 @@ describe("passwordResetService.resetPassword", () => {
   it("never puts a password or a hash in an error", async () => {
     const { service } = setup({ samePassword: true });
 
-    const error = await service.resetPassword(input, now).catch((e: unknown) => e);
+    const error = await service
+      .resetPassword(input, now)
+      .catch((e: unknown) => e);
 
     const text = JSON.stringify(error, Object.getOwnPropertyNames(error));
     expect(text).not.toContain(input.password);
