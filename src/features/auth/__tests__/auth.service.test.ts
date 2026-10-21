@@ -6,6 +6,7 @@ import {
 import {
   loginBodySchema,
   organizerSignupBodySchema,
+  resendOtpBodySchema,
   userSignupBodySchema,
   userSignupResponseSchema,
 } from "../schemas/auth.schemas";
@@ -42,6 +43,7 @@ function setup(
       signUpUser: jest.fn(),
       isEmailTaken: jest.fn().mockResolvedValue(false),
       signUpOrganizer: jest.fn(),
+      resendOtpEmail: jest.fn(),
     },
     hashPassword: jest.fn().mockResolvedValue("$argon2id$dummy-hash"),
     verifyPassword: jest.fn().mockResolvedValue(true),
@@ -203,6 +205,7 @@ describe("authService.signUpOrganizer", () => {
       authRepository: {
         findUserForLogin: jest.fn(),
         signUpUser: jest.fn(),
+        resendOtpEmail: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(false),
         signUpOrganizer: jest
           .fn()
@@ -274,6 +277,7 @@ describe("authService.signUpOrganizer", () => {
       authRepository: {
         findUserForLogin: jest.fn(),
         signUpUser: jest.fn(),
+        resendOtpEmail: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(true),
         signUpOrganizer: jest.fn(),
       },
@@ -292,6 +296,7 @@ describe("authService.signUpOrganizer", () => {
       authRepository: {
         findUserForLogin: jest.fn(),
         signUpUser: jest.fn(),
+        resendOtpEmail: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(false),
         signUpOrganizer: jest
           .fn()
@@ -363,6 +368,7 @@ describe("authService.signUpUser", () => {
     return setup(activeUser, {
       authRepository: {
         findUserForLogin: jest.fn(),
+        resendOtpEmail: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(false),
         signUpOrganizer: jest.fn(),
         signUpUser: jest
@@ -445,6 +451,7 @@ describe("authService.signUpUser", () => {
     const { deps, service } = setupUserSignup({
       authRepository: {
         findUserForLogin: jest.fn(),
+        resendOtpEmail: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(true),
         signUpOrganizer: jest.fn(),
         signUpUser: jest.fn(),
@@ -465,6 +472,7 @@ describe("authService.signUpUser", () => {
         isEmailTaken: jest.fn().mockResolvedValue(false),
         signUpOrganizer: jest.fn(),
         signUpUser: jest.fn().mockResolvedValue({ ok: false, reason: "EMAIL_TAKEN" }),
+        resendOtpEmail: jest.fn(),
       },
     });
 
@@ -556,5 +564,138 @@ describe("loginBodySchema", () => {
     expect(
       loginBodySchema.safeParse({ email: "nope", password: "" }).success,
     ).toBe(false);
+  });
+});
+
+describe("authService.resendOtp", () => {
+  const pendingUser = {
+    id: "3f2a1b7e-8c1f-4f6e-9a59-0d6f2a1b7e10",
+    email: "ann@example.test",
+    firstName: "Ann",
+  };
+  const now = new Date("2026-10-20T10:00:00.000Z");
+
+  function setupResend(
+    resendResult: { ok: true; user: typeof pendingUser } | { ok: false; reason: "USER_NOT_EXIST" } = {
+      ok: true,
+      user: pendingUser,
+    },
+    overrides: Partial<AuthServiceDeps> = {},
+  ) {
+    return setup(activeUser, {
+      authRepository: {
+        findUserForLogin: jest.fn(),
+        signUpUser: jest.fn(),
+        signUpOrganizer: jest.fn(),
+        isEmailTaken: jest.fn(),
+        resendOtpEmail: jest.fn().mockResolvedValue(resendResult),
+      },
+      createEmailOtp: jest.fn().mockReturnValue({ otp: "123456", otpHash: "hashed-otp" }),
+      emailOtpStore: { save: jest.fn().mockResolvedValue(undefined) },
+      sendVerificationCodeEmail: jest.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+
+  it("saves a new link (as a hash), a new code in Redis, and emails the code with the new link", async () => {
+    const { deps, service } = setupResend();
+
+    await service.resendOtp({ email: pendingUser.email }, now);
+
+    // The link token is created for this moment; only its hash goes to the repository.
+    expect(deps.createEmailVerifyToken).toHaveBeenCalledWith(now);
+    expect(deps.authRepository.resendOtpEmail).toHaveBeenCalledWith({
+      email: pendingUser.email,
+      verifyToken: {
+        tokenHash: "hashed-verify-token",
+        expiresAt: new Date("2026-10-19T10:05:00.000Z"),
+      },
+      now,
+    });
+    expect(deps.emailOtpStore.save).toHaveBeenCalledWith(pendingUser.email, "hashed-otp");
+    expect(deps.sendVerificationCodeEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: pendingUser.email,
+        firstName: "Ann",
+        otp: "123456",
+        verifyUrl: "http://localhost:3000/verify-email?token=raw-verify-token%2Fwith%2Bchars",
+      }),
+    );
+  });
+
+  it("does nothing for an email with no pending account, and still answers the same", async () => {
+    const { deps, service } = setupResend({ ok: false, reason: "USER_NOT_EXIST" });
+
+    await expect(service.resendOtp({ email: "nobody@example.test" }, now)).resolves.toBeUndefined();
+
+    expect(deps.emailOtpStore.save).not.toHaveBeenCalled();
+    expect(deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+  });
+
+  it("answers the same (nothing) for a pending account as for an unknown one", async () => {
+    const found = setupResend();
+    const missing = setupResend({ ok: false, reason: "USER_NOT_EXIST" });
+
+    const foundAnswer = await found.service.resendOtp({ email: pendingUser.email }, now);
+    const missingAnswer = await missing.service.resendOtp({ email: "nobody@example.test" }, now);
+
+    expect(foundAnswer).toBeUndefined();
+    expect(missingAnswer).toBe(foundAnswer);
+  });
+
+  it("only the LATEST code works: every request overwrites the code saved before it", async () => {
+    const { deps, service } = setupResend(undefined, {
+      createEmailOtp: jest
+        .fn()
+        .mockReturnValueOnce({ otp: "111111", otpHash: "hash-of-first" })
+        .mockReturnValueOnce({ otp: "222222", otpHash: "hash-of-second" }),
+    });
+
+    await service.resendOtp({ email: pendingUser.email }, now);
+    await service.resendOtp({ email: pendingUser.email }, now);
+
+    // Same Redis key both times (the email), so the second save replaces the first.
+    const saves = jest.mocked(deps.emailOtpStore.save).mock.calls;
+    expect(saves).toEqual([
+      [pendingUser.email, "hash-of-first"],
+      [pendingUser.email, "hash-of-second"],
+    ]);
+  });
+
+  it("sends the email only AFTER the new link is saved", async () => {
+    const { deps, service } = setupResend();
+
+    await service.resendOtp({ email: pendingUser.email }, now);
+
+    const saved = jest.mocked(deps.authRepository.resendOtpEmail).mock.invocationCallOrder[0];
+    const sent = jest.mocked(deps.sendVerificationCodeEmail).mock.invocationCallOrder[0];
+    expect(saved).toBeLessThan(sent);
+  });
+
+  it("does not fail the request when the email cannot be sent, and never logs the code", async () => {
+    const { service } = setupResend(undefined, {
+      sendVerificationCodeEmail: jest.fn().mockRejectedValue(new Error("Resend is down")),
+    });
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(service.resendOtp({ email: pendingUser.email }, now)).resolves.toBeUndefined();
+
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).toContain("Resend is down");
+    expect(logged).not.toContain("123456");
+    log.mockRestore();
+  });
+});
+
+describe("resendOtpBodySchema", () => {
+  it("takes only an email, trimmed and lowercased", () => {
+    expect(resendOtpBodySchema.parse({ email: "  Ann@Example.TEST " })).toEqual({
+      email: "ann@example.test",
+    });
+  });
+
+  it("rejects a missing or invalid email", () => {
+    expect(resendOtpBodySchema.safeParse({}).success).toBe(false);
+    expect(resendOtpBodySchema.safeParse({ email: "not-an-email" }).success).toBe(false);
   });
 });
