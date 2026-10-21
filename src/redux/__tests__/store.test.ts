@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import { persistStore } from "redux-persist";
-import { selectPendingVerification, verificationCleared, verificationStarted } from "@/src/features/auth";
+import { selectPendingVerification, verificationCleared, verificationStarted } from "../slices/auth-flow.slice";
 import { makeStore } from "../store";
 
 const pending = { email: "ananya@example.com", verificationEmailSent: true, expiresInMinutes: 5 };

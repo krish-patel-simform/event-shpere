@@ -2,7 +2,7 @@ import { Mail } from "lucide-react";
 import Link from "next/link";
 import { Alert, Badge, Button, buttonStyles } from "@/src/core/ui";
 import { AUTH_ROUTES, SITE_ROUTES } from "../../routes";
-import type { PendingVerification } from "../../store/auth-flow.slice";
+import type { PendingVerification } from "@/src/redux/slices/auth-flow.slice";
 
 const STEPS = [
   { title: "Open the email from EventSphere", text: "Can't see it? Check your spam or promotions folder." },

@@ -1,12 +1,23 @@
 import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { FLUSH, PAUSE, PERSIST, PURGE, REGISTER, REHYDRATE, persistReducer } from "redux-persist";
-import { authFlowReducer } from "@/src/features/auth";
+import {
+  FLUSH,
+  PAUSE,
+  PERSIST,
+  PURGE,
+  REGISTER,
+  REHYDRATE,
+  persistReducer,
+} from "redux-persist";
+import { authFlowReducer } from "./slices/auth-flow.slice";
 import { sessionStorageAdapter } from "./session-storage";
 
 const rootReducer = combineReducers({
   // Only this slice is persisted (per browser tab, sessionStorage).
-  authFlow: persistReducer({ key: "authFlow", storage: sessionStorageAdapter }, authFlowReducer),
+  authFlow: persistReducer(
+    { key: "authFlow", storage: sessionStorageAdapter },
+    authFlowReducer,
+  ),
 });
 
 /**

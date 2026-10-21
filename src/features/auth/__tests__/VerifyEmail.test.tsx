@@ -7,7 +7,7 @@ import { renderWithStore } from "@/src/redux/test-utils";
 import { VerifyEmailForm } from "../components/forms/VerifyEmailForm";
 import { ProgressTracker } from "../components/preview/ProgressTracker";
 import { VerifyEmailScreen } from "../components/screens/VerifyEmailScreen";
-import { selectPendingVerification, verificationStarted } from "../store/auth-flow.slice";
+import { selectPendingVerification, verificationStarted } from "@/src/redux/slices/auth-flow.slice";
 
 const code = () => screen.getByLabelText("Verification code");
 const submit = () => userEvent.click(screen.getByRole("button", { name: "Verify email" }));

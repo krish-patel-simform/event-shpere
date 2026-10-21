@@ -6,7 +6,7 @@ import { makeRehydratedStore, renderWithStore } from "@/src/redux/test-utils";
 import { makeStore } from "@/src/redux/store";
 import { CheckEmailPanel } from "../components/states/CheckEmailPanel";
 import { CheckEmailScreen } from "../components/screens/CheckEmailScreen";
-import { selectPendingVerification, verificationStarted } from "../store/auth-flow.slice";
+import { selectPendingVerification, verificationStarted } from "@/src/redux/slices/auth-flow.slice";
 
 const sent = { email: "ananya@example.com", verificationEmailSent: true, expiresInMinutes: 5 };
 

@@ -35,8 +35,8 @@ Put each piece of state in the one place designed for it, satisfy the spec's Red
 "Managed by Redux Toolkit" = slices **and** RTK Query: both are in the one store.
 
 ## MUST
-- Store factory `makeStore()` in `core/store/store.ts` + `StoreProvider` (client component, creates the store once per request/session with `useRef`/`useState`); never a module-level singleton on the server (it would leak state between users). Typed hooks `useAppDispatch`, `useAppSelector`, `useAppStore` via `.withTypes<...>()` (RTK ≥ 2).
-- Slices in `features/<f>/store/<f>Slice.ts`; the root reducer combines slice reducers + `baseApi.reducer`; middleware adds `baseApi.middleware`; `setupListeners` once on the client.
+- Store factory `makeStore()` in `src/redux/store.ts` + `StoreProvider` (client component, creates the store once per request/session with `useRef`/`useState`); never a module-level singleton on the server (it would leak state between users). Typed hooks `useAppDispatch`, `useAppSelector`, `useAppStore` via `.withTypes<...>()` (RTK ≥ 2).
+- Slices in `src/redux/slices/<name>.slice.ts` (all Redux code stays in `src/redux/`; it never imports from features, and features import actions/selectors from it); the root reducer combines slice reducers + `baseApi.reducer`; middleware adds `baseApi.middleware`; `setupListeners` once on the client.
 - Keep state **normalized and minimal**; compute derived data with selectors (`createSelector`) or in render. Use `createEntityAdapter` for lists you mutate (notifications).
 - Actions describe events (`notificationReceived`, `sessionExpired`), not setters. Extra reducers react to RTK Query matchers where needed (e.g. `logout` resets slices; `baseApi.util.resetApiState()`).
 - Prop drilling > 2 levels → use a hook (`useAppSelector`, a feature hook) or composition (children/slots), not a new context by reflex.
@@ -51,7 +51,7 @@ Put each piece of state in the one place designed for it, satisfy the spec's Red
 - Don't create a slice per component.
 
 ## Procedure: add state
-1. Ask the decision table. 2. If a slice: define `initialState` (typed), reducers, selectors; export from the feature `index.ts`; register in `core/store`. 3. Use typed hooks in components. 4. Test the reducer/selectors.
+1. Ask the decision table. 2. If a slice: define `initialState` (typed), reducers, selectors; put it in `src/redux/slices/` and register it in `src/redux/store.ts`. 3. Use typed hooks in components. 4. Test the reducer/selectors.
 
 ## Example: notifications (NOTIF-5, NOTIF-7)
 ```ts

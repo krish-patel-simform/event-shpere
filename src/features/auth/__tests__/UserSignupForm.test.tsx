@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithStore } from "@/src/redux/test-utils";
-import { selectPendingVerification } from "../store/auth-flow.slice";
+import { selectPendingVerification } from "@/src/redux/slices/auth-flow.slice";
 import { UserSignupForm } from "../components/forms/UserSignupForm";
 
 const mockPush = jest.fn();

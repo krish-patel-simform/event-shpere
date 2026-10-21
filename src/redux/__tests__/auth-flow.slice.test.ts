@@ -3,7 +3,7 @@ import {
   selectPendingVerification,
   verificationCleared,
   verificationStarted,
-} from "../store/auth-flow.slice";
+} from "../slices/auth-flow.slice";
 
 const pending = { email: "ananya@example.com", verificationEmailSent: true, expiresInMinutes: 5 };
 

@@ -44,7 +44,8 @@ Note: the repo currently has a `package-lock.json` and scripts only for dev/buil
 
 ## Architecture & import boundaries
 Details: skills `nextjs-project-structure`, `backend-architecture`, `database-drizzle`.
-- Feature-based: `src/features/<feature>/{api,components,hooks,schemas,server,store,types,utils,__tests__}` + `index.ts` (public API). Shared code in `src/core` (http, store, ui, config/env.ts). `app/` routes stay thin.
+- Feature-based: `src/features/<feature>/{api,components,hooks,schemas,server,types,utils,__tests__}` + `index.ts` (public API). Shared code in `src/core` (http, ui, config/env.ts). `app/` routes stay thin.
+- **All Redux code lives in `src/redux/`**: store factory, provider, persistence, test helpers, and the slices in `src/redux/slices/<name>.slice.ts` (with their tests in `src/redux/__tests__/`). Features import actions, selectors and typed hooks from there; `src/redux` never imports from features.
 - **Database schema lives in `src/db/schemas/`**, one `<area>.schema.ts` per area (e.g. `auth.schema.ts` holds all auth tables), re-exported from `src/db/schemas/index.ts`, which `drizzle.config.ts` uses. This overrides the per-feature `server/db/schema.ts` layout from the `database-drizzle` skill. Table variables use the `...Table` suffix (`usersTable`), columns are snake_case, ids are `uuid`.
 - Features: auth, profile, events, event-details, registrations, payments, agenda, speakers, cms, polls, notifications, announcements, dashboard, organizer, offline.
 - A feature imports only from `src/core` and from **other features' `index.ts`**; never from their internals. `core` never imports from features.
