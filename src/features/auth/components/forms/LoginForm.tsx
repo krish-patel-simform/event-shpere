@@ -1,10 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { Alert, Badge, Button, PasswordField, TextField } from "@/src/core/ui";
+import { Alert, Button, PasswordField, TextField } from "@/src/core/ui";
 import { useLogin } from "../../hooks/useLogin";
+import { AUTH_ROUTES } from "../../routes";
 import { loginBodySchema, type LoginBody } from "../../schemas/auth.schemas";
 import { AuthAlert } from "../states/AuthAlert";
 
@@ -42,14 +44,17 @@ export function LoginForm() {
   if (login.data) {
     return (
       <Alert tone="success">
-        Signed in as {login.data.firstName} {login.data.lastName} ({login.data.role}).
+        Signed in as {login.data.firstName} {login.data.lastName} (
+        {login.data.role}).
       </Alert>
     );
   }
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
-      {login.error && <AuthAlert ref={alertRef} error={login.error} onRetry={onSubmit} />}
+      {login.error && (
+        <AuthAlert ref={alertRef} error={login.error} onRetry={onSubmit} />
+      )}
 
       <TextField
         label="Email address"
@@ -67,11 +72,13 @@ export function LoginForm() {
         placeholder="Enter your password"
         readOnly={isPending}
         error={errors.password?.message}
-        // Password reset is AUTH-6/7: shown as "Soon", not a link yet.
         labelAction={
-          <span className="flex items-center gap-2 text-sm text-muted">
-            Forgot password? <Badge>Soon</Badge>
-          </span>
+          <Link
+            href={AUTH_ROUTES.forgotPassword}
+            className="text-sm font-semibold text-link underline"
+          >
+            Forgot password?
+          </Link>
         }
         {...register("password")}
       />

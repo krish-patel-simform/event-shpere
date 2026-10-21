@@ -7,6 +7,8 @@ export const AUTH_ROUTES = {
   checkEmail: "/check-email",
   verifyEmail: "/verify-email",
   setPassword: "/set-password",
+  forgotPassword: "/forgot-password",
+  resetPassword: "/reset-password",
 } as const;
 
 /** Site pages shown in the shell footer. These pages do not exist yet. */
