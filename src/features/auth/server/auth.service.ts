@@ -206,7 +206,6 @@ export function createAuthService(deps: AuthServiceDeps) {
         lastName: input.lastName,
         email: input.email,
         passwordHash,
-        avatarUrl: input.avatarUrl ?? null,
         city: input.city ?? null,
         phone: input.phone ?? null,
         postalCode: input.postalCode ?? null,

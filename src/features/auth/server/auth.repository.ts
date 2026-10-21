@@ -31,7 +31,6 @@ export type NewUserSignup = {
   phone: string | null;
   city: string | null;
   postalCode: string | null;
-  avatarUrl: string | null;
   verifyToken: { tokenHash: string; expiresAt: Date };
 };
 
@@ -156,7 +155,6 @@ export const authRepository = {
         .values({
           userId: user.id,
           city: input.city,
-          avatarUrl: input.avatarUrl,
           phone: input.phone,
           postalCode: input.postalCode,
         })

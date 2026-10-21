@@ -3,58 +3,104 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { FormProvider, useForm } from "react-hook-form";
-import type { ApiError } from "@/src/core/api-client/base-api.service";
 import { Button, FormSection, TextField } from "@/src/core/ui";
 import { useAppDispatch } from "@/src/redux/store";
 import { verificationStarted } from "@/src/redux/slices/auth-flow.slice";
+import { useUserSignup } from "../../hooks/useUserSignup";
 import { AUTH_ROUTES, SITE_ROUTES } from "../../routes";
-import { userSignupBodySchema, type UserSignupBody } from "../../schemas/auth.schemas";
+import {
+  userSignupBodySchema,
+  type UserSignupBody,
+} from "../../schemas/auth.schemas";
 import { emptyToUndefined } from "../../utils/form-values";
 import { PasswordWithConfirm } from "../fields/PasswordWithConfirm";
 import { AuthAlert } from "../states/AuthAlert";
 
-// TODO(API): replace this stub with useUserSignup(). On success, dispatch verificationStarted with
-// the response (email, verificationEmailSent, verificationCodeExpiresInMinutes) and go to
-// check-email, as the stub below does with made-up values. An email ending in "@fail.test"
-// pretends the verification email could not be sent, so that screen state can be reviewed.
-const signup = {
-  isPending: false,
-  error: null as ApiError | null,
-};
+// The fields a server error can be pinned to; any other failure goes to the alert.
+// No profile photo here: it is added later in the profile (upload, then its public link).
+const FIELDS = [
+  "firstName",
+  "lastName",
+  "email",
+  "password",
+  "confirmPassword",
+  "phone",
+  "city",
+  "postalCode",
+] as const satisfies readonly (keyof UserSignupBody)[];
 
-/** User (attendee) signup form, AUTH-1. Validates with the same Zod schema the server uses. */
+/**
+ * User (attendee) signup form, AUTH-1. Validates with the same Zod schema the server uses, then
+ * calls POST /api/auth/signup/user. On success it remembers the address for the check-email
+ * screen (the session only starts at login, after the email is verified).
+ */
 export function UserSignupForm() {
+  const userSignup = useUserSignup();
+  const alertRef = useRef<HTMLDivElement>(null);
   const methods = useForm<UserSignupBody>({
     resolver: zodResolver(userSignupBodySchema),
     mode: "onBlur", // field errors appear when the user leaves a field, as in the design
     // The optional fields are left out on purpose: see emptyToUndefined below.
-    defaultValues: { firstName: "", lastName: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
   });
   const router = useRouter();
   const dispatch = useAppDispatch();
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = methods;
 
+  // After a failed submit, move focus to the alert so it is read out.
+  useEffect(() => {
+    if (userSignup.error) alertRef.current?.focus();
+  }, [userSignup.error]);
+
   const onSubmit = handleSubmit((values) => {
-    dispatch(
-      verificationStarted({
-        email: values.email,
-        verificationEmailSent: !values.email.endsWith("@fail.test"),
-        expiresInMinutes: 5,
-      }),
-    );
-    router.push(AUTH_ROUTES.checkEmail);
+    userSignup.mutate(values, {
+      onSuccess: (account) => {
+        dispatch(
+          verificationStarted({
+            email: account.email,
+            verificationEmailSent: account.verificationEmailSent,
+            expiresInMinutes: account.verificationCodeExpiresInMinutes,
+          }),
+        );
+        router.push(AUTH_ROUTES.checkEmail);
+      },
+      onError: (error) => {
+        // Taken email: pin it to the field. Keep every value so the user can fix just that.
+        if (error.code === "EMAIL_TAKEN") {
+          return setError("email", { message: error.message });
+        }
+        for (const field of FIELDS) {
+          const message = error.fieldErrors[field]?.[0];
+          if (message) setError(field, { message });
+        }
+      },
+    });
   });
-  const isPending = signup.isPending;
+  const { isPending, error } = userSignup;
+  // Errors pinned to a field show under it; everything else (network, 5xx, rate limit) here.
+  const isFieldError =
+    error?.code === "EMAIL_TAKEN" ||
+    FIELDS.some((field) => error?.fieldErrors[field]);
 
   return (
     <FormProvider {...methods}>
       <form onSubmit={onSubmit} noValidate className="space-y-4">
-        {signup.error && <AuthAlert error={signup.error} onRetry={onSubmit} />}
+        {error && !isFieldError && (
+          <AuthAlert ref={alertRef} error={error} onRetry={onSubmit} />
+        )}
 
         <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
           <TextField
@@ -121,17 +167,6 @@ export function UserSignupForm() {
               {...register("postalCode", { setValueAs: emptyToUndefined })}
             />
           </div>
-          <TextField
-            label="Profile photo URL"
-            optional
-            type="url"
-            autoComplete="off"
-            placeholder="https://"
-            hint="A full https:// link to an image. Photo upload is coming soon."
-            readOnly={isPending}
-            error={errors.avatarUrl?.message}
-            {...register("avatarUrl", { setValueAs: emptyToUndefined })}
-          />
         </FormSection>
 
         <Button type="submit" fullWidth isPending={isPending}>

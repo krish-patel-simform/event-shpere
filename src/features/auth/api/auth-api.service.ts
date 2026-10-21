@@ -3,11 +3,14 @@
 import { apiRequest } from "../../../core/api-client/base-api.service";
 import {
   loginResponseSchema,
+  userSignupResponseSchema,
   type AccountSetupBody,
   type AuthUserDto,
   type ForgotPasswordBody,
   type LoginBody,
   type ResetPasswordBody,
+  type UserSignUpResponseDto,
+  type UserSignupBody,
 } from "../schemas/auth.schemas";
 
 export const authApiService = {
@@ -16,6 +19,14 @@ export const authApiService = {
     return apiRequest(
       { method: "POST", url: "/auth/login", data: body },
       loginResponseSchema,
+    );
+  },
+
+  /** Creates a pending attendee account and emails the verification code (201). No session yet. */
+  signUpUser(body: UserSignupBody): Promise<UserSignUpResponseDto> {
+    return apiRequest(
+      { method: "POST", url: "/auth/signup/user", data: body },
+      userSignupResponseSchema,
     );
   },
 

@@ -162,9 +162,7 @@ export const userSignupBodySchema = signupBaseSchema
     phone: z.string().trim().regex(PHONE_REGEX, PHONE_REGEX_MESSAGE).optional(),
     city: z.string().trim().max(100).optional(),
     postalCode: z.string().trim().max(20).optional(),
-    avatarUrl: z
-      .url({ protocol: /^https?$/, message: "Use a full http(s) URL" })
-      .optional(),
+    // No avatar at signup: the profile photo is uploaded later from the profile page.
   })
   .refine(passwordsMatch, PASSWORDS_MATCH_ERROR);
 export type UserSignupBody = z.infer<typeof userSignupBodySchema>;

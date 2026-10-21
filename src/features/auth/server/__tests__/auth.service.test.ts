@@ -414,7 +414,6 @@ describe("authService.signUpUser", () => {
     // Skipped optional fields become null for the DB.
     expect(repoInput.city).toBeNull();
     expect(repoInput.postalCode).toBeNull();
-    expect(repoInput.avatarUrl).toBeNull();
     expect(deps.emailOtpStore.save).toHaveBeenCalledWith(
       "ann@example.test",
       "hashed-otp",
@@ -537,12 +536,19 @@ describe("userSignupBodySchema", () => {
     expect(body.phone).toBeUndefined();
   });
 
-  it("rejects a mismatch, a bad phone, a too-long city and a non-http avatar URL", () => {
+  it("ignores an avatarUrl: the photo is not part of signup", () => {
+    const body = userSignupBodySchema.parse({
+      ...valid,
+      avatarUrl: "https://example.test/me.png",
+    });
+    expect(body).not.toHaveProperty("avatarUrl");
+  });
+
+  it("rejects a mismatch, a bad phone and a too-long city", () => {
     for (const bad of [
       { confirmPassword: "Other-Passw0rd!" },
       { phone: "abc" },
       { city: "x".repeat(101) },
-      { avatarUrl: "javascript:alert(1)" },
     ]) {
       expect(userSignupBodySchema.safeParse({ ...valid, ...bad }).success).toBe(
         false,
