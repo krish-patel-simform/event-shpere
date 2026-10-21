@@ -2,6 +2,7 @@
 import "server-only";
 
 export { authService } from "./auth.service";
+export { passwordResetService } from "./password-reset.service";
 export {
   accountActivationService,
   createAccountSetupToken,
