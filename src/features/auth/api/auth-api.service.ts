@@ -7,6 +7,7 @@ import {
   type AuthUserDto,
   type ForgotPasswordBody,
   type LoginBody,
+  type ResetPasswordBody,
 } from "../schemas/auth.schemas";
 
 export const authApiService = {
@@ -32,6 +33,15 @@ export const authApiService = {
     return apiRequest({
       method: "POST",
       url: "/auth/forgot-password",
+      data: body,
+    });
+  },
+
+  /** Sets a new password with the emailed link's token (204, no body; revokes every session). */
+  resetPassword(body: ResetPasswordBody): Promise<void> {
+    return apiRequest({
+      method: "POST",
+      url: "/auth/reset-password",
       data: body,
     });
   },

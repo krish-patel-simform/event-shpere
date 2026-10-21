@@ -12,12 +12,12 @@ import { AuthShell } from "../shell/AuthShell";
 import { BrandPanel } from "../shell/BrandPanel";
 import { StatusPanel } from "../states/StatusPanel";
 
-type Phase = "form" | "done";
+type Phase = "form" | "done" | "invalid";
 
 /**
  * Opened from the password reset email (/reset-password?token=...): choose a new password, then
- * log in. Without a token the link is already known to be bad, so the expired state shows.
- * UI only for now: the form does not call the API yet.
+ * log in. Without a token the link is already known to be bad; a token the server rejects ends
+ * in the same "expired" state.
  */
 export function ResetPasswordScreen({ token }: { token: string | null }) {
   const [phase, setPhase] = useState<Phase>("form");
@@ -37,7 +37,7 @@ export function ResetPasswordScreen({ token }: { token: string | null }) {
       }}
       supportPrompt="Didn't ask for this?"
     >
-      {token === null ? (
+      {token === null || phase === "invalid" ? (
         <StatusPanel
           icon={LockOpen}
           tone="danger"
@@ -89,7 +89,11 @@ export function ResetPasswordScreen({ token }: { token: string | null }) {
             title="Choose a new password"
             subtitle="Use a password you haven't used before."
           />
-          <ResetPasswordForm token={token} onDone={() => setPhase("done")} />
+          <ResetPasswordForm
+            token={token}
+            onDone={() => setPhase("done")}
+            onLinkInvalid={() => setPhase("invalid")}
+          />
         </>
       )}
     </AuthShell>
