@@ -3,6 +3,10 @@ import { Resend } from "resend";
 import { env } from "../../../config/env";
 import type { RenderedEmail } from "../templates/account-setup.template";
 import {
+  passwordResetEmail,
+  type PasswordResetEmailData,
+} from "../templates/password-reset.template";
+import {
   verificationCodeEmail,
   type VerificationCodeEmailData,
 } from "../templates/verification-code.template";
@@ -60,4 +64,21 @@ export async function sendVerificationCodeEmail(
   }
   const { to, ...templateData } = data;
   await sendEmail({ to, ...verificationCodeEmail(templateData) });
+}
+
+/**
+ * Sends the password reset link during the request (no queue): a reset link is time-sensitive,
+ * and a queue backed up under load would make the user wait and ask again. Throws if Resend
+ * fails; the caller decides what to do.
+ */
+export async function sendPasswordResetEmail(
+  data: PasswordResetEmailData & { to: string },
+): Promise<void> {
+  // Dev without Resend: print the link so the flow can be tested locally. Never in production.
+  if (!env.RESEND_API_KEY && process.env.NODE_ENV !== "production") {
+    console.info(`[dev] password reset link for ${data.to}: ${data.resetUrl}`);
+    return;
+  }
+  const { to, ...templateData } = data;
+  await sendEmail({ to, ...passwordResetEmail(templateData) });
 }
