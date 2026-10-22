@@ -11,6 +11,9 @@ export const AUTH_ROUTES = {
   resetPassword: "/reset-password",
 } as const;
 
+/** Where a successful login lands. */
+export const AFTER_LOGIN_ROUTE = "/dashboard";
+
 /** Site pages shown in the shell footer. These pages do not exist yet. */
 export const SITE_ROUTES = {
   privacy: "/privacy",

@@ -3,7 +3,7 @@
 import { Bell, LogOut, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRef, type ReactNode } from "react";
-import { Avatar, Logo, ThemeToggle } from "@/src/core/ui";
+import { Alert, Avatar, Logo, ThemeToggle } from "@/src/core/ui";
 import { SidebarNav } from "./SidebarNav";
 
 export type DashboardUser = {
@@ -12,7 +12,24 @@ export type DashboardUser = {
   roleLabel: string;
 };
 
-function SidebarContent({ user, onNavigate }: { user: DashboardUser; onNavigate?: () => void }) {
+type LogoutProps = {
+  /** Ends the session. What happens next (redirect, cache) is up to the parent. */
+  onLogout: () => void;
+  /** The logout request is running: the button is disabled so it is not sent twice. */
+  isLoggingOut: boolean;
+  /** The last logout attempt failed: the user is still signed in, so say so. */
+  logoutFailed: boolean;
+};
+
+function SidebarContent({
+  user,
+  onNavigate,
+  onLogout,
+  isLoggingOut,
+}: { user: DashboardUser; onNavigate?: () => void } & Pick<
+  LogoutProps,
+  "onLogout" | "isLoggingOut"
+>) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <Link href="/dashboard" onClick={onNavigate} className="px-1">
@@ -27,13 +44,14 @@ function SidebarContent({ user, onNavigate }: { user: DashboardUser; onNavigate?
           <p className="truncate text-sm font-semibold">{user.name}</p>
           <p className="text-xs text-muted">{user.roleLabel}</p>
         </div>
-        {/* TODO(API) AUTH-9: call POST /api/auth/logout, then go to /login. */}
         <button
           type="button"
-          disabled
-          aria-label="Log out (coming soon)"
-          title="Log out (coming soon)"
-          className="rounded-md p-2 text-muted disabled:cursor-not-allowed"
+          onClick={onLogout}
+          disabled={isLoggingOut}
+          aria-busy={isLoggingOut || undefined}
+          aria-label="Log out"
+          title="Log out"
+          className="rounded-md p-2 text-muted hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
         >
           <LogOut aria-hidden="true" className="size-4" />
         </button>
@@ -46,7 +64,16 @@ function SidebarContent({ user, onNavigate }: { user: DashboardUser; onNavigate?
  * Layout of the signed-in area: side menu (a slide-in drawer below `lg`), top bar with
  * search, notifications and the user, and the page content.
  */
-export function DashboardShell({ user, children }: { user: DashboardUser; children: ReactNode }) {
+export function DashboardShell({
+  user,
+  onLogout,
+  isLoggingOut,
+  logoutFailed,
+  children,
+}: {
+  user: DashboardUser;
+  children: ReactNode;
+} & LogoutProps) {
   // The drawer is a native <dialog>: the browser gives it a focus trap and the Escape key.
   const drawer = useRef<HTMLDialogElement>(null);
 
@@ -54,7 +81,11 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
     <div className="min-h-dvh lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
       <aside className="hidden border-r border-line bg-surface lg:block">
         <div className="sticky top-0 h-dvh">
-          <SidebarContent user={user} />
+          <SidebarContent
+            user={user}
+            onLogout={onLogout}
+            isLoggingOut={isLoggingOut}
+          />
         </div>
       </aside>
 
@@ -75,7 +106,12 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
         >
           <X aria-hidden="true" className="size-5" />
         </button>
-        <SidebarContent user={user} onNavigate={() => drawer.current?.close()} />
+        <SidebarContent
+          user={user}
+          onNavigate={() => drawer.current?.close()}
+          onLogout={onLogout}
+          isLoggingOut={isLoggingOut}
+        />
       </dialog>
 
       <div className="flex min-h-dvh min-w-0 flex-col">
@@ -90,8 +126,15 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
           </button>
 
           {/* TODO(DISC-2): wire to the events/speakers/sessions search. */}
-          <form role="search" onSubmit={(event) => event.preventDefault()} className="relative max-w-xl flex-1">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          <form
+            role="search"
+            onSubmit={(event) => event.preventDefault()}
+            className="relative max-w-xl flex-1"
+          >
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+            />
             <input
               type="search"
               aria-label="Search events, speakers, sessions"
@@ -113,7 +156,18 @@ export function DashboardShell({ user, children }: { user: DashboardUser; childr
           </div>
         </header>
 
-        <main className="flex-1 bg-canvas px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="flex-1 bg-canvas px-4 py-6 sm:px-8 sm:py-8">
+          {logoutFailed && (
+            <Alert
+              tone="error"
+              title="We couldn't log you out"
+              className="mx-auto mb-5 max-w-4xl"
+            >
+              You are still signed in. Check your connection and try again.
+            </Alert>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

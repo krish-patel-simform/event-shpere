@@ -9,6 +9,12 @@ let mockPathname = "/dashboard";
 jest.mock("next/navigation", () => ({ usePathname: () => mockPathname }));
 
 const user = { name: "Ananya Rao", roleLabel: "Attendee · organizer pending" };
+// The logout props when nothing is happening: not logging out, nothing failed.
+const idle = {
+  onLogout: jest.fn(),
+  isLoggingOut: false,
+  logoutFailed: false,
+};
 
 // jsdom does not implement <dialog>.showModal()/close(): a minimal stand-in that sets `open`.
 beforeAll(() => {
@@ -35,7 +41,7 @@ describe("getInitials", () => {
 describe("DashboardShell", () => {
   it("shows the user, the page content, search and notifications", () => {
     render(
-      <DashboardShell user={user}>
+      <DashboardShell user={user} {...idle}>
         <p>Page content</p>
       </DashboardShell>,
     );
@@ -55,7 +61,11 @@ describe("DashboardShell", () => {
   });
 
   it("marks only the current page in the menu", () => {
-    render(<DashboardShell user={user}>x</DashboardShell>);
+    render(
+      <DashboardShell user={user} {...idle}>
+        x
+      </DashboardShell>,
+    );
 
     const nav = screen.getAllByRole("navigation", { name: "Main" })[0];
     expect(
@@ -66,18 +76,69 @@ describe("DashboardShell", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
-  it("log out is shown but not available yet", () => {
-    render(<DashboardShell user={user}>x</DashboardShell>);
-    expect(
-      screen.getAllByRole("button", {
-        name: "Log out (coming soon)",
-        hidden: true,
-      })[0],
-    ).toBeDisabled();
+  describe("log out", () => {
+    // The side menu is rendered twice (desktop and drawer), so there are two buttons.
+    const logOutButtons = () =>
+      screen.getAllByRole("button", { name: "Log out", hidden: true });
+
+    it("calls onLogout when the button is clicked", async () => {
+      const onLogout = jest.fn();
+      render(
+        <DashboardShell user={user} {...idle} onLogout={onLogout}>
+          x
+        </DashboardShell>,
+      );
+
+      await userEvent.click(logOutButtons()[0]);
+
+      expect(onLogout).toHaveBeenCalledTimes(1);
+    });
+
+    it("is enabled and quiet when idle", () => {
+      render(
+        <DashboardShell user={user} {...idle}>
+          x
+        </DashboardShell>,
+      );
+
+      for (const button of logOutButtons()) expect(button).toBeEnabled();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("is disabled and busy while logging out, so it cannot be sent twice", () => {
+      render(
+        <DashboardShell user={user} {...idle} isLoggingOut>
+          x
+        </DashboardShell>,
+      );
+
+      for (const button of logOutButtons()) {
+        expect(button).toBeDisabled();
+        expect(button).toHaveAttribute("aria-busy", "true");
+      }
+    });
+
+    it("tells the user they are still signed in when logging out failed", () => {
+      render(
+        <DashboardShell user={user} {...idle} logoutFailed>
+          Page content
+        </DashboardShell>,
+      );
+
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent("We couldn't log you out");
+      expect(alert).toHaveTextContent("still signed in");
+      expect(screen.getByText("Page content")).toBeInTheDocument();
+      for (const button of logOutButtons()) expect(button).toBeEnabled();
+    });
   });
 
   it("opens the menu drawer from the menu button and closes it after choosing a page", async () => {
-    render(<DashboardShell user={user}>x</DashboardShell>);
+    render(
+      <DashboardShell user={user} {...idle}>
+        x
+      </DashboardShell>,
+    );
     // A closed dialog is hidden, and hidden elements have no accessible name: query by role only.
     const drawer = screen.getByRole("dialog", { hidden: true });
     expect(drawer).toHaveAttribute("aria-label", "Menu");

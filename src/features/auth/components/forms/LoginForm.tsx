@@ -2,16 +2,21 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { Alert, Button, PasswordField, TextField } from "@/src/core/ui";
+import { Button, PasswordField, TextField } from "@/src/core/ui";
 import { useLogin } from "../../hooks/useLogin";
-import { AUTH_ROUTES } from "../../routes";
+import { AFTER_LOGIN_ROUTE, AUTH_ROUTES } from "../../routes";
 import { loginBodySchema, type LoginBody } from "../../schemas/auth.schemas";
 import { AuthAlert } from "../states/AuthAlert";
 
-/** The login form (AUTH-2): validates with the shared Zod schema, then calls POST /api/auth/login. */
+/**
+ * The login form (AUTH-2): validates with the shared Zod schema, calls POST /api/auth/login, and
+ * on success goes to the app. The server has set the session cookies by then.
+ */
 export function LoginForm() {
+  const router = useRouter();
   const login = useLogin();
   const alertRef = useRef<HTMLDivElement>(null);
   const {
@@ -31,6 +36,7 @@ export function LoginForm() {
 
   const onSubmit = handleSubmit((values) => {
     login.mutate(values, {
+      onSuccess: () => router.replace(AFTER_LOGIN_ROUTE),
       // Wrong details: keep the email, clear the password. Any other failure (network, 5xx,
       // not verified...) keeps both values so "Try again" can resubmit them.
       onError: (error) => {
@@ -38,17 +44,9 @@ export function LoginForm() {
       },
     });
   });
-  const isPending = login.isPending;
-
-  // No dashboard yet: confirm who signed in. Replace with a redirect once the app pages exist.
-  if (login.data) {
-    return (
-      <Alert tone="success">
-        Signed in as {login.data.firstName} {login.data.lastName} (
-        {login.data.role}).
-      </Alert>
-    );
-  }
+  // Stays "pending" after success too, until the next page has replaced this one, so the form
+  // is not shown again (or submitted twice) while the redirect happens.
+  const isPending = login.isPending || login.isSuccess;
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
