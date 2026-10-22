@@ -17,8 +17,56 @@ export const baseApiService = axios.create({
 baseApiService.interceptors.request.use((config) => {
   // No Authorization header: the access token lives in an httpOnly cookie (JavaScript
   // cannot read it, by design) and the browser attaches it automatically.
-  // Response interceptor (401 → POST /auth/refresh → retry) comes with the refresh route.
   return config;
+});
+
+declare module "axios" {
+  interface AxiosRequestConfig {
+    /** Set when a request is re-sent after a token refresh, so a second 401 never loops. */
+    _retriedAfterRefresh?: boolean;
+  }
+}
+
+const REFRESH_URL = "/auth/refresh";
+// A 401 from these is final: wrong login details, or the refresh itself failing (no loop).
+const NO_REFRESH_URLS: readonly string[] = ["/auth/login", REFRESH_URL];
+
+// One refresh at a time: when several requests fail with 401 together (e.g. a page loading
+// three queries), they all wait for the same POST /auth/refresh. Refresh tokens rotate, so a
+// second parallel refresh would use an already-used token and fail.
+let refreshInFlight: Promise<void> | null = null;
+
+function refreshSession(): Promise<void> {
+  refreshInFlight ??= baseApiService
+    .post(REFRESH_URL)
+    .then(() => undefined)
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
+// Response interceptor: the access token lives 15 minutes. On a 401, trade the refresh cookie
+// for new tokens (the server sets the new cookies) and send the original request once more.
+// If the refresh fails, the original 401 is passed on, so the caller treats it as "signed out".
+baseApiService.interceptors.response.use(undefined, async (error: unknown) => {
+  if (!isAxiosError(error) || error.response?.status !== 401 || !error.config) {
+    throw error;
+  }
+  const { config } = error;
+  if (
+    config._retriedAfterRefresh ||
+    NO_REFRESH_URLS.includes(config.url ?? "")
+  ) {
+    throw error;
+  }
+
+  try {
+    await refreshSession();
+  } catch {
+    throw error;
+  }
+  return baseApiService.request({ ...config, _retriedAfterRefresh: true });
 });
 
 /** Every failure from the API, typed. `code` comes from the server (e.g. EMAIL_TAKEN). */
@@ -61,10 +109,19 @@ function toApiError(error: unknown): ApiError {
   }
   const parsed = errorEnvelopeSchema.safeParse(error.response.data);
   if (!parsed.success) {
-    return new ApiError(error.response.status, "UNKNOWN", "Something went wrong");
+    return new ApiError(
+      error.response.status,
+      "UNKNOWN",
+      "Something went wrong",
+    );
   }
   const { code, message, details } = parsed.data.error;
-  return new ApiError(error.response.status, code, message, details?.fieldErrors ?? {});
+  return new ApiError(
+    error.response.status,
+    code,
+    message,
+    details?.fieldErrors ?? {},
+  );
 }
 
 /** Calls the API and returns the parsed `data` of the `{ data }` envelope. */
