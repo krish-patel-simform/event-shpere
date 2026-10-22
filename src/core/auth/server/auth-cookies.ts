@@ -45,4 +45,7 @@ export async function clearAuthCookies(): Promise<void> {
     path: REFRESH_TOKEN_PATH,
     maxAge: 0,
   });
+  // Browsers that logged in before the refresh cookie moved to REFRESH_TOKEN_PATH still hold one
+  // on "/". Remove it too, or it would keep being sent to every route.
+  store.set(REFRESH_TOKEN_COOKIE, "", { ...baseOptions, path: "/", maxAge: 0 });
 }
