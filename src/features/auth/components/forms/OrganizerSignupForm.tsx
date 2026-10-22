@@ -3,28 +3,40 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { FormProvider, useForm } from "react-hook-form";
-import type { ApiError } from "@/src/core/api-client/base-api.service";
 import { Button, FormSection, TextField } from "@/src/core/ui";
 import { useAppDispatch } from "@/src/redux/store";
 import { verificationStarted } from "@/src/redux/slices/auth-flow.slice";
+import { useOrganizerSignup } from "../../hooks/useOrganizerSignup";
 import { AUTH_ROUTES, SITE_ROUTES } from "../../routes";
-import { organizerSignupBodySchema, type OrganizerSignupBody } from "../../schemas/auth.schemas";
+import {
+  organizerSignupBodySchema,
+  type OrganizerSignupBody,
+} from "../../schemas/auth.schemas";
 import { emptyToUndefined } from "../../utils/form-values";
 import { PasswordWithConfirm } from "../fields/PasswordWithConfirm";
 import { AuthAlert } from "../states/AuthAlert";
 
-// TODO(API): replace this stub with useOrganizerSignup(). On success, dispatch verificationStarted with
-// the response (email, verificationEmailSent, verificationCodeExpiresInMinutes) and go to
-// check-email, as the stub below does with made-up values. An email ending in "@fail.test"
-// pretends the verification email could not be sent, so that screen state can be reviewed.
-const signup = {
-  isPending: false,
-  error: null as ApiError | null,
-};
+// The fields a server error can be pinned to; any other failure goes to the alert.
+const FIELDS = [
+  "firstName",
+  "lastName",
+  "email",
+  "organizationName",
+  "organizationWebsite",
+  "password",
+  "confirmPassword",
+] as const satisfies readonly (keyof OrganizerSignupBody)[];
 
-/** Organizer application form, AUTH-1. Validates with the same Zod schema the server uses. */
+/**
+ * Organizer application form, AUTH-1. Validates with the same Zod schema the server uses, then
+ * calls POST /api/auth/signup/organizer. On success it remembers the address for the check-email
+ * screen (the session only starts at login, after the email is verified).
+ */
 export function OrganizerSignupForm() {
+  const organizerSignup = useOrganizerSignup();
+  const alertRef = useRef<HTMLDivElement>(null);
   const methods = useForm<OrganizerSignupBody>({
     resolver: zodResolver(organizerSignupBodySchema),
     mode: "onBlur", // field errors appear when the user leaves a field, as in the design
@@ -43,25 +55,51 @@ export function OrganizerSignupForm() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = methods;
 
+  // After a failed submit, move focus to the alert so it is read out.
+  useEffect(() => {
+    if (organizerSignup.error) alertRef.current?.focus();
+  }, [organizerSignup.error]);
+
   const onSubmit = handleSubmit((values) => {
-    dispatch(
-      verificationStarted({
-        email: values.email,
-        verificationEmailSent: !values.email.endsWith("@fail.test"),
-        expiresInMinutes: 5,
-      }),
-    );
-    router.push(AUTH_ROUTES.checkEmail);
+    organizerSignup.mutate(values, {
+      onSuccess: (account) => {
+        dispatch(
+          verificationStarted({
+            email: account.email,
+            verificationEmailSent: account.verificationEmailSent,
+            expiresInMinutes: account.verificationCodeExpiresInMinutes,
+          }),
+        );
+        router.push(AUTH_ROUTES.checkEmail);
+      },
+      onError: (error) => {
+        // Taken email: pin it to the field. Keep every value so the user can fix just that.
+        if (error.code === "EMAIL_TAKEN") {
+          return setError("email", { message: error.message });
+        }
+        for (const field of FIELDS) {
+          const message = error.fieldErrors[field]?.[0];
+          if (message) setError(field, { message });
+        }
+      },
+    });
   });
-  const isPending = signup.isPending;
+  const { isPending, error } = organizerSignup;
+  // Errors pinned to a field show under it; everything else (network, 5xx, rate limit) here.
+  const isFieldError =
+    error?.code === "EMAIL_TAKEN" ||
+    FIELDS.some((field) => error?.fieldErrors[field]);
 
   return (
     <FormProvider {...methods}>
       <form onSubmit={onSubmit} noValidate className="space-y-5">
-        {signup.error && <AuthAlert error={signup.error} onRetry={onSubmit} />}
+        {error && !isFieldError && (
+          <AuthAlert ref={alertRef} error={error} onRetry={onSubmit} />
+        )}
 
         <FormSection title="About you">
           <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
@@ -109,7 +147,9 @@ export function OrganizerSignupForm() {
               hint="Helps our team verify your organisation faster."
               readOnly={isPending}
               error={errors.organizationWebsite?.message}
-              {...register("organizationWebsite", { setValueAs: emptyToUndefined })}
+              {...register("organizationWebsite", {
+                setValueAs: emptyToUndefined,
+              })}
             />
           </div>
         </FormSection>

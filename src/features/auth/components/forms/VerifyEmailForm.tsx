@@ -2,10 +2,14 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ShieldCheck } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
-import type { ApiError } from "@/src/core/api-client/base-api.service";
 import { Badge, Button, TextField } from "@/src/core/ui";
-import { verifyEmailBodySchema, type VerifyEmailBody } from "../../schemas/auth.schemas";
+import { useVerifyEmail } from "../../hooks/useVerifyEmail";
+import {
+  verifyEmailBodySchema,
+  type VerifyEmailBody,
+} from "../../schemas/auth.schemas";
 import { AuthAlert } from "../states/AuthAlert";
 
 type VerifyEmailFormProps = {
@@ -13,19 +17,22 @@ type VerifyEmailFormProps = {
   token: string;
   /** Called once the code is accepted. */
   onVerified: () => void;
+  /** The server says the link is expired or already used (fieldErrors.token). */
+  onLinkInvalid: () => void;
 };
 
-// TODO(API): replace this stub with useVerifyEmail() (POST /api/auth/verify-email). It will
-// also map the server's fieldErrors.otp to the code field and fieldErrors.token to the
-// "invalid link" screen. The stub accepts any 6 digits except 000000, so the error state can be seen.
-const WRONG_CODE_MESSAGE = "The code is incorrect or has expired. Check your email and try again.";
-const verify = {
-  isPending: false,
-  error: null as ApiError | null,
-};
-
-/** The code form, AUTH-1. The token comes from the link; the user types the 6-digit code. */
-export function VerifyEmailForm({ token, onVerified }: VerifyEmailFormProps) {
+/**
+ * The code form, AUTH-1. The token comes from the link; the user types the 6-digit code. Calls
+ * POST /api/auth/verify-email; a wrong or expired code shows under the field, a bad link is
+ * handed to the screen (onLinkInvalid).
+ */
+export function VerifyEmailForm({
+  token,
+  onVerified,
+  onLinkInvalid,
+}: VerifyEmailFormProps) {
+  const verifyEmail = useVerifyEmail();
+  const alertRef = useRef<HTMLDivElement>(null);
   const {
     register,
     handleSubmit,
@@ -36,14 +43,26 @@ export function VerifyEmailForm({ token, onVerified }: VerifyEmailFormProps) {
     defaultValues: { token, otp: "" },
   });
 
+  // After a failed submit, move focus to the alert so it is read out.
+  useEffect(() => {
+    if (verifyEmail.error) alertRef.current?.focus();
+  }, [verifyEmail.error]);
+
   const onSubmit = handleSubmit((values) => {
-    if (values.otp === "000000") {
-      setError("otp", { message: WRONG_CODE_MESSAGE });
-      return;
-    }
-    onVerified();
+    verifyEmail.mutate(values, {
+      onSuccess: onVerified,
+      onError: (error) => {
+        const { fieldErrors } = error;
+        // Expired or used link: the form cannot work any more, so the screen replaces it.
+        if (fieldErrors.token) return onLinkInvalid();
+        // Wrong or expired code: the user can type it again.
+        if (fieldErrors.otp) setError("otp", { message: fieldErrors.otp[0] });
+      },
+    });
   });
-  const isPending = verify.isPending;
+  const { isPending, error } = verifyEmail;
+  // A wrong code shows under the field; everything else (network, 5xx, rate limit) here.
+  const showAlert = error && !error.fieldErrors.otp;
 
   return (
     <div className="space-y-5">
@@ -52,11 +71,15 @@ export function VerifyEmailForm({ token, onVerified }: VerifyEmailFormProps) {
       </span>
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Verify your email</h1>
-        <p className="text-muted">Enter the 6-digit code from the email we sent you.</p>
+        <p className="text-muted">
+          Enter the 6-digit code from the email we sent you.
+        </p>
       </div>
 
       <form onSubmit={onSubmit} noValidate className="space-y-4">
-        {verify.error && <AuthAlert error={verify.error} onRetry={onSubmit} />}
+        {showAlert && (
+          <AuthAlert ref={alertRef} error={error} onRetry={onSubmit} />
+        )}
 
         <TextField
           label="Verification code"

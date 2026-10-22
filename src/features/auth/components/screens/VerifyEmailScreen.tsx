@@ -27,11 +27,13 @@ const VERIFIED_STEPS: ProgressStep[] = [
 
 /**
  * Opened from the link in the signup email (/verify-email?token=...). Shows the code form,
- * then "Email verified". Without a token the link is already known to be bad.
+ * then "Email verified". Without a token the link is already known to be bad; a token the
+ * server rejects ends in the same "invalid or expired" state.
  */
 export function VerifyEmailScreen({ token }: { token: string | null }) {
   const dispatch = useAppDispatch();
   const [verified, setVerified] = useState(false);
+  const [linkInvalid, setLinkInvalid] = useState(false);
 
   function handleVerified() {
     setVerified(true);
@@ -55,7 +57,8 @@ export function VerifyEmailScreen({ token }: { token: string | null }) {
         <ProgressTracker heading="Your progress" steps={ENTER_CODE_STEPS} />
         <p className="flex gap-3 text-sm text-panel-muted">
           <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          We never ask for your password by email. EventSphere codes are only entered on this page.
+          We never ask for your password by email. EventSphere codes are only
+          entered on this page.
         </p>
       </div>
     </BrandPanel>
@@ -64,17 +67,24 @@ export function VerifyEmailScreen({ token }: { token: string | null }) {
   return (
     <AuthShell
       panel={panel}
-      backLink={verified ? undefined : { label: "Back to log in", href: AUTH_ROUTES.login }}
+      backLink={
+        verified
+          ? undefined
+          : { label: "Back to log in", href: AUTH_ROUTES.login }
+      }
     >
       {verified ? (
         <VerifiedContent />
-      ) : token === null ? (
+      ) : token === null || linkInvalid ? (
         <StatusPanel
           icon={Link2Off}
           tone="danger"
           title="This link is invalid or has expired"
           actions={
-            <Link href={AUTH_ROUTES.login} className={buttonStyles({ variant: "secondary" })}>
+            <Link
+              href={AUTH_ROUTES.login}
+              className={buttonStyles({ variant: "secondary" })}
+            >
               Back to log in
             </Link>
           }
@@ -82,7 +92,11 @@ export function VerifyEmailScreen({ token }: { token: string | null }) {
           Verification links work for 5 minutes and can only be used once.
         </StatusPanel>
       ) : (
-        <VerifyEmailForm token={token} onVerified={handleVerified} />
+        <VerifyEmailForm
+          token={token}
+          onVerified={handleVerified}
+          onLinkInvalid={() => setLinkInvalid(true)}
+        />
       )}
     </AuthShell>
   );
@@ -96,19 +110,23 @@ function VerifiedContent() {
         tone="success"
         title="Email verified"
         actions={
-          <Link href={AUTH_ROUTES.login} className={buttonStyles({ fullWidth: true })}>
+          <Link
+            href={AUTH_ROUTES.login}
+            className={buttonStyles({ fullWidth: true })}
+          >
             Go to log in
           </Link>
         }
       >
-        Your email address has been confirmed. You can now log in to your account.
+        Your email address has been confirmed. You can now log in to your
+        account.
       </StatusPanel>
 
       <section className="rounded-lg border border-line bg-surface-subtle p-4 text-sm">
         <h2 className="font-semibold">Applied as an organizer?</h2>
         <p className="text-muted">
-          You can log in now. Your organisation is being reviewed, and event tools unlock once it&apos;s
-          approved.
+          You can log in now. Your organisation is being reviewed, and event
+          tools unlock once it&apos;s approved.
         </p>
       </section>
     </div>

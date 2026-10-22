@@ -68,6 +68,13 @@ export const loginResponseSchema = z.object({
 });
 export type AuthUserDto = z.infer<typeof loginResponseSchema>;
 
+// GET /api/auth/me: the signed-in user plus what their role may do. Parsed on the server before
+// responding and again in the browser; unknown fields are dropped, so nothing else can leak.
+export const meResponseSchema = loginResponseSchema.extend({
+  permissions: z.array(z.string()),
+});
+export type MeDto = z.infer<typeof meResponseSchema>;
+
 // Set-password form, step 1 of the account-setup email. The same schema validates the
 // form in the browser and the request on the server.
 export const accountSetupBodySchema = z
