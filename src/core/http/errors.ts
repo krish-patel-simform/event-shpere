@@ -74,6 +74,18 @@ export class ConflictError extends AppError {
   }
 }
 
+/** 503: a service we depend on (e.g. the CMS) is down; trying again later can work. */
+export class ServiceUnavailableError extends AppError {
+  readonly status = 503;
+
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** 429: too many requests. */
 export class RateLimitError extends AppError {
   readonly status = 429;

@@ -1,11 +1,22 @@
 import "server-only";
 import { env } from "../../../config/env";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
-import { ConflictError, NotFoundError } from "../../../core/http/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  ServiceUnavailableError,
+} from "../../../core/http/errors";
 import type { PageMeta } from "../../../core/http/response";
 import { ACCOUNT_SETUP_TOKEN_TTL_HOURS } from "../../auth";
 import { createAccountSetupToken } from "../../auth/server";
-import { enqueueAccountSetupEmail } from "../../email/server";
+import {
+  strapiOrganizerClient,
+  type StrapiOrganizerClient,
+} from "../../cms/server";
+import {
+  enqueueAccountSetupEmail,
+  enqueueCmsAccessEmail,
+} from "../../email/server";
 import type {
   CreateOrganizerBody,
   CreateOrganizerResponseDto,
@@ -26,14 +37,46 @@ import {
 export type OrganizerServiceDeps = {
   organizerRepository: Pick<
     OrganizerRepository,
-    "createOrganizerAccount" | "listOrganizers" | "verifyOrganizer"
+    | "createOrganizerAccount"
+    | "listOrganizers"
+    | "verifyOrganizer"
+    | "findForVerify"
   >;
   createAccountSetupToken: typeof createAccountSetupToken;
   enqueueAccountSetupEmail: typeof enqueueAccountSetupEmail;
+  strapiClient: Pick<
+    StrapiOrganizerClient,
+    "provisionOrganizerAccess" | "registerUrl"
+  >;
+  enqueueCmsAccessEmail: typeof enqueueCmsAccessEmail;
   appUrl: string;
 };
 
 export function createOrganizerService(deps: OrganizerServiceDeps) {
+  /** Find-or-create the organizer's Strapi admin user. Any failure → 503, nothing saved. */
+  async function provisionCmsAccess(organizer: {
+    email: string;
+    firstName: string;
+    lastName: string;
+  }) {
+    try {
+      return await deps.strapiClient.provisionOrganizerAccess({
+        email: organizer.email,
+        firstName: organizer.firstName,
+        lastName: organizer.lastName,
+      });
+    } catch (error) {
+      console.error(
+        "[organizer] Strapi provisioning failed:",
+        error instanceof Error ? error.message : error,
+      );
+      throw new ServiceUnavailableError(
+        "CMS_UNAVAILABLE",
+        "Could not set up CMS access right now. Please try verifying again.",
+      );
+    }
+  }
+
   return {
     /** ADM-1: admin creates a pending organizer; the setup email is queued after commit. */
     async createOrganizer(
@@ -110,16 +153,57 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
      * ADM-4: the admin verifies an organizer. `verifierId` is the admin's id from the
      * access token (currentUser.id), never from the request body.
      * Verifying again is not an error: the original verifier and time are returned.
+     *
+     * Verifying also gives the organizer a Strapi (CMS) account, in this order:
+     * 1. create (or find) the Strapi admin user → its id
+     * 2. ONE update: verified_at + verified_by + cms_organizer_id
+     * 3. queue the "set up your content access" email (after the commit)
+     * Strapi down → 503 and nothing is saved; the admin clicks Verify again. If step 2
+     * fails after step 1, the retry is still safe: Strapi returns the same user.
      */
     async verifyOrganizer(
       organizerId: string,
       verifierId: string,
     ): Promise<VerifyOrganizerResponseDto> {
+      const organizer =
+        await deps.organizerRepository.findForVerify(organizerId);
+      if (!organizer) throw new NotFoundError("Organizer not found");
+
+      // Already verified: no Strapi call, just return the original verification.
+      const cmsAccess = organizer.verifiedAt
+        ? null
+        : await provisionCmsAccess(organizer);
+
       const row = await deps.organizerRepository.verifyOrganizer({
         organizerId,
         verifierId,
+        cmsOrganizerId: cmsAccess?.id,
       });
       if (!row) throw new NotFoundError("Organizer not found");
+
+      // justVerified: of two racing clicks only the one that saved sends the email.
+      // No token = they already registered in Strapi: nothing to send.
+      if (row.justVerified && cmsAccess?.registrationToken) {
+        try {
+          await deps.enqueueCmsAccessEmail(
+            {
+              to: organizer.email,
+              firstName: organizer.firstName,
+              registerUrl: deps.strapiClient.registerUrl(
+                cmsAccess.registrationToken,
+              ),
+            },
+            organizerId,
+          );
+        } catch (error) {
+          // Verified and linked in Strapi either way; only the email is missing.
+          // Message only: the job data holds the one-time register link.
+          console.error(
+            `[organizer] CMS access email not queued for organizer ${organizerId}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
 
       // After the update both must be set. If not, the data is broken: fail loudly (500).
       if (!row.verifiedAt || !row.verifiedBy) {
@@ -138,5 +222,7 @@ export const organizerService = createOrganizerService({
   organizerRepository,
   createAccountSetupToken,
   enqueueAccountSetupEmail,
+  strapiClient: strapiOrganizerClient,
+  enqueueCmsAccessEmail,
   appUrl: env.APP_URL,
 });

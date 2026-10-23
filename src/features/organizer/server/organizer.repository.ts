@@ -63,6 +63,8 @@ export type VerifyOrganizerInfo = {
   organizerId: string;
   /** users.id of the admin, from the access token (never from the request). */
   verifierId: string;
+  /** Strapi admin user id, saved in the same UPDATE as the verification. */
+  cmsOrganizerId?: number;
 };
 
 export const organizerRepository = {
@@ -181,20 +183,27 @@ export const organizerRepository = {
    * Marks the organizer verified, then reads it back with both names (organizer and the
    * verifying admin). Returns null when the organizer does not exist.
    * Already verified → nothing is overwritten: the first verifier and time are kept.
+   * `justVerified` is true only for the call that actually verified it, so one-time
+   * follow-ups (the CMS access email) happen once even if two Verify clicks race.
    */
   async verifyOrganizer(input: VerifyOrganizerInfo) {
     return db.transaction(async (tx) => {
       // `verified_at IS NULL`: only an unverified organizer is updated (idempotent).
       // verifiedAt and verifiedBy are set together (the table's check constraint needs both).
-      await tx
+      const updated = await tx
         .update(organizerProfilesTable)
-        .set({ verifiedAt: new Date(), verifiedBy: input.verifierId })
+        .set({
+          verifiedAt: new Date(),
+          verifiedBy: input.verifierId,
+          cmsOrganizerId: input.cmsOrganizerId,
+        })
         .where(
           and(
             eq(organizerProfilesTable.id, input.organizerId),
             isNull(organizerProfilesTable.verifiedAt),
           ),
-        );
+        )
+        .returning({ id: organizerProfilesTable.id });
 
       // .returning() could only give organizer_profiles columns; the names live in users.
       const [row] = await tx
@@ -216,8 +225,23 @@ export const organizerRepository = {
         )
         .where(eq(organizerProfilesTable.id, input.organizerId));
 
-      return row ?? null;
+      return row ? { ...row, justVerified: updated.length > 0 } : null;
     });
+  },
+
+  /** What verifying needs before the Strapi call. null = no such organizer. */
+  async findForVerify(organizerId: string) {
+    const [row] = await db
+      .select({
+        email: usersTable.email,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        verifiedAt: organizerProfilesTable.verifiedAt,
+      })
+      .from(organizerProfilesTable)
+      .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+      .where(eq(organizerProfilesTable.id, organizerId));
+    return row ?? null;
   },
 };
 

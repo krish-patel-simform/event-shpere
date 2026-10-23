@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -146,6 +147,9 @@ export const organizerProfilesTable = pgTable(
     verifiedBy: uuid("verified_by").references(() => usersTable.id, {
       onDelete: "set null",
     }),
+    // Strapi admin-panel user id (Strapi ids are integers). Null until the background job
+    // has created the organizer's CMS account after verification.
+    cmsOrganizerId: integer("cms_organizer_id").unique(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -1,0 +1,2 @@
+ALTER TABLE "organizer_profiles" ADD COLUMN "cms_organizer_id" integer;--> statement-breakpoint
+ALTER TABLE "organizer_profiles" ADD CONSTRAINT "organizer_profiles_cms_organizer_id_unique" UNIQUE("cms_organizer_id");

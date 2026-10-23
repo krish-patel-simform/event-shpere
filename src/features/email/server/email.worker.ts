@@ -1,8 +1,12 @@
 import "server-only";
 import { Worker, type Job } from "bullmq";
 import { queueConnection } from "../../../core/redis/redis";
-import { accountSetupJobSchema } from "../schemas/email-jobs.schemas";
+import {
+  accountSetupJobSchema,
+  cmsAccessJobSchema,
+} from "../schemas/email-jobs.schemas";
 import { accountSetupEmail } from "../templates/account-setup.template";
+import { cmsAccessEmail } from "../templates/cms-access.template";
 import { EMAIL_QUEUE_NAME } from "./email.queue";
 import { sendEmail } from "./email.service";
 
@@ -13,6 +17,14 @@ export async function processEmailJob(job: Job): Promise<void> {
       const { to, ...data } = accountSetupJobSchema.parse(job.data);
       await sendEmail(
         { to, ...accountSetupEmail(data) },
+        { idempotencyKey: `${job.name}/${job.id}` },
+      );
+      return;
+    }
+    case "cms-access": {
+      const { to, ...data } = cmsAccessJobSchema.parse(job.data);
+      await sendEmail(
+        { to, ...cmsAccessEmail(data) },
         { idempotencyKey: `${job.name}/${job.id}` },
       );
       return;

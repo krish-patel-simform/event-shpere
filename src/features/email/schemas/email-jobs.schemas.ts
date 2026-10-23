@@ -10,8 +10,18 @@ export const accountSetupJobSchema = z.object({
 });
 export type AccountSetupJob = z.infer<typeof accountSetupJobSchema>;
 
+// After verification: the link to activate the organizer's Strapi (CMS) account.
+// registerUrl holds a one-time registration token: never log it.
+export const cmsAccessJobSchema = z.object({
+  to: z.email(),
+  firstName: z.string().min(1),
+  registerUrl: z.url(),
+});
+export type CmsAccessJob = z.infer<typeof cmsAccessJobSchema>;
+
 /** Every email job: name → data. Add a line here for each new email type. */
 export type EmailJobs = {
   "account-setup": AccountSetupJob;
+  "cms-access": CmsAccessJob;
 };
 export type EmailJobName = keyof EmailJobs;

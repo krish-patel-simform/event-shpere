@@ -23,11 +23,26 @@ function getEmailQueue(): Queue {
   return globalForQueue.emailQueue;
 }
 
-async function enqueue<N extends EmailJobName>(name: N, data: EmailJobs[N]) {
-  await getEmailQueue().add(name, data);
+async function enqueue<N extends EmailJobName>(
+  name: N,
+  data: EmailJobs[N],
+  options: { jobId?: string } = {},
+) {
+  await getEmailQueue().add(name, data, options);
 }
 
 /** Queued, not sent: the email worker process delivers it. Call only after the DB commit. */
 export function enqueueAccountSetupEmail(data: EmailJobs["account-setup"]) {
   return enqueue("account-setup", data);
+}
+
+/**
+ * One CMS access email per organizer: a fixed jobId makes BullMQ ignore a second add while
+ * the first is still queued (BullMQ ids cannot contain ":", hence "-").
+ */
+export function enqueueCmsAccessEmail(
+  data: EmailJobs["cms-access"],
+  organizerId: string,
+) {
+  return enqueue("cms-access", data, { jobId: `cms-access-${organizerId}` });
 }

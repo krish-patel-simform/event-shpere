@@ -71,6 +71,32 @@ describe("processEmailJob", () => {
   });
 });
 
+describe("processEmailJob: cms-access", () => {
+  const cmsData = {
+    to: "olga@acme.test",
+    firstName: "Olga",
+    registerUrl: "http://cms.test/admin/auth/register?registrationToken=abc",
+  };
+
+  it("sends the content-access email with the Strapi register link", async () => {
+    await processEmailJob(fakeJob("cms-access", cmsData, "cms-access-1"));
+
+    const [email, options] = send.mock.calls[0];
+    expect(email.to).toBe("olga@acme.test");
+    expect(email.html).toContain(cmsData.registerUrl);
+    expect(options).toEqual({ idempotencyKey: "cms-access/cms-access-1" });
+  });
+
+  it("rejects a non-URL register link: a bad job sends nothing", async () => {
+    await expect(
+      processEmailJob(
+        fakeJob("cms-access", { ...cmsData, registerUrl: "not a url" }),
+      ),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe("startEmailWorker", () => {
   it("listens on the email queue with the shared connection and a concurrency of 5", () => {
     startEmailWorker();

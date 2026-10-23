@@ -1,5 +1,9 @@
 import { Queue } from "bullmq";
-import { EMAIL_QUEUE_NAME, enqueueAccountSetupEmail } from "../email.queue";
+import {
+  EMAIL_QUEUE_NAME,
+  enqueueAccountSetupEmail,
+  enqueueCmsAccessEmail,
+} from "../email.queue";
 
 // No Redis: Queue is replaced, so these tests only check how the queue is set up and used.
 const mockAdd = jest.fn().mockResolvedValue(undefined);
@@ -28,7 +32,7 @@ describe("enqueueAccountSetupEmail", () => {
   it("adds an 'account-setup' job with the given data", async () => {
     await enqueueAccountSetupEmail(data);
 
-    expect(mockAdd).toHaveBeenCalledWith("account-setup", data);
+    expect(mockAdd).toHaveBeenCalledWith("account-setup", data, {});
   });
 
   it("does not create the queue (no Redis connection) until the first email is queued", () => {
@@ -67,5 +71,29 @@ describe("enqueueAccountSetupEmail", () => {
         defaultJobOptions: expect.objectContaining({ removeOnComplete: true }),
       }),
     );
+  });
+});
+
+describe("enqueueCmsAccessEmail", () => {
+  const cmsData = {
+    to: "olga@acme.test",
+    firstName: "Olga",
+    registerUrl: "http://cms.test/admin/auth/register?registrationToken=abc",
+  };
+  const organizerId = "0b7c2d1e-3f4a-4b5c-8d6e-7f8091a2b3c4";
+
+  it("adds a 'cms-access' job with one fixed id per organizer (no duplicates)", async () => {
+    await enqueueCmsAccessEmail(cmsData, organizerId);
+
+    expect(mockAdd).toHaveBeenCalledWith("cms-access", cmsData, {
+      jobId: `cms-access-${organizerId}`,
+    });
+  });
+
+  it("uses a job id without ':' (BullMQ rejects it in custom ids)", async () => {
+    await enqueueCmsAccessEmail(cmsData, organizerId);
+
+    const [, , options] = mockAdd.mock.calls[0] as [string, unknown, { jobId: string }];
+    expect(options.jobId).not.toContain(":");
   });
 });

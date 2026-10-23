@@ -1,4 +1,8 @@
-import { ConflictError, NotFoundError } from "../../../../core/http/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  ServiceUnavailableError,
+} from "../../../../core/http/errors";
 import { createOrganizerBodySchema } from "../../schemas/organizer.schemas";
 import {
   createOrganizerService,
@@ -10,6 +14,7 @@ jest.mock("../../../../config/env", () => ({ env: {} }));
 jest.mock("../organizer.repository", () => ({}));
 jest.mock("../../../auth/server", () => ({}));
 jest.mock("../../../email/server", () => ({}));
+jest.mock("../../../cms/server", () => ({}));
 
 const createdAt = new Date("2026-10-17T10:00:00.000Z");
 const user = {
@@ -46,6 +51,15 @@ const verifiedRow = {
   organizerLastName: "Organizer",
   verifiedAt: new Date("2026-10-19T09:00:00.000Z"),
   verifiedBy: "Ada Admin",
+  justVerified: true,
+};
+
+// What findForVerify returns for an organizer that is not verified yet.
+const unverifiedOrganizer = {
+  email: "olga@acme.test",
+  firstName: "Olga",
+  lastName: "Organizer",
+  verifiedAt: null,
 };
 
 const input = {
@@ -64,9 +78,20 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
         .mockResolvedValue({ ok: true, user, profile }),
       listOrganizers: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
+      findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
+    strapiClient: {
+      provisionOrganizerAccess: jest
+        .fn()
+        .mockResolvedValue({ id: 7, registrationToken: "reg-token" }),
+      registerUrl: jest.fn(
+        (token: string) =>
+          `http://cms.test/admin/auth/register?registrationToken=${token}`,
+      ),
+    },
+    enqueueCmsAccessEmail: jest.fn().mockResolvedValue(undefined),
     appUrl: "http://localhost:3000",
     ...overrides,
   } satisfies OrganizerServiceDeps;
@@ -129,6 +154,7 @@ describe("organizerService.createOrganizer", () => {
           .mockResolvedValue({ ok: false, reason: "EMAIL_TAKEN" }),
         listOrganizers: jest.fn(),
         verifyOrganizer: jest.fn(),
+        findForVerify: jest.fn(),
       },
     });
 
@@ -189,21 +215,43 @@ describe("createOrganizerBodySchema", () => {
 describe("organizerService.verifyOrganizer", () => {
   const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
 
-  it("passes the organizer id and the admin id (from the token) to the repository", async () => {
+  // Repository with verifyOrganizer/findForVerify answers swapped, the rest unused.
+  function repoWith(
+    overrides: Partial<OrganizerServiceDeps["organizerRepository"]>,
+  ) {
+    return {
+      createOrganizerAccount: jest.fn(),
+      listOrganizers: jest.fn(),
+      verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
+      findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
+      ...overrides,
+    };
+  }
+
+  it("creates the Strapi user first, then saves its id in the same verify update", async () => {
     const { deps, service } = setup();
 
     await service.verifyOrganizer(profile.id, adminId);
 
+    expect(deps.strapiClient.provisionOrganizerAccess).toHaveBeenCalledWith({
+      email: "olga@acme.test",
+      firstName: "Olga",
+      lastName: "Organizer",
+    });
+    // The admin id comes from the token (currentUser.id), never from the request.
     expect(deps.organizerRepository.verifyOrganizer).toHaveBeenCalledWith({
       organizerId: profile.id,
       verifierId: adminId,
+      cmsOrganizerId: 7,
     });
   });
 
-  it("returns the organizer with an ISO date and the verifier's name", async () => {
+  it("returns the organizer with an ISO date and the verifier's name, without CMS secrets", async () => {
     const { service } = setup();
 
-    expect(await service.verifyOrganizer(profile.id, adminId)).toEqual({
+    const result = await service.verifyOrganizer(profile.id, adminId);
+
+    expect(result).toEqual({
       organizerId: profile.id,
       organizationName: "Acme Events",
       organizerFirstName: "Olga",
@@ -211,14 +259,58 @@ describe("organizerService.verifyOrganizer", () => {
       verifiedAt: "2026-10-19T09:00:00.000Z",
       verifiedBy: "Ada Admin",
     });
+    expect(JSON.stringify(result)).not.toContain("reg-token");
   });
 
-  it("returns 404 for an unknown organizer", async () => {
-    const { service } = setup({
-      organizerRepository: {
-        createOrganizerAccount: jest.fn(),
-        listOrganizers: jest.fn(),
-        verifyOrganizer: jest.fn().mockResolvedValue(null),
+  it("queues the content-access email with the Strapi register link", async () => {
+    const { deps, service } = setup();
+
+    await service.verifyOrganizer(profile.id, adminId);
+
+    expect(deps.enqueueCmsAccessEmail).toHaveBeenCalledWith(
+      {
+        to: "olga@acme.test",
+        firstName: "Olga",
+        registerUrl:
+          "http://cms.test/admin/auth/register?registrationToken=reg-token",
+      },
+      profile.id,
+    );
+  });
+
+  it("does not call Strapi or send an email when the organizer is already verified", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        findForVerify: jest.fn().mockResolvedValue({
+          ...unverifiedOrganizer,
+          verifiedAt: verifiedRow.verifiedAt,
+        }),
+        verifyOrganizer: jest
+          .fn()
+          .mockResolvedValue({ ...verifiedRow, justVerified: false }),
+      }),
+    });
+
+    const result = await service.verifyOrganizer(profile.id, adminId);
+
+    expect(result.verifiedBy).toBe("Ada Admin");
+    expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
+    expect(deps.organizerRepository.verifyOrganizer).toHaveBeenCalledWith({
+      organizerId: profile.id,
+      verifierId: adminId,
+      cmsOrganizerId: undefined,
+    });
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 and saves nothing when Strapi is unavailable", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const { deps, service } = setup({
+      strapiClient: {
+        provisionOrganizerAccess: jest
+          .fn()
+          .mockRejectedValue(new Error("fetch failed")),
+        registerUrl: jest.fn(),
       },
     });
 
@@ -226,6 +318,73 @@ describe("organizerService.verifyOrganizer", () => {
       .verifyOrganizer(profile.id, adminId)
       .catch((e: unknown) => e);
 
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect(error).toMatchObject({ status: 503, code: "CMS_UNAVAILABLE" });
+    expect(deps.organizerRepository.verifyOrganizer).not.toHaveBeenCalled();
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("sends no email when another click verified it first (lost the race)", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        verifyOrganizer: jest
+          .fn()
+          .mockResolvedValue({ ...verifiedRow, justVerified: false }),
+      }),
+    });
+
+    await service.verifyOrganizer(profile.id, adminId);
+
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+  });
+
+  it("sends no email when the organizer already registered in Strapi (no token)", async () => {
+    const { deps, service } = setup({
+      strapiClient: {
+        provisionOrganizerAccess: jest
+          .fn()
+          .mockResolvedValue({ id: 7, registrationToken: null }),
+        registerUrl: jest.fn(),
+      },
+    });
+
+    await service.verifyOrganizer(profile.id, adminId);
+
+    expect(deps.organizerRepository.verifyOrganizer).toHaveBeenCalledWith(
+      expect.objectContaining({ cmsOrganizerId: 7 }),
+    );
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+  });
+
+  it("still verifies when the email cannot be queued, and never logs the link", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const { service } = setup({
+      enqueueCmsAccessEmail: jest
+        .fn()
+        .mockRejectedValue(new Error("Redis down")),
+    });
+
+    const result = await service.verifyOrganizer(profile.id, adminId);
+
+    expect(result.verifiedBy).toBe("Ada Admin");
+    expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain("reg-token");
+    log.mockRestore();
+  });
+
+  it("returns 404 for an unknown organizer without calling Strapi", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        findForVerify: jest.fn().mockResolvedValue(null),
+      }),
+    });
+
+    const error = await service
+      .verifyOrganizer(profile.id, adminId)
+      .catch((e: unknown) => e);
+
     expect(error).toBeInstanceOf(NotFoundError);
+    expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
   });
 });
