@@ -2,6 +2,7 @@
 // need (useMe). Never export anything from ./server here.
 export {
   accountSetupBodySchema,
+  emailSchema,
   forgotPasswordBodySchema,
   loginResponseSchema,
   loginBodySchema,
