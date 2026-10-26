@@ -1,12 +1,23 @@
 import "server-only";
-import { DrizzleQueryError, eq } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  DrizzleQueryError,
+  eq,
+  ilike,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { db } from "../../../db/dbClient";
+import { escapeLike } from "../../../db/escape-like";
 import {
   authTokensTable,
   rolesTable,
   speakersProfilesTable,
   userRolesTable,
   usersTable,
+  type User,
 } from "../../../db/schemas";
 
 /**
@@ -33,22 +44,182 @@ export type NewSpeakerAccount = {
   lastName: string;
   email: string;
   slug: string;
-  /** Strapi documentId of the draft Speaker entry, created before this insert. */
+  /** Strapi documentId of the Speaker entry, created before this insert. */
   cmsSpeakerId: string;
   /** users.id of the organizer/admin who invited the speaker (from the access token). */
   createdBy: string;
   setupToken: { tokenHash: string; expiresAt: Date };
 };
 
+/** A speaker found by email: basic Postgres data, nothing from the CMS. */
+export type ExistingSpeakerRow = {
+  /** speaker_profiles.id */
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  slug: string;
+  status: User["status"];
+};
+
+/** What the public reads need from Postgres; the rest of the profile comes from the CMS. */
+export type SpeakerRow = {
+  slug: string;
+  firstName: string;
+  lastName: string;
+  /** Strapi documentId; null if the CMS entry was never linked. */
+  cmsSpeakerId: string | null;
+};
+
+const speakerRowColumns = {
+  slug: speakersProfilesTable.slug,
+  firstName: usersTable.firstName,
+  lastName: usersTable.lastName,
+  cmsSpeakerId: speakersProfilesTable.cmsSpeakerId,
+};
+
+/** The logged-in speaker's own profile row (found by their user id, never by a request id). */
+export type OwnSpeakerRow = SpeakerRow & {
+  /** speaker_profiles.id */
+  id: string;
+};
+
+// Suspended accounts are not shown publicly. Pending (invited, no password yet) are:
+// a speaker is usable as soon as an organizer adds them.
+const isPubliclyVisible = ne(usersTable.status, "suspended");
+
 export const speakerRepository = {
-  /** True when any account (any role) already uses this email. */
-  async emailExists(email: string): Promise<boolean> {
+  /**
+   * One page of public speakers, sorted by name, plus the matching total.
+   * `search` matches anywhere in "first last", case-insensitive, as a bound parameter.
+   */
+  async listSpeakers(params: {
+    search?: string;
+    limit: number;
+    offset: number;
+  }): Promise<{ rows: SpeakerRow[]; total: number }> {
+    const where = and(
+      isPubliclyVisible,
+      params.search
+        ? ilike(
+            sql`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+            `%${escapeLike(params.search)}%`,
+          )
+        : undefined,
+    );
+
+    const [rows, [{ total }]] = await Promise.all([
+      db
+        .select(speakerRowColumns)
+        .from(speakersProfilesTable)
+        .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+        .where(where)
+        // id breaks ties, so paging never shows a row twice or skips one.
+        .orderBy(
+          asc(usersTable.firstName),
+          asc(usersTable.lastName),
+          asc(speakersProfilesTable.id),
+        )
+        .limit(params.limit)
+        .offset(params.offset),
+      // Same join + same where as the page, so `total` counts exactly the matches.
+      db
+        .select({ total: count() })
+        .from(speakersProfilesTable)
+        .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+        .where(where),
+    ]);
+    return { rows, total };
+  },
+
+  /**
+   * The account behind a slug, for re-sending the invite. Unlike findBySlug it does NOT
+   * hide suspended accounts: the invite service answers those with a clear 409 instead.
+   */
+  async findInviteeBySlug(slug: string): Promise<{ userId: string } | null> {
     const [row] = await db
-      .select({ id: usersTable.id })
+      .select({ userId: speakersProfilesTable.userId })
+      .from(speakersProfilesTable)
+      .where(eq(speakersProfilesTable.slug, slug))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /** The speaker profile of this user; null = the user is not a speaker. */
+  async findOwnSpeaker(userId: string): Promise<OwnSpeakerRow | null> {
+    const [row] = await db
+      .select({ id: speakersProfilesTable.id, ...speakerRowColumns })
+      .from(speakersProfilesTable)
+      .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+      .where(eq(speakersProfilesTable.userId, userId))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /** Renames the user. One UPDATE on one table, so no transaction is needed. */
+  async updateNames(
+    userId: string,
+    names: { firstName: string; lastName: string },
+  ): Promise<void> {
+    await db
+      .update(usersTable)
+      .set({ firstName: names.firstName, lastName: names.lastName })
+      .where(eq(usersTable.id, userId));
+  },
+
+  /** Links (or re-links) the profile to its Strapi entry. */
+  async setCmsSpeakerId(speakerId: string, documentId: string): Promise<void> {
+    await db
+      .update(speakersProfilesTable)
+      .set({ cmsSpeakerId: documentId })
+      .where(eq(speakersProfilesTable.id, speakerId));
+  },
+
+  /** One public speaker by slug; null = no such (visible) speaker. */
+  async findBySlug(slug: string): Promise<SpeakerRow | null> {
+    const [row] = await db
+      .select(speakerRowColumns)
+      .from(speakersProfilesTable)
+      .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+      .where(and(eq(speakersProfilesTable.slug, slug), isPubliclyVisible))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /**
+   * Who already uses this email. null = nobody (free to invite).
+   * `speaker` is set when that account has a speaker profile; null = another role
+   * (user, organizer, admin).
+   */
+  async findAccountByEmail(
+    email: string,
+  ): Promise<{ speaker: ExistingSpeakerRow | null } | null> {
+    const [row] = await db
+      .select({
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        email: usersTable.email,
+        status: usersTable.status,
+        // LEFT join: null for accounts that are not speakers.
+        speakerId: speakersProfilesTable.id,
+        slug: speakersProfilesTable.slug,
+      })
       .from(usersTable)
+      .leftJoin(
+        speakersProfilesTable,
+        eq(speakersProfilesTable.userId, usersTable.id),
+      )
       .where(eq(usersTable.email, email))
       .limit(1);
-    return row !== undefined;
+    if (!row) return null;
+
+    const { speakerId, slug, ...user } = row;
+    return {
+      speaker:
+        speakerId !== null && slug !== null
+          ? { id: speakerId, slug, ...user }
+          : null,
+    };
   },
 
   /**
@@ -100,7 +271,7 @@ export const speakerRepository = {
       });
       return { ok: true as const, ...row };
     } catch (error) {
-      // Two invites for the same email at once: emailExists passed for both, the DB stops one.
+      // Two invites for the same email at once: the lookup passed for both, the DB stops one.
       // Other unique clashes (slug, cms id) are not the caller's fault: let them be a 500.
       if (violatedUniqueConstraint(error) === "users_email_unique")
         return { ok: false as const, reason: "EMAIL_TAKEN" as const };
