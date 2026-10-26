@@ -5,7 +5,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { authApiService } from "@/src/features/auth/api/auth-api.service";
-import { authQueryKeys, type MeDto } from "@/src/features/auth";
+import {
+  authQueryKeys,
+  useHasPermission,
+  type MeDto,
+} from "@/src/features/auth";
 import { DashboardSession } from "../DashboardSession";
 
 const mockReplace = jest.fn();
@@ -71,6 +75,33 @@ describe("DashboardSession", () => {
     expect(screen.getAllByText("Organizer").length).toBeGreaterThan(0);
     expect(getMe).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("gives the page the user's permissions without loading the user again", async () => {
+    function PermissionProbe() {
+      const canCreate = useHasPermission("EVENT_CREATE");
+      const canViewUsers = useHasPermission("USER_VIEW");
+      return (
+        <p>
+          create:{String(canCreate)} users:{String(canViewUsers)}
+        </p>
+      );
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DashboardSession>
+          <PermissionProbe />
+        </DashboardSession>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText("create:true users:false"),
+    ).toBeInTheDocument();
+    expect(getMe).toHaveBeenCalledTimes(1);
   });
 
   it("nobody signed in (401): goes to log in and never shows the page content", async () => {

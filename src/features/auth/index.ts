@@ -35,6 +35,16 @@ export { AUTH_ROUTES } from "./routes";
 export { authQueryKeys, useMe } from "./hooks/useMe";
 export { useLogout } from "./hooks/useLogout";
 export {
+  PermissionProvider,
+  type PermissionContextValue,
+} from "./components/PermissionProvider";
+export {
+  useHasAllPermissions,
+  useHasAnyPermission,
+  useHasPermission,
+  usePermissions,
+} from "./hooks/usePermissions";
+export {
   ACCOUNT_SETUP_RESEND_COOLDOWN_SECONDS,
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
   PASSWORD_REGEX,

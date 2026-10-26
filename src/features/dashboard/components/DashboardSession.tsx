@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { Alert, Button } from "@/src/core/ui";
-import { AUTH_ROUTES, useLogout, useMe } from "@/src/features/auth";
+import {
+  AUTH_ROUTES,
+  PermissionProvider,
+  useLogout,
+  useMe,
+} from "@/src/features/auth";
 import { roleLabel } from "../utils/role-label";
 import { DashboardShell } from "./DashboardShell";
 
@@ -79,17 +84,21 @@ export function DashboardSession({ children }: { children: ReactNode }) {
 
   if (isPending) return <SessionLoading label="Loading" />;
 
+  // Only here, once the user has loaded: the provider shares this useMe cache entry (no second
+  // request), and it unmounts on the screens above, so it never fetches /me after logout.
   return (
-    <DashboardShell
-      user={{
-        name: `${me.firstName} ${me.lastName}`,
-        roleLabel: roleLabel(me.role),
-      }}
-      onLogout={handleLogout}
-      isLoggingOut={logout.isPending}
-      logoutFailed={logout.isError}
-    >
-      {children}
-    </DashboardShell>
+    <PermissionProvider>
+      <DashboardShell
+        user={{
+          name: `${me.firstName} ${me.lastName}`,
+          roleLabel: roleLabel(me.role),
+        }}
+        onLogout={handleLogout}
+        isLoggingOut={logout.isPending}
+        logoutFailed={logout.isError}
+      >
+        {children}
+      </DashboardShell>
+    </PermissionProvider>
   );
 }
