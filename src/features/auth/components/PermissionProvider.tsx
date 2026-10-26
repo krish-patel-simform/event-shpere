@@ -12,6 +12,8 @@ import {
 export type PermissionContextValue = {
   /** True until GET /api/auth/me has answered once. Every check is false meanwhile. */
   isLoading: boolean;
+  /** GET /api/auth/me answered 401: nobody is signed in. False while loading and after other errors. */
+  isGuest: boolean;
   hasPermission: (code: PermissionCode) => boolean;
   hasAnyPermission: (codes: readonly PermissionCode[]) => boolean;
   hasAllPermissions: (codes: readonly PermissionCode[]) => boolean;
@@ -28,24 +30,28 @@ export const PermissionContext = createContext<
  * the API checks every permission again.
  */
 export function PermissionProvider({ children }: { children: ReactNode }) {
-  const { data: me, isPending } = useMe({ refetchOnMount: false });
+  const { data: me, isPending, error } = useMe({ refetchOnMount: false });
+  const isGuest = error?.status === 401;
 
-  // No user (loading, failed, signed out) = empty set, so every check is false.
+  // No user (loading, failed, guest) = empty set, so every check is false. A refetch that ends
+  // in 401 (session expired) keeps the old `me` in the cache, so a guest must ignore it.
+  const permissions = isGuest ? undefined : me?.permissions;
   const permissionCodes = useMemo(
-    () => new Set(me?.permissions ?? []),
-    [me?.permissions],
+    () => new Set(permissions ?? []),
+    [permissions],
   );
 
   // A stable value, so consumers re-render only when the permissions change.
   const value = useMemo<PermissionContextValue>(
     () => ({
       isLoading: isPending,
+      isGuest,
       hasPermission: (code) => hasPermissionCode(permissionCodes, code),
       hasAnyPermission: (codes) => hasAnyPermissionCode(permissionCodes, codes),
       hasAllPermissions: (codes) =>
         hasAllPermissionCodes(permissionCodes, codes),
     }),
-    [isPending, permissionCodes],
+    [isPending, isGuest, permissionCodes],
   );
 
   return (

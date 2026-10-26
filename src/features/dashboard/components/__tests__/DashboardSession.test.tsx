@@ -8,6 +8,7 @@ import { authApiService } from "@/src/features/auth/api/auth-api.service";
 import {
   authQueryKeys,
   useHasPermission,
+  usePermissions,
   type MeDto,
 } from "@/src/features/auth";
 import { DashboardSession } from "../DashboardSession";
@@ -104,18 +105,53 @@ describe("DashboardSession", () => {
     expect(getMe).toHaveBeenCalledTimes(1);
   });
 
-  it("nobody signed in (401): goes to log in and never shows the page content", async () => {
+  it("nobody signed in (401) is a guest: the page shows with log in / sign up, no redirect", async () => {
     getMe.mockRejectedValue(
       new ApiError(401, "UNAUTHENTICATED", "Not signed in"),
     );
     renderSession();
 
+    expect(await screen.findByText("Page content")).toBeInTheDocument();
     expect(
-      await screen.findByRole("status", { name: "Redirecting to log in" }),
-    ).toBeInTheDocument();
-    expect(mockReplace).toHaveBeenCalledWith("/login");
-    expect(screen.queryByText("Page content")).not.toBeInTheDocument();
+      screen.getAllByRole("link", { name: "Log in", hidden: true }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "Log out", hidden: true }),
+    ).not.toBeInTheDocument();
+    // A guest is not a failure: no "couldn't load your account" error.
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+    // The provider reuses the cached 401 instead of asking again.
+    expect(getMe).toHaveBeenCalledTimes(1);
+  });
+
+  it("a guest's page sees isGuest and no permissions", async () => {
+    getMe.mockRejectedValue(
+      new ApiError(401, "UNAUTHENTICATED", "Not signed in"),
+    );
+    function GuestProbe() {
+      const { isGuest } = usePermissions();
+      const canCreate = useHasPermission("EVENT_CREATE");
+      return (
+        <p>
+          guest:{String(isGuest)} create:{String(canCreate)}
+        </p>
+      );
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DashboardSession>
+          <GuestProbe />
+        </DashboardSession>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText("guest:true create:false"),
+    ).toBeInTheDocument();
   });
 
   it("a network failure shows an error with 'Try again' and no page content", async () => {

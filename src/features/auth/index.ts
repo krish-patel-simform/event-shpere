@@ -38,6 +38,7 @@ export {
   PermissionProvider,
   type PermissionContextValue,
 } from "./components/PermissionProvider";
+export { PermissionGate } from "./components/PermissionGate";
 export {
   useHasAllPermissions,
   useHasAnyPermission,

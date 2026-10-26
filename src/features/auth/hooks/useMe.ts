@@ -13,8 +13,8 @@ export const authQueryKeys = { me: ["auth", "me"] } as const;
  * Pass `enabled: false` once the session is known to be over (just logged out), so the query is
  * not fetched again by a component that is still on screen.
  * Pass `refetchOnMount: false` from a component that only reads the user someone else loaded
- * (PermissionProvider): it reuses the cached user instead of fetching it again when it mounts,
- * and still fetches when nothing is cached yet.
+ * (PermissionProvider): it reuses the cached user, or the cached 401 of a guest, instead of
+ * fetching it again when it mounts, and still fetches when nothing is cached yet.
  */
 export function useMe({
   enabled = true,
@@ -25,5 +25,8 @@ export function useMe({
     queryFn: authApiService.getMe,
     enabled,
     refetchOnMount,
+    // refetchOnMount only covers cached data; a cached error (guest: 401) is retried on mount
+    // unless retryOnMount is off too.
+    retryOnMount: refetchOnMount,
   });
 }

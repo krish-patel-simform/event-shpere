@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
-import { OrganizerReviewStatus, type OrganizerApplication } from "@/src/features/dashboard";
+import { PermissionGate } from "@/src/features/auth";
+import {
+  OrganizerReviewStatus,
+  type OrganizerApplication,
+} from "@/src/features/dashboard";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -14,6 +18,11 @@ const SAMPLE_APPLICATION: OrganizerApplication = {
   emailVerifiedAt: "2026-10-20T11:30:00Z",
 };
 
+// Private page: any signed-in user. A guest who opens the URL sees "log in to continue".
 export default function DashboardPage() {
-  return <OrganizerReviewStatus application={SAMPLE_APPLICATION} />;
+  return (
+    <PermissionGate>
+      <OrganizerReviewStatus application={SAMPLE_APPLICATION} />
+    </PermissionGate>
+  );
 }

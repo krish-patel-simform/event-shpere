@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Alert, Button } from "@/src/core/ui";
 import {
   AUTH_ROUTES,
@@ -29,8 +29,9 @@ function SessionLoading({ label }: { label: string }) {
 }
 
 /**
- * Loads the signed-in user (GET /api/auth/me) and shows the dashboard shell with them. Nobody
- * signed in (401) goes to the log-in page; any other failure keeps the page and offers a retry.
+ * Loads the user (GET /api/auth/me) and shows the shell with them. Nobody signed in (401) is a
+ * guest: the shell shows log in / sign up, public pages work, and private pages are closed by
+ * their PermissionGate. Any other failure offers a retry.
  */
 export function DashboardSession({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -44,23 +45,18 @@ export function DashboardSession({ children }: { children: ReactNode }) {
     refetch,
     isRefetching,
   } = useMe({ enabled: !logout.isSuccess });
-  const signedOut = error?.status === 401;
+  const isGuest = error?.status === 401;
 
   const handleLogout = () =>
     logout.mutate(undefined, {
       onSuccess: () => router.replace(AUTH_ROUTES.login),
     });
 
-  useEffect(() => {
-    if (signedOut) router.replace(AUTH_ROUTES.login);
-  }, [signedOut, router]);
-
   // Logged out: show nothing of the signed-in area while the redirect to log in happens.
   if (logout.isSuccess) return <SessionLoading label="Signing out" />;
 
-  if (signedOut) return <SessionLoading label="Redirecting to log in" />;
-
-  if (error) {
+  // A 401 is not a failure: it is a guest, shown below.
+  if (error && !isGuest) {
     return (
       <div className="grid min-h-dvh place-items-center bg-canvas p-4">
         <Alert
@@ -84,15 +80,20 @@ export function DashboardSession({ children }: { children: ReactNode }) {
 
   if (isPending) return <SessionLoading label="Loading" />;
 
-  // Only here, once the user has loaded: the provider shares this useMe cache entry (no second
-  // request), and it unmounts on the screens above, so it never fetches /me after logout.
+  // Only here, once /me has answered (user or guest): the provider reuses this cache entry (no
+  // second request), and it unmounts on the screens above, so it never fetches /me after logout.
+  // A 401 after a refetch keeps the old `me` in the cache: a guest must not show it.
   return (
     <PermissionProvider>
       <DashboardShell
-        user={{
-          name: `${me.firstName} ${me.lastName}`,
-          roleLabel: roleLabel(me.role),
-        }}
+        user={
+          me && !isGuest
+            ? {
+                name: `${me.firstName} ${me.lastName}`,
+                roleLabel: roleLabel(me.role),
+              }
+            : null
+        }
         onLogout={handleLogout}
         isLoggingOut={logout.isPending}
         logoutFailed={logout.isError}

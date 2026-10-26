@@ -3,15 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/src/core/ui";
-import { NAV_SECTIONS } from "../nav-items";
+import { usePermissions } from "@/src/features/auth";
+import { NAV_SECTIONS, type NavAccess } from "../nav-items";
 
-/** The menu links. The page you are on is highlighted and marked aria-current="page". */
+/**
+ * The menu links the user may open (a guest sees only the public ones). The page you are on
+ * is highlighted and marked aria-current="page".
+ */
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { isGuest, hasPermission } = usePermissions();
+
+  const canSee = (access: NavAccess) =>
+    access === "public" ||
+    (access === "signed-in" ? !isGuest : hasPermission(access));
+
+  // A section whose links are all hidden is dropped, so no empty heading is left.
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canSee(item.access)),
+  })).filter((section) => section.items.length > 0);
 
   return (
     <nav aria-label="Main" className="space-y-5">
-      {NAV_SECTIONS.map((section, index) => (
+      {sections.map((section, index) => (
         <div key={section.heading ?? index} className="space-y-1">
           {section.heading && (
             <p className="px-3 text-xs font-semibold uppercase tracking-wider text-muted">
@@ -20,7 +35,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           )}
           <ul className="space-y-0.5">
             {section.items.map(({ label, href, icon: Icon }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
+              const active =
+                pathname === href || pathname.startsWith(`${href}/`);
               return (
                 <li key={href}>
                   <Link

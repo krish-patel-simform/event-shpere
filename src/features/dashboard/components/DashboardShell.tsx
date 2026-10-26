@@ -3,7 +3,15 @@
 import { Bell, LogOut, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRef, type ReactNode } from "react";
-import { Alert, Avatar, Logo, ThemeToggle } from "@/src/core/ui";
+import {
+  Alert,
+  Avatar,
+  buttonStyles,
+  cn,
+  Logo,
+  ThemeToggle,
+} from "@/src/core/ui";
+import { AUTH_ROUTES } from "@/src/features/auth";
 import { SidebarNav } from "./SidebarNav";
 
 export type DashboardUser = {
@@ -26,7 +34,7 @@ function SidebarContent({
   onNavigate,
   onLogout,
   isLoggingOut,
-}: { user: DashboardUser; onNavigate?: () => void } & Pick<
+}: { user: DashboardUser | null; onNavigate?: () => void } & Pick<
   LogoutProps,
   "onLogout" | "isLoggingOut"
 >) {
@@ -38,31 +46,51 @@ function SidebarContent({
       <div className="flex-1 overflow-y-auto">
         <SidebarNav onNavigate={onNavigate} />
       </div>
-      <div className="flex items-center gap-3 border-t border-line pt-4">
-        <Avatar name={user.name} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{user.name}</p>
-          <p className="text-xs text-muted">{user.roleLabel}</p>
+      {user ? (
+        <div className="flex items-center gap-3 border-t border-line pt-4">
+          <Avatar name={user.name} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{user.name}</p>
+            <p className="text-xs text-muted">{user.roleLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={isLoggingOut}
+            aria-busy={isLoggingOut || undefined}
+            aria-label="Log out"
+            title="Log out"
+            className="rounded-md p-2 text-muted hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <LogOut aria-hidden="true" className="size-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onLogout}
-          disabled={isLoggingOut}
-          aria-busy={isLoggingOut || undefined}
-          aria-label="Log out"
-          title="Log out"
-          className="rounded-md p-2 text-muted hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <LogOut aria-hidden="true" className="size-4" />
-        </button>
-      </div>
+      ) : (
+        <div className="flex gap-2 border-t border-line pt-4">
+          <Link
+            href={AUTH_ROUTES.login}
+            onClick={onNavigate}
+            className={buttonStyles({ fullWidth: true })}
+          >
+            Log in
+          </Link>
+          <Link
+            href={AUTH_ROUTES.signup}
+            onClick={onNavigate}
+            className={buttonStyles({ variant: "secondary", fullWidth: true })}
+          >
+            Sign up
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * Layout of the signed-in area: side menu (a slide-in drawer below `lg`), top bar with
- * search, notifications and the user, and the page content.
+ * Layout of the app: side menu (a slide-in drawer below `lg`), top bar with search,
+ * notifications and the user, and the page content. `user: null` is a guest: log in and
+ * sign up links instead of the user, notifications and log out.
  */
 export function DashboardShell({
   user,
@@ -71,7 +99,7 @@ export function DashboardShell({
   logoutFailed,
   children,
 }: {
-  user: DashboardUser;
+  user: DashboardUser | null;
   children: ReactNode;
 } & LogoutProps) {
   // The drawer is a native <dialog>: the browser gives it a focus trap and the Escape key.
@@ -145,14 +173,25 @@ export function DashboardShell({
 
           <div className="ml-auto flex items-center gap-3">
             <ThemeToggle />
-            <Link
-              href="/notifications"
-              aria-label="Notifications"
-              className="rounded-md border border-field p-2 text-muted hover:bg-surface-subtle"
-            >
-              <Bell aria-hidden="true" className="size-4" />
-            </Link>
-            <Avatar name={user.name} />
+            {user ? (
+              <>
+                <Link
+                  href="/notifications"
+                  aria-label="Notifications"
+                  className="rounded-md border border-field p-2 text-muted hover:bg-surface-subtle"
+                >
+                  <Bell aria-hidden="true" className="size-4" />
+                </Link>
+                <Avatar name={user.name} />
+              </>
+            ) : (
+              <Link
+                href={AUTH_ROUTES.login}
+                className={cn(buttonStyles(), "hidden sm:inline-flex")}
+              >
+                Log in
+              </Link>
+            )}
           </div>
         </header>
 

@@ -1,14 +1,70 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement, ReactNode } from "react";
+import { ApiError } from "@/src/core/api-client/base-api.service";
 import { getInitials } from "@/src/core/ui";
+import { authApiService } from "@/src/features/auth/api/auth-api.service";
+import {
+  authQueryKeys,
+  PermissionProvider,
+  type MeDto,
+} from "@/src/features/auth";
 import { DashboardShell } from "../DashboardShell";
 
 let mockPathname = "/dashboard";
 jest.mock("next/navigation", () => ({ usePathname: () => mockPathname }));
+jest.mock("@/src/features/auth/api/auth-api.service", () => ({
+  authApiService: { getMe: jest.fn() },
+}));
+const getMe = jest.mocked(authApiService.getMe);
 
 const user = { name: "Ananya Rao", roleLabel: "Attendee · organizer pending" };
+const me: MeDto = {
+  id: "0b0f6a1e-6a0d-4f6e-9a55-1f6f2f0f9a11",
+  firstName: "Ananya",
+  lastName: "Rao",
+  email: "ananya@example.com",
+  role: "user",
+  permissions: [
+    "REGISTRATION_VIEW_OWN",
+    "SCHEDULE_MANAGE",
+    "NOTIFICATION_VIEW",
+    "PROFILE_VIEW",
+  ],
+};
+
+// The side menu reads permissions (usePermissions), so the shell needs a PermissionProvider.
+// The user is put in the cache first: the provider reuses it and makes no request.
+function SignedIn({ children }: { children: ReactNode }) {
+  const client = new QueryClient();
+  client.setQueryData(authQueryKeys.me, me);
+  return (
+    <QueryClientProvider client={client}>
+      <PermissionProvider>{children}</PermissionProvider>
+    </QueryClientProvider>
+  );
+}
+
+function Guest({ children }: { children: ReactNode }) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <PermissionProvider>{children}</PermissionProvider>
+    </QueryClientProvider>
+  );
+}
+
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: SignedIn });
 // The logout props when nothing is happening: not logging out, nothing failed.
 const idle = {
   onLogout: jest.fn(),
@@ -27,6 +83,10 @@ beforeAll(() => {
 });
 beforeEach(() => {
   mockPathname = "/dashboard";
+  getMe.mockReset();
+  getMe.mockRejectedValue(
+    new ApiError(401, "UNAUTHENTICATED", "Not signed in"),
+  );
 });
 
 describe("getInitials", () => {
@@ -39,6 +99,41 @@ describe("getInitials", () => {
 });
 
 describe("DashboardShell", () => {
+  it("a guest (user: null) gets log in / sign up instead of the user, notifications and log out", async () => {
+    rtlRender(
+      <DashboardShell user={null} {...idle}>
+        <p>Page content</p>
+      </DashboardShell>,
+      { wrapper: Guest },
+    );
+
+    // The menu keeps only the public links once the provider knows it is a guest.
+    const nav = screen.getAllByRole("navigation", { name: "Main" })[0];
+    await waitFor(() =>
+      expect(
+        within(nav).queryByRole("link", { name: "Dashboard" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Speakers" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Page content")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("banner")).getByRole("link", { name: "Log in" }),
+    ).toHaveAttribute("href", "/login");
+    expect(
+      screen.getAllByRole("link", { name: "Sign up", hidden: true })[0],
+    ).toHaveAttribute("href", "/signup");
+    expect(
+      within(screen.getByRole("banner")).queryByRole("link", {
+        name: "Notifications",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Log out", hidden: true }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the user, the page content, search and notifications", () => {
     render(
       <DashboardShell user={user} {...idle}>
