@@ -79,9 +79,16 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
       listOrganizers: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
       findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
+      findInviteeById: jest.fn().mockResolvedValue({ userId: user.id }),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
+    accountInviteService: {
+      resendAccountSetup: jest.fn().mockResolvedValue({
+        setupEmailQueued: true,
+        expiresAt: "2026-10-26T10:00:00.000Z",
+      }),
+    },
     strapiClient: {
       provisionOrganizerAccess: jest
         .fn()
@@ -155,6 +162,7 @@ describe("organizerService.createOrganizer", () => {
         listOrganizers: jest.fn(),
         verifyOrganizer: jest.fn(),
         findForVerify: jest.fn(),
+        findInviteeById: jest.fn(),
       },
     });
 
@@ -224,6 +232,7 @@ describe("organizerService.verifyOrganizer", () => {
       listOrganizers: jest.fn(),
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
       findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
+      findInviteeById: jest.fn(),
       ...overrides,
     };
   }
@@ -386,5 +395,52 @@ describe("organizerService.verifyOrganizer", () => {
 
     expect(error).toBeInstanceOf(NotFoundError);
     expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("organizerService.resendInvite", () => {
+  it("finds the organizer's account and re-sends the invite to it", async () => {
+    const { deps, service } = setup();
+
+    const result = await service.resendInvite(profile.id);
+
+    expect(deps.organizerRepository.findInviteeById).toHaveBeenCalledWith(
+      profile.id,
+    );
+    expect(deps.accountInviteService.resendAccountSetup).toHaveBeenCalledWith(
+      user.id,
+    );
+    expect(result).toEqual({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-26T10:00:00.000Z",
+    });
+  });
+
+  it("returns 404 for an unknown organizer without sending anything", async () => {
+    const { deps, service } = setup({
+      organizerRepository: {
+        createOrganizerAccount: jest.fn(),
+        listOrganizers: jest.fn(),
+        verifyOrganizer: jest.fn(),
+        findForVerify: jest.fn(),
+        findInviteeById: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    await expect(service.resendInvite(profile.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    expect(deps.accountInviteService.resendAccountSetup).not.toHaveBeenCalled();
+  });
+
+  it("passes the invite service's answer on (e.g. 409 already active)", async () => {
+    const alreadyActive = new ConflictError("ACCOUNT_ALREADY_ACTIVE", "done");
+    const { service } = setup({
+      accountInviteService: {
+        resendAccountSetup: jest.fn().mockRejectedValue(alreadyActive),
+      },
+    });
+
+    await expect(service.resendInvite(profile.id)).rejects.toBe(alreadyActive);
   });
 });

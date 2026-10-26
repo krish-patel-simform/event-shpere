@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../../db/dbClient";
+import { escapeLike } from "../../../db/escape-like";
 import {
   authTokensTable,
   organizerProfilesTable,
@@ -42,11 +43,6 @@ export type NewOrganizerAccount = {
 };
 
 const verifierTable = alias(usersTable, "verifier");
-
-// ILIKE treats % and _ as wildcards: escape them so searching "50%" means "50%".
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, "\\$&");
-}
 
 // Search field (DB column name) → how to search it. Typed as a Record over the schema's
 // whitelist, so adding a field there without a condition here is a compile error.
@@ -227,6 +223,18 @@ export const organizerRepository = {
 
       return row ? { ...row, justVerified: updated.length > 0 } : null;
     });
+  },
+
+  /** The account behind an organizer profile, for re-sending the invite. */
+  async findInviteeById(
+    organizerId: string,
+  ): Promise<{ userId: string } | null> {
+    const [row] = await db
+      .select({ userId: organizerProfilesTable.userId })
+      .from(organizerProfilesTable)
+      .where(eq(organizerProfilesTable.id, organizerId))
+      .limit(1);
+    return row ?? null;
   },
 
   /** What verifying needs before the Strapi call. null = no such organizer. */

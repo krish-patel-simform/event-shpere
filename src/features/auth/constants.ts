@@ -1,5 +1,7 @@
 /** How long the emailed set-password link works. */
 export const ACCOUNT_SETUP_TOKEN_TTL_HOURS = 24;
+/** Minimum wait between two set-password invites to the same person (stops inbox spam). */
+export const ACCOUNT_SETUP_RESEND_COOLDOWN_SECONDS = 60;
 /** How long the emailed verify-email link works (the code in it expires sooner, see email/constants). */
 export const EMAIL_VERIFY_TOKEN_TTL_MINUTES = 5;
 export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 10;

@@ -10,6 +10,7 @@ export {
   organizerSignupBodySchema,
   organizerSignUpResponseSchema,
   passwordSchema,
+  resendInviteResponseSchema,
   resendOtpBodySchema,
   resetPasswordBodySchema,
   userSignupBodySchema,
@@ -22,6 +23,7 @@ export {
   type MeDto,
   type OrganizerSignupBody,
   type OrganizerSignUpResponseDto,
+  type ResendInviteResponseDto,
   type ResendOtpBody,
   type ResetPasswordBody,
   type UserSignupBody,
@@ -33,6 +35,7 @@ export { AUTH_ROUTES } from "./routes";
 export { authQueryKeys, useMe } from "./hooks/useMe";
 export { useLogout } from "./hooks/useLogout";
 export {
+  ACCOUNT_SETUP_RESEND_COOLDOWN_SECONDS,
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
   PASSWORD_REGEX,
   PASSWORD_REGEX_MESSAGE,

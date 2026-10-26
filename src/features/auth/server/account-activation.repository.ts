@@ -1,5 +1,12 @@
 import "server-only";
-import { and, eq, gt, isNull, TransactionRollbackError } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  isNull,
+  TransactionRollbackError,
+} from "drizzle-orm";
 import { db } from "../../../db/dbClient";
 import {
   authTokensTable,
@@ -165,6 +172,81 @@ export const accountActivationRepository = {
    */
   verifyEmail(input: { tokenHash: string; now: Date }): Promise<boolean> {
     return activateWithToken({ ...input, type: "email_verify" });
+  },
+
+  /**
+   * Re-invite (ADM-6): for a PENDING account, replaces its set-password link in ONE
+   * transaction, so the new email carries the only valid link. The user row is locked
+   * (FOR UPDATE): two resends at the same moment run one after the other, so only one new
+   * link survives and the second one sees the cooldown.
+   */
+  async reissueSetupToken(input: {
+    userId: string;
+    setupToken: { tokenHash: string; expiresAt: Date };
+    now: Date;
+    cooldownMs: number;
+  }) {
+    return db.transaction(async (tx) => {
+      // Only what the email needs, never the whole row (it holds the password hash).
+      const [user] = await tx
+        .select({
+          id: usersTable.id,
+          email: usersTable.email,
+          firstName: usersTable.firstName,
+          status: usersTable.status,
+        })
+        .from(usersTable)
+        .where(eq(usersTable.id, input.userId))
+        .for("update");
+      if (!user) return { ok: false as const, reason: "NOT_FOUND" as const };
+      if (user.status === "active") {
+        return { ok: false as const, reason: "ALREADY_ACTIVE" as const };
+      }
+      if (user.status === "suspended") {
+        return { ok: false as const, reason: "SUSPENDED" as const };
+      }
+
+      const [lastInvite] = await tx
+        .select({ createdAt: authTokensTable.createdAt })
+        .from(authTokensTable)
+        .where(
+          and(
+            eq(authTokensTable.userId, user.id),
+            eq(authTokensTable.type, "account_setup"),
+          ),
+        )
+        .orderBy(desc(authTokensTable.createdAt))
+        .limit(1);
+      const waitMs = lastInvite
+        ? lastInvite.createdAt.getTime() +
+          input.cooldownMs -
+          input.now.getTime()
+        : 0;
+      if (waitMs > 0) {
+        return {
+          ok: false as const,
+          reason: "TOO_SOON" as const,
+          retryAfterSeconds: Math.ceil(waitMs / 1000),
+        };
+      }
+
+      await invalidateUserTokens(tx, {
+        userId: user.id,
+        type: "account_setup",
+        now: input.now,
+      });
+      await tx.insert(authTokensTable).values({
+        userId: user.id,
+        type: "account_setup",
+        tokenHash: input.setupToken.tokenHash,
+        expiresAt: input.setupToken.expiresAt,
+      });
+
+      return {
+        ok: true as const,
+        user: { id: user.id, email: user.email, firstName: user.firstName },
+      };
+    });
   },
 };
 

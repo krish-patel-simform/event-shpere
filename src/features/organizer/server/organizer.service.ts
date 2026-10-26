@@ -7,8 +7,15 @@ import {
   ServiceUnavailableError,
 } from "../../../core/http/errors";
 import type { PageMeta } from "../../../core/http/response";
-import { ACCOUNT_SETUP_TOKEN_TTL_HOURS } from "../../auth";
-import { createAccountSetupToken } from "../../auth/server";
+import {
+  ACCOUNT_SETUP_TOKEN_TTL_HOURS,
+  type ResendInviteResponseDto,
+} from "../../auth";
+import {
+  accountInviteService,
+  createAccountSetupToken,
+  type AccountInviteService,
+} from "../../auth/server";
 import {
   strapiOrganizerClient,
   type StrapiOrganizerClient,
@@ -41,9 +48,11 @@ export type OrganizerServiceDeps = {
     | "listOrganizers"
     | "verifyOrganizer"
     | "findForVerify"
+    | "findInviteeById"
   >;
   createAccountSetupToken: typeof createAccountSetupToken;
   enqueueAccountSetupEmail: typeof enqueueAccountSetupEmail;
+  accountInviteService: Pick<AccountInviteService, "resendAccountSetup">;
   strapiClient: Pick<
     StrapiOrganizerClient,
     "provisionOrganizerAccess" | "registerUrl"
@@ -124,6 +133,17 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
       }
 
       return toOrganizerDto(result.user, result.profile, setupEmailQueued);
+    },
+
+    /**
+     * ADM-6: the admin re-sends the set-password invite to an organizer who has not set up
+     * their account yet (the first email failed, or the link expired). Old links stop working.
+     */
+    async resendInvite(organizerId: string): Promise<ResendInviteResponseDto> {
+      const invitee =
+        await deps.organizerRepository.findInviteeById(organizerId);
+      if (!invitee) throw new NotFoundError("Organizer not found");
+      return deps.accountInviteService.resendAccountSetup(invitee.userId);
     },
 
     /** ADM-2: one page of organizers for the admin, optionally searched. */
@@ -207,7 +227,9 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
 
       // After the update both must be set. If not, the data is broken: fail loudly (500).
       if (!row.verifiedAt || !row.verifiedBy) {
-        throw new Error(`Organizer ${organizerId} has no verifier after verifying`);
+        throw new Error(
+          `Organizer ${organizerId} has no verifier after verifying`,
+        );
       }
       return toVerifyOrganizerResponseDto({
         ...row,
@@ -222,6 +244,7 @@ export const organizerService = createOrganizerService({
   organizerRepository,
   createAccountSetupToken,
   enqueueAccountSetupEmail,
+  accountInviteService,
   strapiClient: strapiOrganizerClient,
   enqueueCmsAccessEmail,
   appUrl: env.APP_URL,

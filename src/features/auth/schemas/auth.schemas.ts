@@ -86,6 +86,17 @@ export const accountSetupBodySchema = z
   .refine(passwordsMatch, PASSWORDS_MATCH_ERROR);
 export type AccountSetupBody = z.infer<typeof accountSetupBodySchema>;
 
+// Resend the set-password invite (speakers, organizers). Never contains the link itself.
+export const resendInviteResponseSchema = z.object({
+  /** False if the new link was saved but the email could not be queued (try again later). */
+  setupEmailQueued: z.boolean(),
+  /** When the new link stops working. */
+  expiresAt: z.iso.datetime(),
+});
+export type ResendInviteResponseDto = z.infer<
+  typeof resendInviteResponseSchema
+>;
+
 // Verify-email page (opened from the signup email): `token` comes from the link's
 // ?token=…, `otp` is the 6-digit code the user types. The email is not sent: the server
 // takes it from the token's user, so a code can only be tried against its own account.

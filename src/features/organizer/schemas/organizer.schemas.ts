@@ -88,6 +88,12 @@ export const verifyOrganizerParamsSchema = z.object({
 });
 export type VerifyOrganizerParams = z.infer<typeof verifyOrganizerParamsSchema>;
 
+//* POST /api/admin/organizers/[organizerId]/resend-invite (ADM-6)
+export const resendOrganizerInviteParamsSchema = z.object({
+  /** organizer_profiles.id of the organizer to re-invite. */
+  organizerId: z.uuid(),
+});
+
 export const verifyOrganizerResponseSchema = z.object({
   organizerId: z.uuid(),
   organizationName: z.string(),

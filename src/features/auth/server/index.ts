@@ -8,3 +8,7 @@ export {
   createAccountSetupToken,
   type AccountSetupToken,
 } from "./account-activation.service";
+export {
+  accountInviteService,
+  type AccountInviteService,
+} from "./account-invite.service";

@@ -5,6 +5,7 @@ export {
   getOrganizersResponseSchema,
   organizerQuerySchema,
   organizerSearchFields,
+  resendOrganizerInviteParamsSchema,
   verifyOrganizerParamsSchema,
   verifyOrganizerResponseSchema,
   type CreateOrganizerBody,
