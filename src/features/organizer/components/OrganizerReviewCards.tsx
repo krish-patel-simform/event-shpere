@@ -1,10 +1,11 @@
-import { Check, ExternalLink, Info, TriangleAlert } from "lucide-react";
+import { Check, ExternalLink, Info, Mail, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { roleLabel } from "@/src/core/auth/role-label";
 import { formatDate } from "@/src/core/format/format-date";
 import {
   Avatar,
   Badge,
+  Button,
   Card,
   cn,
   DescriptionList,
@@ -67,24 +68,48 @@ export function OrganisationCard({ review }: { review: OrganizerDetailDto }) {
 export function ApplicantCard({
   review,
   profileHref,
+  onResendInvite,
+  isResendingInvite = false,
 }: {
   review: OrganizerDetailDto;
   /** The applicant's user profile page. Left out, there is no link. */
   profileHref?: string;
+  /**
+   * Sends the applicant a new set-password invite. Offered only while their account is pending
+   * (they have not set a password yet); left out, there is no button.
+   */
+  onResendInvite?: () => void;
+  /** The invite is being sent: the button shows it and cannot be pressed twice. */
+  isResendingInvite?: boolean;
 }) {
   const { applicant } = review;
   const name = `${applicant.firstName} ${applicant.lastName}`;
+  const canResend = onResendInvite && applicant.accountStatus === "pending";
   return (
     <Card
       title="Applicant account"
       action={
-        profileHref && (
-          <Link
-            href={profileHref}
-            className="text-sm font-semibold text-link hover:underline"
-          >
-            Open user profile
-          </Link>
+        (profileHref || canResend) && (
+          <div className="flex flex-wrap items-center gap-3">
+            {canResend && (
+              <Button
+                variant="secondary"
+                onClick={onResendInvite}
+                isPending={isResendingInvite}
+              >
+                <Mail aria-hidden="true" className="size-4" />
+                {isResendingInvite ? "Sending…" : "Resend invite"}
+              </Button>
+            )}
+            {profileHref && (
+              <Link
+                href={profileHref}
+                className="text-sm font-semibold text-link hover:underline"
+              >
+                Open user profile
+              </Link>
+            )}
+          </div>
         )
       }
     >

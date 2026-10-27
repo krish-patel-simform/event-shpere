@@ -12,6 +12,7 @@ import {
   buttonStyles,
   type BreadcrumbItem,
 } from "@/src/core/ui";
+import { useResendInvite } from "@/src/features/users";
 import { useGetOrganizerDetail } from "../hooks/useGetOrganizerDetail";
 import { useReopenOrganizer } from "../hooks/useReopenOrganizer";
 import { useRejectOrganizer } from "../hooks/useRejectOrganizer";
@@ -143,6 +144,10 @@ function ReviewView({
   const verify = useVerifyOrganizer();
   const reject = useRejectOrganizer();
   const reopen = useReopenOrganizer();
+  // One invite for every role: the users feature owns it (by user id).
+  const resendInvite = useResendInvite();
+  // The invite sent last: the message under the title says what happened.
+  const [inviteSent, setInviteSent] = useState<boolean | null>(null);
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
   // would still be open when the admin comes back. Close it as the page is hidden.
@@ -187,10 +192,41 @@ function ReviewView({
         </div>
       </div>
 
+      {inviteSent !== null &&
+        (inviteSent ? (
+          <Alert tone="success" title={`Invite sent to ${applicant.email}`}>
+            The earlier link no longer works. They set a password from this one.
+          </Alert>
+        ) : (
+          <Alert
+            tone="warning"
+            title="The new invite was saved, but the email was not sent"
+          >
+            We couldn&apos;t queue the email to {applicant.email}. Try again in
+            a minute.
+          </Alert>
+        ))}
+      {resendInvite.isError && (
+        <Alert tone="error" title="We couldn't send the invite">
+          {resendInvite.error.message}
+        </Alert>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="min-w-0 space-y-5">
           <OrganisationCard review={review} />
-          <ApplicantCard review={review} profileHref={applicantProfileHref} />
+          <ApplicantCard
+            review={review}
+            profileHref={applicantProfileHref}
+            onResendInvite={() => {
+              setInviteSent(null);
+              resendInvite.reset();
+              resendInvite.mutate(applicant.userId, {
+                onSuccess: (result) => setInviteSent(result.setupEmailQueued),
+              });
+            }}
+            isResendingInvite={resendInvite.isPending}
+          />
           <ChecksCard review={review} />
           <HistoryCard review={review} />
         </div>

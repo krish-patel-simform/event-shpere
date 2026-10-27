@@ -5,6 +5,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Activity } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { usersApiService } from "../../../users/api/users-api.service";
 import { organizerApiService } from "../../api/organizer-api.service";
 import type { OrganizerDetailDto } from "../../schemas/organizer.schemas";
 import { AdminOrganizerReview } from "../AdminOrganizerReview";
@@ -21,6 +22,12 @@ jest.mock("../../api/organizer-api.service", () => ({
   },
 }));
 const api = jest.mocked(organizerApiService);
+
+// The invite is the users feature's (one for every role): its API layer is replaced too.
+jest.mock("../../../users/api/users-api.service", () => ({
+  usersApiService: { resendInvite: jest.fn() },
+}));
+const invites = jest.mocked(usersApiService);
 
 const organizerId = "6f1d2a40-1c1e-4b8e-9d55-2a8f0c3b7e15";
 const decisionTime = "2026-10-26T12:00:00.000Z";
@@ -590,6 +597,70 @@ describe("AdminOrganizerReview: an application that was already decided", () => 
 });
 
 // Next.js (cacheComponents) hides a page we leave with <Activity> instead of unmounting it.
+describe("AdminOrganizerReview: resend invite", () => {
+  const applicantCard = () =>
+    screen.getByRole("region", { name: "Applicant account" });
+
+  beforeEach(() => {
+    invites.resendInvite.mockResolvedValue({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+  });
+
+  it("is offered while the applicant has not set up their account", async () => {
+    serve({ applicant: { accountStatus: "pending", emailVerifiedAt: null } });
+    renderReview();
+    await screen.findByRole("heading", { name: "Acme Events Pvt Ltd" });
+
+    expect(
+      within(applicantCard()).getByRole("button", { name: "Resend invite" }),
+    ).toBeInTheDocument();
+  });
+
+  it("is not offered once the account is active", async () => {
+    serve();
+    renderReview();
+    await screen.findByRole("heading", { name: "Acme Events Pvt Ltd" });
+
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the invite for the applicant's user and says where it went", async () => {
+    serve({ applicant: { accountStatus: "pending", emailVerifiedAt: null } });
+    renderReview();
+    await screen.findByRole("heading", { name: "Acme Events Pvt Ltd" });
+
+    await userEvent.click(
+      within(applicantCard()).getByRole("button", { name: "Resend invite" }),
+    );
+
+    expect(invites.resendInvite).toHaveBeenCalledWith(acme.applicant.userId);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Invite sent to ananya.rao@example.com",
+    );
+  });
+
+  it("shows why it failed", async () => {
+    invites.resendInvite.mockRejectedValue(
+      new ApiError(429, "RATE_LIMITED", "An invite was sent moments ago."),
+    );
+    serve({ applicant: { accountStatus: "pending", emailVerifiedAt: null } });
+    renderReview();
+    await screen.findByRole("heading", { name: "Acme Events Pvt Ltd" });
+
+    await userEvent.click(
+      within(applicantCard()).getByRole("button", { name: "Resend invite" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "An invite was sent moments ago.",
+    );
+  });
+});
+
 describe("AdminOrganizerReview: hidden and shown again", () => {
   it("comes back with no dialog open", async () => {
     const client = new QueryClient({
