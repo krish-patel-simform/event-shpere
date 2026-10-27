@@ -213,14 +213,21 @@ describe("DashboardSession: log out", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it("disables the button while the request runs, so it is not sent twice", async () => {
+  it("shows the signing-out skeleton at once, while the request runs, so nothing else can be done", async () => {
     logout.mockReturnValue(new Promise(() => {}));
     renderSession();
     await userEvent.click(await logOutButton());
 
-    await waitFor(async () => expect(await logOutButton()).toBeDisabled());
-    await userEvent.click(await logOutButton());
+    expect(
+      await screen.findByRole("status", { name: "Signing out" }),
+    ).toBeInTheDocument();
+    // The page and the menu are gone: no second Log out click, no other action meanwhile.
+    expect(screen.queryByText("Page content")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Log out", hidden: true }),
+    ).not.toBeInTheDocument();
     expect(logout).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("after success it shows a signing-out state instead of the page, and does not fetch the user again", async () => {

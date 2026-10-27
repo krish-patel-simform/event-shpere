@@ -52,8 +52,12 @@ export function DashboardSession({ children }: { children: ReactNode }) {
       onSuccess: () => router.replace(AUTH_ROUTES.login),
     });
 
-  // Logged out: show nothing of the signed-in area while the redirect to log in happens.
-  if (logout.isSuccess) return <SessionLoading label="Signing out" />;
+  // From the click until the redirect lands (the request is running, then logged out): show
+  // nothing of the signed-in area, so the user cannot do anything else meanwhile. If the logout
+  // fails, the page comes back with the message below the menu.
+  if (logout.isPending || logout.isSuccess) {
+    return <SessionLoading label="Signing out" />;
+  }
 
   // A 401 is not a failure: it is a guest, shown below.
   if (error && !isGuest) {
