@@ -22,6 +22,7 @@ describe("adminActionsFor", () => {
       canSuspend: true,
       canReactivate: false,
       canSendResetLink: true,
+      canResendInvite: false,
       resetLinkUnavailable: null,
     });
   });
@@ -42,13 +43,28 @@ describe("adminActionsFor", () => {
     expect(actions.resetLinkUnavailable).toMatch(/suspended/);
   });
 
-  it("a pending user has no password yet: no reset link, and the page points to the set-password invite", () => {
+  it("a pending user has no password yet: no reset link, but the set-password invite can be sent again", () => {
     const actions = adminActionsFor({ status: "pending", role: "organizer" });
 
     expect(actions.canSuspend).toBe(false);
     expect(actions.canReactivate).toBe(false);
     expect(actions.canSendResetLink).toBe(false);
-    expect(actions.resetLinkUnavailable).toMatch(/set-password invite/);
+    expect(actions.canResendInvite).toBe(true);
+    expect(actions.resetLinkUnavailable).toBeNull();
+  });
+
+  it("the invite is for a pending account of any role, and only for those", () => {
+    for (const role of ["user", "speaker", "organizer"] as const) {
+      expect(adminActionsFor({ status: "pending", role }).canResendInvite).toBe(
+        true,
+      );
+    }
+    expect(
+      adminActionsFor({ status: "active", role: "user" }).canResendInvite,
+    ).toBe(false);
+    expect(
+      adminActionsFor({ status: "suspended", role: "user" }).canResendInvite,
+    ).toBe(false);
   });
 
   it("an account with no role is treated like any other active account", () => {

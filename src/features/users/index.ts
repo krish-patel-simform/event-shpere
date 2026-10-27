@@ -1,6 +1,7 @@
 // Client-safe public API of the users feature. Never export anything from ./server here.
 export { AdminUserDetail } from "./components/AdminUserDetail";
 export { AdminUsers } from "./components/AdminUsers";
+export { useResendInvite } from "./hooks/useResendInvite";
 export { adminUserHref, USER_ROUTES } from "./routes";
 export {
   getUsersQueryParams,

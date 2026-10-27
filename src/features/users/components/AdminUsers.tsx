@@ -1,11 +1,12 @@
 "use client";
 
-import { Ban, UserCheck, User as UserIcon } from "lucide-react";
+import { Ban, Mail, UserCheck, User as UserIcon } from "lucide-react";
 import { useLayoutEffect, useState } from "react";
 import { useDebouncedValue } from "@/src/core/hooks/use-debounced-value";
 import { Alert, Button, tabId, Tabs, type ActionMenuItem } from "@/src/core/ui";
 import { useGetUserList } from "../hooks/useGetUserList";
 import { useReactivateUser } from "../hooks/useReactivateUser";
+import { useResendInvite } from "../hooks/useResendInvite";
 import { useSuspendUser } from "../hooks/useSuspendUser";
 import { adminUserHref } from "../routes";
 import type { UserListItemDto, UserSort } from "../schemas/users.schema";
@@ -50,6 +51,12 @@ export function AdminUsers() {
 
   const suspend = useSuspendUser();
   const reactivate = useReactivateUser();
+  const resendInvite = useResendInvite();
+  // The invite sent last: the message above the list says who got it.
+  const [inviteNotice, setInviteNotice] = useState<{
+    email: string;
+    setupEmailQueued: boolean;
+  } | null>(null);
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
   // would still be open when the admin comes back. Close it as the page is hidden.
@@ -70,6 +77,18 @@ export function AdminUsers() {
     setSuspendTarget(null);
   };
 
+  const sendInvite = (user: UserListItemDto) => {
+    setInviteNotice(null);
+    resendInvite.reset();
+    resendInvite.mutate(user.id, {
+      onSuccess: (result) =>
+        setInviteNotice({
+          email: user.email,
+          setupEmailQueued: result.setupEmailQueued,
+        }),
+    });
+  };
+
   /** What each row's menu offers. The server refuses the rest, too (not an admin, not yourself). */
   const menuItems = (user: UserListItemDto): ActionMenuItem[] => {
     const items: ActionMenuItem[] = [
@@ -82,6 +101,14 @@ export function AdminUsers() {
         tone: "danger",
         separatorBefore: true,
         onSelect: () => setSuspendTarget(user),
+      });
+    }
+    if (user.status === "pending") {
+      items.push({
+        label: "Resend invite",
+        icon: Mail,
+        separatorBefore: true,
+        onSelect: () => sendInvite(user),
       });
     }
     if (user.status === "suspended") {
@@ -122,6 +149,25 @@ export function AdminUsers() {
         onSortChange={changed(setSort)}
       />
 
+      {inviteNotice &&
+        (inviteNotice.setupEmailQueued ? (
+          <Alert tone="success" title={`Invite sent to ${inviteNotice.email}`}>
+            The earlier link no longer works. They set a password from this one.
+          </Alert>
+        ) : (
+          <Alert
+            tone="warning"
+            title="The new invite was saved, but the email was not sent"
+          >
+            We couldn&apos;t queue the email to {inviteNotice.email}. Try again
+            in a minute.
+          </Alert>
+        ))}
+      {resendInvite.isError && (
+        <Alert tone="error" title="We couldn't send the invite">
+          {resendInvite.error.message}
+        </Alert>
+      )}
       {reactivate.isError && (
         <Alert tone="error" title="We couldn't reactivate this user">
           {reactivate.error.message}

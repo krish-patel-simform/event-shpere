@@ -1,4 +1,4 @@
-import { Ban, KeyRound, UserCheck } from "lucide-react";
+import { Ban, KeyRound, Mail, UserCheck } from "lucide-react";
 import { formatDate } from "@/src/core/format/format-date";
 import { Avatar, Badge, Button, Card, DescriptionList } from "@/src/core/ui";
 import type { UserDetailDto } from "../schemas/users.schema";
@@ -155,18 +155,47 @@ export function AdminActionsCard({
   onReactivate,
   isReactivating,
   onSendResetLink,
-}: { user: UserDetailDto; onSendResetLink: () => void } & Actions) {
+  onResendInvite,
+  isResendingInvite,
+}: {
+  user: UserDetailDto;
+  onSendResetLink: () => void;
+  onResendInvite: () => void;
+  /** The invite is being sent: its button shows it and cannot be pressed twice. */
+  isResendingInvite: boolean;
+} & Actions) {
   const actions = adminActionsFor(user);
   const hasNothing =
     !actions.canSuspend &&
     !actions.canReactivate &&
     !actions.canSendResetLink &&
+    !actions.canResendInvite &&
     !actions.resetLinkUnavailable;
 
   return (
     <Card title="Admin actions" flush>
-      {(actions.canSendResetLink || actions.resetLinkUnavailable) && (
+      {(actions.canSendResetLink ||
+        actions.canResendInvite ||
+        actions.resetLinkUnavailable) && (
         <div className="space-y-2.5 p-5">
+          {actions.canResendInvite && (
+            <>
+              <Button
+                variant="secondary"
+                fullWidth
+                className="justify-start"
+                onClick={onResendInvite}
+                isPending={isResendingInvite}
+              >
+                <Mail aria-hidden="true" className="size-4" />
+                {isResendingInvite ? "Sending…" : "Resend invite"}
+              </Button>
+              <p className="text-sm text-muted">
+                They have not set a password yet. This emails a new set-password
+                link and the old one stops working.
+              </p>
+            </>
+          )}
           {actions.canSendResetLink && (
             <Button
               variant="secondary"

@@ -2,6 +2,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
+import { resendInviteResponseSchema } from "../../../auth";
 import {
   getUsersResponseSchema,
   userStatusResponseSchema,
@@ -68,6 +69,17 @@ describe("usersApiService.list", () => {
     expect(config.params).not.toHaveProperty("role");
     expect(config.params).not.toHaveProperty("status");
     expect(config.params).not.toHaveProperty("search");
+  });
+});
+
+describe("usersApiService.resendInvite", () => {
+  it("posts to the user's resend-invite URL with no body, and parses the answer", () => {
+    usersApiService.resendInvite(id);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: `/admin/users/${id}/resend-invite` },
+      resendInviteResponseSchema,
+    );
   });
 });
 

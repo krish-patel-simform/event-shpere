@@ -12,6 +12,7 @@ import {
 } from "@/src/core/ui";
 import { useGetUserDetail } from "../hooks/useGetUserDetail";
 import { useReactivateUser } from "../hooks/useReactivateUser";
+import { useResendInvite } from "../hooks/useResendInvite";
 import { useSendResetLink } from "../hooks/useSendResetLink";
 import { useSuspendUser } from "../hooks/useSuspendUser";
 import { USER_ROUTES } from "../routes";
@@ -112,14 +113,18 @@ function PageFrame({
 
 type OpenDialog = "suspend" | "reset-link";
 
+/** The message under the title after the admin sent a link or an invite. */
+type Notice = { tone: "success" | "warning"; title: string; text: string };
+
 function UserDetailView({ user }: { user: UserDetailDto }) {
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
-  // The message after a reset link was sent.
-  const [notice, setNotice] = useState<string | null>(null);
+  // The message after a reset link or an invite was sent.
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const suspend = useSuspendUser();
   const reactivate = useReactivateUser();
   const sendResetLink = useSendResetLink();
+  const resendInvite = useResendInvite();
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
   // would still be open when the admin comes back. Close it as the page is hidden.
@@ -138,12 +143,37 @@ function UserDetailView({ user }: { user: UserDetailDto }) {
     reactivate.reset();
     reactivate.mutate(user.id);
   };
+  const sendInvite = () => {
+    setNotice(null);
+    resendInvite.reset();
+    resendInvite.mutate(user.id, {
+      onSuccess: (result) =>
+        setNotice(
+          result.setupEmailQueued
+            ? {
+                tone: "success",
+                title: `Invite sent to ${user.email}`,
+                text: "The earlier link no longer works. They set a password from this one.",
+              }
+            : {
+                tone: "warning",
+                title: "The new invite was saved, but the email was not sent",
+                text: `We couldn't queue the email to ${user.email}. Try again in a minute.`,
+              },
+        ),
+    });
+  };
 
   return (
     <PageFrame crumb={userFullName(user)}>
       {notice && (
-        <Alert tone="success" title={notice}>
-          They can use it once, then sign in with the new password.
+        <Alert tone={notice.tone} title={notice.title}>
+          {notice.text}
+        </Alert>
+      )}
+      {resendInvite.isError && (
+        <Alert tone="error" title="We couldn't send the invite">
+          {resendInvite.error.message}
         </Alert>
       )}
       {reactivate.isError && (
@@ -170,6 +200,8 @@ function UserDetailView({ user }: { user: UserDetailDto }) {
           onReactivate={reactivateUser}
           isReactivating={reactivate.isPending}
           onSendResetLink={() => open("reset-link")}
+          onResendInvite={sendInvite}
+          isResendingInvite={resendInvite.isPending}
         />
       </div>
 
@@ -188,7 +220,11 @@ function UserDetailView({ user }: { user: UserDetailDto }) {
         onConfirm={() =>
           sendResetLink.mutate(user.id, {
             onSuccess: () => {
-              setNotice(`Reset link sent to ${user.email}`);
+              setNotice({
+                tone: "success",
+                title: `Reset link sent to ${user.email}`,
+                text: "They can use it once, then sign in with the new password.",
+              });
               closeDialog();
             },
           })

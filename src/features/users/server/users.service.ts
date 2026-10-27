@@ -5,6 +5,11 @@ import {
   NotFoundError,
 } from "../../../core/http/errors";
 import type { PageMeta } from "../../../core/http/response";
+import type { ResendInviteResponseDto } from "../../auth";
+import {
+  accountInviteService,
+  type AccountInviteService,
+} from "../../auth/server";
 import type {
   GetUsersQuery,
   UserDetailDto,
@@ -27,6 +32,8 @@ export type UserServiceDeps = {
     | "getUsers"
     | "findDetail"
   >;
+  /** The one place that sends a set-password invite, whatever the account's role. */
+  accountInviteService: Pick<AccountInviteService, "resendAccountSetup">;
 };
 
 export function createUserService(deps: UserServiceDeps) {
@@ -92,6 +99,16 @@ export function createUserService(deps: UserServiceDeps) {
     },
 
     /**
+     * ADM-6: the admin sends a new set-password invite to an account that has not been set up yet
+     * (user, organizer or speaker: the same for every role). Old links stop working. The auth
+     * service owns the rules and answers 404 unknown, 409 already active or suspended, 429 within
+     * 60 s of the last invite; the invite email only ever goes to the account's own address.
+     */
+    async resendInvite(userId: string): Promise<ResendInviteResponseDto> {
+      return deps.accountInviteService.resendAccountSetup(userId);
+    },
+
+    /**
      * ADM-8: the admin lets a suspended user back in. Only a suspended user can be reactivated
      * (409): a pending one has no password yet, so `active` would be wrong for them.
      */
@@ -113,4 +130,7 @@ export function createUserService(deps: UserServiceDeps) {
 
 export type UserService = ReturnType<typeof createUserService>;
 
-export const userService = createUserService({ userRepository });
+export const userService = createUserService({
+  userRepository,
+  accountInviteService,
+});

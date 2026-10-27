@@ -5,7 +5,9 @@ import {
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
 import {
+  resendInviteResponseSchema,
   sendResetLinkResponseSchema,
+  type ResendInviteResponseDto,
   type SendResetLinkResponseDto,
 } from "../../auth";
 import {
@@ -65,6 +67,18 @@ export const usersApiService = {
     return apiRequest(
       { method: "POST", url: `/admin/users/${userId}/send-reset-link` },
       sendResetLinkResponseSchema,
+    );
+  },
+
+  /**
+   * Emails a NEW set-password invite to an account that has not set a password yet (any role).
+   * The old link stops working. 409 if the account is already active or suspended, 429 within a
+   * minute of the last invite. The answer is only when the link expires: never the link.
+   */
+  resendInvite(userId: string): Promise<ResendInviteResponseDto> {
+    return apiRequest(
+      { method: "POST", url: `/admin/users/${userId}/resend-invite` },
+      resendInviteResponseSchema,
     );
   },
 

@@ -2,6 +2,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitError,
 } from "../../../../core/http/errors";
 import { createUserService, type UserServiceDeps } from "../users.service";
 
@@ -33,7 +34,17 @@ const detailRow = {
   permissions: ["PROFILE_MANAGE", "PROFILE_VIEW", "REGISTRATION_CREATE"],
 };
 
-function setup(overrides: Partial<UserServiceDeps["userRepository"]> = {}) {
+const invited = {
+  setupEmailQueued: true,
+  expiresAt: "2026-10-30T09:00:00.000Z",
+};
+
+function setup(
+  overrides: Partial<UserServiceDeps["userRepository"]> = {},
+  invite: UserServiceDeps["accountInviteService"]["resendAccountSetup"] = jest
+    .fn()
+    .mockResolvedValue(invited),
+) {
   const userRepository = {
     findForStatusChange: jest
       .fn()
@@ -47,7 +58,12 @@ function setup(overrides: Partial<UserServiceDeps["userRepository"]> = {}) {
     findDetail: jest.fn().mockResolvedValue(detailRow),
     ...overrides,
   } satisfies UserServiceDeps["userRepository"];
-  return { userRepository, service: createUserService({ userRepository }) };
+  const accountInviteService = { resendAccountSetup: invite };
+  return {
+    userRepository,
+    accountInviteService,
+    service: createUserService({ userRepository, accountInviteService }),
+  };
 }
 
 // One row as the repository returns it (Date objects, the email-verified time).
@@ -453,5 +469,41 @@ describe("userService.reactivateUser", () => {
 
     expect(error).toBeInstanceOf(ConflictError);
     expect(error).toMatchObject({ status: 409, code: "USER_NOT_SUSPENDED" });
+  });
+});
+
+describe("userService.resendInvite", () => {
+  it("asks the shared auth invite service to send the invite for that user, and returns its answer", async () => {
+    const { service, accountInviteService } = setup();
+
+    const result = await service.resendInvite(userId);
+
+    expect(accountInviteService.resendAccountSetup).toHaveBeenCalledTimes(1);
+    expect(accountInviteService.resendAccountSetup).toHaveBeenCalledWith(
+      userId,
+    );
+    expect(result).toEqual(invited);
+  });
+
+  it("does not touch the users repository: the auth service owns the rules", async () => {
+    const { service, userRepository } = setup();
+
+    await service.resendInvite(userId);
+
+    expect(userRepository.findForStatusChange).not.toHaveBeenCalled();
+    expect(userRepository.reActiveUser).not.toHaveBeenCalled();
+  });
+
+  it("passes on what the invite service refuses: unknown user (404), already active (409), too soon (429)", async () => {
+    const refusals = [
+      new NotFoundError("Account not found"),
+      new ConflictError("ACCOUNT_ALREADY_ACTIVE", "Already set up"),
+      new RateLimitError("Try again in 30 seconds."),
+    ];
+
+    for (const refusal of refusals) {
+      const { service } = setup({}, jest.fn().mockRejectedValue(refusal));
+      await expect(service.resendInvite(userId)).rejects.toBe(refusal);
+    }
   });
 });

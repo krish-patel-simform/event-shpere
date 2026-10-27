@@ -63,13 +63,13 @@ export function adminActionsFor(user: {
     canSuspend: user.status === "active" && !isAdmin,
     canReactivate: user.status === "suspended",
     canSendResetLink: user.status === "active" && !isAdmin,
+    /** A pending account has no password yet: it gets the set-password invite instead. */
+    canResendInvite: user.status === "pending",
     /** Why there is no reset link button, when there is a reason worth showing. */
     resetLinkUnavailable:
-      user.status === "pending"
-        ? "They have not set up their account yet, so they need the set-password invite instead."
-        : user.status === "suspended"
-          ? "A suspended account cannot be sent a reset link. Reactivate it first."
-          : null,
+      user.status === "suspended"
+        ? "A suspended account cannot be sent a reset link. Reactivate it first."
+        : null,
   };
 }
 

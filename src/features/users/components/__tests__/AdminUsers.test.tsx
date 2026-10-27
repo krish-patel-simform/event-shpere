@@ -5,7 +5,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Activity } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
-import { dev, noRole, rahul, userRows } from "../../__fixtures__/users";
+import { dev, noRole, rahul, userRows, vikram } from "../../__fixtures__/users";
 import { usersApiService } from "../../api/users-api.service";
 import type { UserListItemDto } from "../../schemas/users.schema";
 import { AdminUsers } from "../AdminUsers";
@@ -16,6 +16,7 @@ jest.mock("../../api/users-api.service", () => ({
     list: jest.fn(),
     suspend: jest.fn(),
     reactivate: jest.fn(),
+    resendInvite: jest.fn(),
   },
 }));
 const api = jest.mocked(usersApiService);
@@ -642,6 +643,80 @@ describe("AdminUsers: reactivate", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Only a suspended user can be reactivated",
+    );
+  });
+});
+
+describe("AdminUsers: resend invite", () => {
+  beforeEach(() => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+  });
+
+  const resend = async (name: string) => {
+    const menu = await openMenu(name);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Resend invite" }),
+    );
+  };
+
+  it("is offered for a pending account (any role), and only for those", async () => {
+    renderPage();
+
+    const pending = await openMenu("Vikram Mehta");
+    expect(
+      within(pending).getByRole("menuitem", { name: "Resend invite" }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+
+    const active = await openMenu("Ananya Rao");
+    expect(
+      within(active).queryByRole("menuitem", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the invite for that user and says who got it", async () => {
+    renderPage();
+
+    await resend("Vikram Mehta");
+
+    expect(api.resendInvite).toHaveBeenCalledWith(vikram.id);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Invite sent to vikram.mehta@example.com",
+    );
+  });
+
+  it("warns when the invite was saved but the email could not be queued", async () => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: false,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+    renderPage();
+
+    await resend("Vikram Mehta");
+
+    // A warning is announced at once, like an error: role="alert".
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The new invite was saved, but the email was not sent",
+    );
+  });
+
+  it("shows why it failed (an invite was sent a moment ago)", async () => {
+    api.resendInvite.mockRejectedValue(
+      new ApiError(
+        429,
+        "RATE_LIMITED",
+        "An invite was sent moments ago. Try again in 30 seconds.",
+      ),
+    );
+    renderPage();
+
+    await resend("Vikram Mehta");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "An invite was sent moments ago",
     );
   });
 });

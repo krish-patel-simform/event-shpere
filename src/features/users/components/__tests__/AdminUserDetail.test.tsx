@@ -17,6 +17,7 @@ jest.mock("../../api/users-api.service", () => ({
     suspend: jest.fn(),
     reactivate: jest.fn(),
     sendResetLink: jest.fn(),
+    resendInvite: jest.fn(),
   },
 }));
 const api = jest.mocked(usersApiService);
@@ -494,7 +495,7 @@ describe("AdminUserDetail: send a password reset link", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("is not offered for a pending account, and the page points to the set-password invite", async () => {
+  it("is not offered for a pending account: it gets the set-password invite instead", async () => {
     serve({ status: "pending", hasPassword: false });
     renderUser();
     await loaded();
@@ -503,7 +504,7 @@ describe("AdminUserDetail: send a password reset link", () => {
       screen.queryByRole("button", { name: "Send password reset link" }),
     ).not.toBeInTheDocument();
     expect(
-      within(actions()).getByText(/set-password invite/),
+      within(actions()).getByRole("button", { name: "Resend invite" }),
     ).toBeInTheDocument();
   });
 
@@ -518,6 +519,94 @@ describe("AdminUserDetail: send a password reset link", () => {
     expect(
       within(actions()).getByText(/Reactivate it first/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("AdminUserDetail: resend invite", () => {
+  const actions = () => card("Admin actions");
+  const resendButton = () =>
+    within(actions()).getByRole("button", { name: "Resend invite" });
+
+  beforeEach(() => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+  });
+
+  it("is offered for a pending account", async () => {
+    serve({ status: "pending", hasPassword: false, role: "speaker" });
+    renderUser();
+    await loaded();
+
+    expect(resendButton()).toBeInTheDocument();
+    expect(within(actions()).getByText(/not set a password yet/)).toBeVisible();
+  });
+
+  it("is not offered for an active or a suspended account", async () => {
+    serve({ status: "active" });
+    const { unmount } = renderUser();
+    await loaded();
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    serve({ status: "suspended" });
+    renderUser();
+    await loaded();
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the invite for this user and says where it went", async () => {
+    serve({ status: "pending", hasPassword: false });
+    renderUser();
+    await loaded();
+
+    await userEvent.click(resendButton());
+
+    expect(api.resendInvite).toHaveBeenCalledWith(userId);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Invite sent to ananya.rao@example.com",
+    );
+  });
+
+  it("warns when the invite was saved but the email could not be queued", async () => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: false,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+    serve({ status: "pending", hasPassword: false });
+    renderUser();
+    await loaded();
+
+    await userEvent.click(resendButton());
+
+    // A warning is announced at once, like an error: role="alert".
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The new invite was saved, but the email was not sent",
+    );
+  });
+
+  it("shows why it failed (e.g. already set up)", async () => {
+    api.resendInvite.mockRejectedValue(
+      new ApiError(
+        409,
+        "ACCOUNT_ALREADY_ACTIVE",
+        "This person has already set up their account.",
+      ),
+    );
+    serve({ status: "pending", hasPassword: false });
+    renderUser();
+    await loaded();
+
+    await userEvent.click(resendButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "already set up their account",
+    );
   });
 });
 
