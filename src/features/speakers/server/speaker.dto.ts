@@ -96,7 +96,7 @@ export function toSpeakerListItemDto(
     slug: row.slug,
     firstName: row.firstName,
     lastName: row.lastName,
-    profile: cms ? toSummary(row, cms) : null,
+    profile: cms ? { ...toSummary(row, cms), expertise: cms.expertise } : null,
   };
 }
 

@@ -88,7 +88,12 @@ export const speakerListItemSchema = z.object({
   firstName: z.string(),
   lastName: z.string(),
   /** null = no CMS content right now (Strapi unreachable or entry missing): show the name only. */
-  profile: speakerSummarySchema.nullable(),
+  profile: speakerSummarySchema
+    .extend({
+      /** The topics on the card; the same ones the profile shows. */
+      expertise: z.array(z.string()),
+    })
+    .nullable(),
 });
 export type SpeakerListItemDto = z.infer<typeof speakerListItemSchema>;
 

@@ -468,6 +468,8 @@ describe("speakerService.listSpeakers", () => {
           },
           jobTitle: "Staff Engineer",
           company: "Acme",
+          // The topics on the card.
+          expertise: ["TypeScript", "Postgres"],
         },
       },
       // In Postgres but not returned by Strapi → name only.

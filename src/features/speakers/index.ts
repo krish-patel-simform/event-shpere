@@ -1,4 +1,8 @@
 // Client-safe public API of the speakers feature. Never export anything from ./server here.
+export { SpeakerDetail } from "./components/SpeakerDetail";
+export { SpeakerDetailSkeleton } from "./components/SpeakerDetailSkeleton";
+export { SpeakerDirectory } from "./components/SpeakerDirectory";
+export { SPEAKER_ROUTES, speakerHref } from "./routes";
 export {
   createSpeakerBodySchema,
   createSpeakerResponseSchema,
