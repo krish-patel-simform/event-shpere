@@ -1,9 +1,14 @@
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ServiceUnavailableError,
 } from "../../../../core/http/errors";
-import { createOrganizerBodySchema } from "../../schemas/organizer.schemas";
+import {
+  createOrganizerBodySchema,
+  REJECTION_REASON_MAX,
+  rejectOrganizerBodySchema,
+} from "../../schemas/organizer.schemas";
 import {
   createOrganizerService,
   type OrganizerServiceDeps,
@@ -54,12 +59,48 @@ const verifiedRow = {
   justVerified: true,
 };
 
-// What findForVerify returns for an organizer that is not verified yet.
+// What findForVerify returns for an organizer that is not verified yet (email already confirmed).
 const unverifiedOrganizer = {
   email: "olga@acme.test",
   firstName: "Olga",
   lastName: "Organizer",
+  emailVerifiedAt: new Date("2026-10-17T10:05:00.000Z"),
   verifiedAt: null,
+  rejectedAt: null as Date | null,
+};
+
+// What rejectPendingOrganizer returns after it rejected the applicant.
+const rejectedRow = {
+  organizerId: profile.id,
+  organizationName: "Acme Events",
+  organizerFirstName: "Olga",
+  organizerLastName: "Organizer",
+  email: "olga@acme.test",
+  verifiedAt: null as Date | null,
+  rejectedAt: new Date("2026-10-20T09:00:00.000Z") as Date | null,
+  rejectionReason: "Website could not be verified" as string | null,
+  rejectedBy: "Ada Admin" as string | null,
+  justRejected: true,
+};
+
+// What reopenRejectedOrganizer returns after it cleared the rejection.
+const reopenedRow = {
+  organizerId: profile.id,
+  organizationName: "Acme Events",
+  organizerFirstName: "Olga",
+  organizerLastName: "Organizer",
+  justReopened: true,
+};
+
+// What findApplicationByUserId returns for a pending application.
+const applicationRow = {
+  organizationName: "Acme Events",
+  organizationWebsite: "https://acme.test" as string | null,
+  appliedAt: createdAt,
+  emailVerifiedAt: new Date("2026-10-17T10:05:00.000Z") as Date | null,
+  verifiedAt: null as Date | null,
+  rejectedAt: null as Date | null,
+  rejectionReason: null as string | null,
 };
 
 const input = {
@@ -80,6 +121,14 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
       findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
       findInviteeById: jest.fn().mockResolvedValue({ userId: user.id }),
+      deleteUnverifiedOrganizer: jest.fn().mockResolvedValue("deleted"),
+      findVerificationByUserId: jest.fn().mockResolvedValue({
+        verifiedAt: verifiedRow.verifiedAt,
+        rejectedAt: null,
+      }),
+      rejectPendingOrganizer: jest.fn().mockResolvedValue(rejectedRow),
+      reopenRejectedOrganizer: jest.fn().mockResolvedValue(reopenedRow),
+      findApplicationByUserId: jest.fn().mockResolvedValue(applicationRow),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
@@ -99,6 +148,7 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
       ),
     },
     enqueueCmsAccessEmail: jest.fn().mockResolvedValue(undefined),
+    enqueueOrganizerRejectedEmail: jest.fn().mockResolvedValue(undefined),
     appUrl: "http://localhost:3000",
     ...overrides,
   } satisfies OrganizerServiceDeps;
@@ -163,6 +213,11 @@ describe("organizerService.createOrganizer", () => {
         verifyOrganizer: jest.fn(),
         findForVerify: jest.fn(),
         findInviteeById: jest.fn(),
+        deleteUnverifiedOrganizer: jest.fn(),
+        findVerificationByUserId: jest.fn(),
+        rejectPendingOrganizer: jest.fn(),
+        reopenRejectedOrganizer: jest.fn(),
+        findApplicationByUserId: jest.fn(),
       },
     });
 
@@ -220,6 +275,26 @@ describe("createOrganizerBodySchema", () => {
   });
 });
 
+describe("rejectOrganizerBodySchema", () => {
+  it("trims the reason", () => {
+    expect(
+      rejectOrganizerBodySchema.parse({ reason: "  Website down  " }),
+    ).toEqual({ reason: "Website down" });
+  });
+
+  it("refuses an empty or blank reason", () => {
+    expect(rejectOrganizerBodySchema.safeParse({ reason: "   " }).success).toBe(
+      false,
+    );
+    expect(rejectOrganizerBodySchema.safeParse({}).success).toBe(false);
+  });
+
+  it(`refuses a reason over ${REJECTION_REASON_MAX} characters`, () => {
+    const reason = "x".repeat(REJECTION_REASON_MAX + 1);
+    expect(rejectOrganizerBodySchema.safeParse({ reason }).success).toBe(false);
+  });
+});
+
 describe("organizerService.verifyOrganizer", () => {
   const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
 
@@ -233,6 +308,11 @@ describe("organizerService.verifyOrganizer", () => {
       verifyOrganizer: jest.fn().mockResolvedValue(verifiedRow),
       findForVerify: jest.fn().mockResolvedValue(unverifiedOrganizer),
       findInviteeById: jest.fn(),
+      deleteUnverifiedOrganizer: jest.fn(),
+      findVerificationByUserId: jest.fn(),
+      rejectPendingOrganizer: jest.fn(),
+      reopenRejectedOrganizer: jest.fn(),
+      findApplicationByUserId: jest.fn(),
       ...overrides,
     };
   }
@@ -396,6 +476,65 @@ describe("organizerService.verifyOrganizer", () => {
     expect(error).toBeInstanceOf(NotFoundError);
     expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
   });
+
+  it("refuses (409) an organizer whose email is not verified, before Strapi or the update", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        findForVerify: jest
+          .fn()
+          .mockResolvedValue({ ...unverifiedOrganizer, emailVerifiedAt: null }),
+      }),
+    });
+
+    const error = await service
+      .verifyOrganizer(profile.id, adminId)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({ status: 409, code: "EMAIL_NOT_VERIFIED" });
+    expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
+    expect(deps.organizerRepository.verifyOrganizer).not.toHaveBeenCalled();
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses (409 ORGANIZER_REJECTED) a rejected organizer: no CMS account, no update", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        findForVerify: jest.fn().mockResolvedValue({
+          ...unverifiedOrganizer,
+          rejectedAt: new Date("2026-10-20T09:00:00.000Z"),
+        }),
+      }),
+    });
+
+    const error = await service
+      .verifyOrganizer(profile.id, adminId)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({ status: 409, code: "ORGANIZER_REJECTED" });
+    expect(deps.strapiClient.provisionOrganizerAccess).not.toHaveBeenCalled();
+    expect(deps.organizerRepository.verifyOrganizer).not.toHaveBeenCalled();
+  });
+
+  it("refuses (409) when a reject was saved just before the update, and sends no email", async () => {
+    const { deps, service } = setup({
+      organizerRepository: repoWith({
+        verifyOrganizer: jest.fn().mockResolvedValue({
+          ...verifiedRow,
+          verifiedAt: null,
+          verifiedBy: null,
+          rejectedAt: new Date("2026-10-20T09:00:00.000Z"),
+          justVerified: false,
+        }),
+      }),
+    });
+
+    await expect(
+      service.verifyOrganizer(profile.id, adminId),
+    ).rejects.toMatchObject({ status: 409, code: "ORGANIZER_REJECTED" });
+    expect(deps.enqueueCmsAccessEmail).not.toHaveBeenCalled();
+  });
 });
 
 describe("organizerService.resendInvite", () => {
@@ -424,6 +563,11 @@ describe("organizerService.resendInvite", () => {
         verifyOrganizer: jest.fn(),
         findForVerify: jest.fn(),
         findInviteeById: jest.fn().mockResolvedValue(null),
+        deleteUnverifiedOrganizer: jest.fn(),
+        findVerificationByUserId: jest.fn(),
+        rejectPendingOrganizer: jest.fn(),
+        reopenRejectedOrganizer: jest.fn(),
+        findApplicationByUserId: jest.fn(),
       },
     });
 
@@ -442,5 +586,487 @@ describe("organizerService.resendInvite", () => {
     });
 
     await expect(service.resendInvite(profile.id)).rejects.toBe(alreadyActive);
+  });
+});
+
+describe("organizerService.getOrganizerListItem", () => {
+  // One row as the repository returns it (Date objects, the email-verified timestamp).
+  const listRow = {
+    id: profile.id,
+    organizerFirstName: "Olga",
+    organizerLastName: "Organizer",
+    email: "olga@acme.test",
+    emailVerifiedAt: new Date("2026-10-17T10:05:00.000Z") as Date | null,
+    accountStatus: "active" as const,
+    organizationName: "Acme Events",
+    organizationWebsite: "https://acme.test",
+    appliedAt: createdAt,
+    verifiedAt: null,
+    verifiedBy: null,
+    rejectedAt: null,
+    rejectionReason: null,
+  };
+
+  function setupList(rows = [listRow], total = rows.length) {
+    return setup({
+      organizerRepository: {
+        createOrganizerAccount: jest.fn(),
+        listOrganizers: jest.fn().mockResolvedValue({ rows, total }),
+        verifyOrganizer: jest.fn(),
+        findForVerify: jest.fn(),
+        findInviteeById: jest.fn(),
+        deleteUnverifiedOrganizer: jest.fn(),
+        findVerificationByUserId: jest.fn(),
+        rejectPendingOrganizer: jest.fn(),
+        reopenRejectedOrganizer: jest.fn(),
+        findApplicationByUserId: jest.fn(),
+      },
+    });
+  }
+
+  it("returns each row as a DTO: ISO dates and a yes/no for the email, nothing else", async () => {
+    const { service } = setupList();
+
+    const { items } = await service.getOrganizerListItem({
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(items).toEqual([
+      {
+        id: profile.id,
+        organizerFirstName: "Olga",
+        organizerLastName: "Organizer",
+        email: "olga@acme.test",
+        emailVerified: true,
+        accountStatus: "active",
+        organizationName: "Acme Events",
+        organizationWebsite: "https://acme.test",
+        appliedAt: "2026-10-17T10:00:00.000Z",
+        verifiedAt: null,
+        verifiedBy: null,
+        rejectedAt: null,
+        rejectionReason: null,
+      },
+    ]);
+  });
+
+  it("an applicant without a confirmed email is emailVerified: false", async () => {
+    const { service } = setupList([{ ...listRow, emailVerifiedAt: null }]);
+
+    const { items } = await service.getOrganizerListItem({
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(items[0].emailVerified).toBe(false);
+  });
+
+  it("passes the verification filter on and turns page/pageSize into limit/offset", async () => {
+    const { deps, service } = setupList([listRow], 23);
+
+    const { meta } = await service.getOrganizerListItem({
+      page: 3,
+      pageSize: 10,
+      verification: "pending",
+    });
+
+    expect(deps.organizerRepository.listOrganizers).toHaveBeenCalledWith({
+      search: undefined,
+      verification: "pending",
+      limit: 10,
+      offset: 20,
+    });
+    expect(meta).toEqual({ page: 3, pageSize: 10, total: 23 });
+  });
+
+  it("no filter in the query = no filter in the repository call", async () => {
+    const { deps, service } = setupList();
+
+    await service.getOrganizerListItem({
+      page: 1,
+      pageSize: 10,
+      verification: null,
+    });
+
+    expect(deps.organizerRepository.listOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ verification: undefined }),
+    );
+  });
+});
+
+describe("organizerService.deleteOrganizer", () => {
+  function setupDelete(result: "deleted" | "not_found" | "already_verified") {
+    return setup({
+      organizerRepository: {
+        createOrganizerAccount: jest.fn(),
+        listOrganizers: jest.fn(),
+        verifyOrganizer: jest.fn(),
+        findForVerify: jest.fn(),
+        findInviteeById: jest.fn(),
+        deleteUnverifiedOrganizer: jest.fn().mockResolvedValue(result),
+        findVerificationByUserId: jest.fn(),
+        rejectPendingOrganizer: jest.fn(),
+        reopenRejectedOrganizer: jest.fn(),
+        findApplicationByUserId: jest.fn(),
+      },
+    });
+  }
+
+  it("deletes the unverified applicant's account", async () => {
+    const { deps, service } = setupDelete("deleted");
+
+    await expect(service.deleteOrganizer(profile.id)).resolves.toBeUndefined();
+    expect(
+      deps.organizerRepository.deleteUnverifiedOrganizer,
+    ).toHaveBeenCalledWith(profile.id);
+  });
+
+  it("returns 404 for an unknown organizer", async () => {
+    const { service } = setupDelete("not_found");
+
+    await expect(service.deleteOrganizer(profile.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("refuses (409) to delete an organizer who is already verified", async () => {
+    const { service } = setupDelete("already_verified");
+
+    const error = await service
+      .deleteOrganizer(profile.id)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "ORGANIZER_ALREADY_VERIFIED",
+    });
+  });
+});
+
+describe("organizerService.rejectOrganizer", () => {
+  const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
+  const reason = "Website could not be verified";
+
+  function setupReject(row: typeof rejectedRow | null) {
+    const { deps } = setup();
+    jest
+      .mocked(deps.organizerRepository.rejectPendingOrganizer)
+      .mockResolvedValue(row);
+    return { deps, service: createOrganizerService(deps) };
+  }
+
+  it("saves the rejection with the admin id from the token and the reason", async () => {
+    const { deps, service } = setupReject(rejectedRow);
+
+    await service.rejectOrganizer(profile.id, adminId, reason);
+
+    expect(
+      deps.organizerRepository.rejectPendingOrganizer,
+    ).toHaveBeenCalledWith({
+      organizerId: profile.id,
+      rejecterId: adminId,
+      reason,
+    });
+    // Rejecting keeps the account: nothing is deleted.
+    expect(
+      deps.organizerRepository.deleteUnverifiedOrganizer,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("returns the rejection with an ISO date and the admin's name, without the email", async () => {
+    const { service } = setupReject(rejectedRow);
+
+    const result = await service.rejectOrganizer(profile.id, adminId, reason);
+
+    expect(result).toEqual({
+      organizerId: profile.id,
+      organizationName: "Acme Events",
+      organizerFirstName: "Olga",
+      organizerLastName: "Organizer",
+      rejectedAt: "2026-10-20T09:00:00.000Z",
+      rejectedBy: "Ada Admin",
+      rejectionReason: reason,
+      rejectionEmailQueued: true,
+    });
+  });
+
+  it("queues the rejection email with the reason, keyed by organizer and rejection time", async () => {
+    const { deps, service } = setupReject(rejectedRow);
+
+    await service.rejectOrganizer(profile.id, adminId, reason);
+
+    // The time is in the key: after a reopen, a second rejection must send its own email.
+    expect(deps.enqueueOrganizerRejectedEmail).toHaveBeenCalledWith(
+      {
+        to: "olga@acme.test",
+        firstName: "Olga",
+        organizationName: "Acme Events",
+        reason,
+        loginUrl: "http://localhost:3000/login",
+      },
+      `${profile.id}-${new Date("2026-10-20T09:00:00.000Z").getTime()}`,
+    );
+  });
+
+  it("still rejects when the email cannot be queued, and says so", async () => {
+    const { deps, service } = setupReject(rejectedRow);
+    jest
+      .mocked(deps.enqueueOrganizerRejectedEmail)
+      .mockRejectedValue(new Error("Redis down"));
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await service.rejectOrganizer(profile.id, adminId, reason);
+
+    expect(result.rejectionEmailQueued).toBe(false);
+    log.mockRestore();
+  });
+
+  it("returns 404 for an unknown organizer and sends no email", async () => {
+    const { deps, service } = setupReject(null);
+
+    await expect(
+      service.rejectOrganizer(profile.id, adminId, reason),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(deps.enqueueOrganizerRejectedEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses (409 ORGANIZER_ALREADY_VERIFIED) a verified organizer and sends no email", async () => {
+    const { deps, service } = setupReject({
+      ...rejectedRow,
+      verifiedAt: new Date("2026-10-19T09:00:00.000Z"),
+      rejectedAt: null,
+      rejectionReason: null,
+      rejectedBy: null,
+      justRejected: false,
+    });
+
+    await expect(
+      service.rejectOrganizer(profile.id, adminId, reason),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "ORGANIZER_ALREADY_VERIFIED",
+    });
+    expect(deps.enqueueOrganizerRejectedEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses (409 ORGANIZER_ALREADY_REJECTED) a second rejection: the first reason stays", async () => {
+    const { deps, service } = setupReject({
+      ...rejectedRow,
+      justRejected: false,
+    });
+
+    await expect(
+      service.rejectOrganizer(profile.id, adminId, "another reason"),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "ORGANIZER_ALREADY_REJECTED",
+    });
+    expect(deps.enqueueOrganizerRejectedEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("organizerService.reopenOrganizer", () => {
+  function setupReopen(row: typeof reopenedRow | null) {
+    const { deps } = setup();
+    jest
+      .mocked(deps.organizerRepository.reopenRejectedOrganizer)
+      .mockResolvedValue(row);
+    return { deps, service: createOrganizerService(deps) };
+  }
+
+  it("reopens the organizer by id and returns it as pending", async () => {
+    const { deps, service } = setupReopen(reopenedRow);
+
+    const result = await service.reopenOrganizer(profile.id);
+
+    expect(
+      deps.organizerRepository.reopenRejectedOrganizer,
+    ).toHaveBeenCalledWith(profile.id);
+    expect(result).toEqual({
+      organizerId: profile.id,
+      organizationName: "Acme Events",
+      organizerFirstName: "Olga",
+      organizerLastName: "Organizer",
+      status: "pending",
+    });
+  });
+
+  it("does not email the applicant", async () => {
+    const { deps, service } = setupReopen(reopenedRow);
+
+    await service.reopenOrganizer(profile.id);
+
+    expect(deps.enqueueOrganizerRejectedEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for an unknown organizer", async () => {
+    const { service } = setupReopen(null);
+
+    await expect(service.reopenOrganizer(profile.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("refuses (409 ORGANIZER_NOT_REJECTED) an organizer that is not rejected", async () => {
+    const { service } = setupReopen({ ...reopenedRow, justReopened: false });
+
+    const error = await service
+      .reopenOrganizer(profile.id)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "ORGANIZER_NOT_REJECTED",
+    });
+  });
+});
+
+describe("organizerService.getOwnApplication", () => {
+  function setupApplication(row: typeof applicationRow | null) {
+    const { deps } = setup();
+    jest
+      .mocked(deps.organizerRepository.findApplicationByUserId)
+      .mockResolvedValue(row);
+    return { deps, service: createOrganizerService(deps) };
+  }
+
+  it("looks up the application of the signed-in user and returns it as pending", async () => {
+    const { deps, service } = setupApplication(applicationRow);
+
+    const result = await service.getOwnApplication(user.id);
+
+    expect(
+      deps.organizerRepository.findApplicationByUserId,
+    ).toHaveBeenCalledWith(user.id);
+    expect(result).toEqual({
+      status: "pending",
+      organizationName: "Acme Events",
+      organizationWebsite: "https://acme.test",
+      appliedAt: "2026-10-17T10:00:00.000Z",
+      emailVerifiedAt: "2026-10-17T10:05:00.000Z",
+      verifiedAt: null,
+      rejectedAt: null,
+      rejectionReason: null,
+    });
+  });
+
+  it("a rejected application has status rejected and carries the reason", async () => {
+    const { service } = setupApplication({
+      ...applicationRow,
+      rejectedAt: new Date("2026-10-20T09:00:00.000Z"),
+      rejectionReason: "Website could not be verified",
+    });
+
+    const result = await service.getOwnApplication(user.id);
+
+    expect(result).toMatchObject({
+      status: "rejected",
+      rejectedAt: "2026-10-20T09:00:00.000Z",
+      rejectionReason: "Website could not be verified",
+    });
+  });
+
+  it("a verified application has status verified", async () => {
+    const { service } = setupApplication({
+      ...applicationRow,
+      verifiedAt: new Date("2026-10-19T09:00:00.000Z"),
+    });
+
+    expect((await service.getOwnApplication(user.id)).status).toBe("verified");
+  });
+
+  it("returns 404 for a user without an organizer profile", async () => {
+    const { service } = setupApplication(null);
+
+    await expect(service.getOwnApplication(user.id)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+});
+
+describe("organizerService.assertVerifiedOrganizer", () => {
+  const organizer = { id: user.id, role: "organizer" as const };
+
+  function setupVerification(
+    profileRow: { verifiedAt: Date | null; rejectedAt: Date | null } | null,
+  ) {
+    return setup({
+      organizerRepository: {
+        createOrganizerAccount: jest.fn(),
+        listOrganizers: jest.fn(),
+        verifyOrganizer: jest.fn(),
+        findForVerify: jest.fn(),
+        findInviteeById: jest.fn(),
+        deleteUnverifiedOrganizer: jest.fn(),
+        findVerificationByUserId: jest.fn().mockResolvedValue(profileRow),
+        rejectPendingOrganizer: jest.fn(),
+        reopenRejectedOrganizer: jest.fn(),
+        findApplicationByUserId: jest.fn(),
+      },
+    });
+  }
+
+  it("lets an approved organizer through", async () => {
+    const { deps, service } = setupVerification({
+      verifiedAt: verifiedRow.verifiedAt,
+      rejectedAt: null,
+    });
+
+    await expect(
+      service.assertVerifiedOrganizer(organizer),
+    ).resolves.toBeUndefined();
+    expect(
+      deps.organizerRepository.findVerificationByUserId,
+    ).toHaveBeenCalledWith(user.id);
+  });
+
+  it("refuses (403 ORGANIZER_NOT_VERIFIED) an organizer still waiting for approval", async () => {
+    const { service } = setupVerification({
+      verifiedAt: null,
+      rejectedAt: null,
+    });
+
+    const error = await service
+      .assertVerifiedOrganizer(organizer)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error).toMatchObject({
+      status: 403,
+      code: "ORGANIZER_NOT_VERIFIED",
+    });
+  });
+
+  it("refuses (403 ORGANIZER_REJECTED) a rejected organizer", async () => {
+    const { service } = setupVerification({
+      verifiedAt: null,
+      rejectedAt: new Date("2026-10-20T09:00:00.000Z"),
+    });
+
+    await expect(
+      service.assertVerifiedOrganizer(organizer),
+    ).rejects.toMatchObject({ status: 403, code: "ORGANIZER_REJECTED" });
+  });
+
+  it("refuses an organizer with no organizer profile (deny by default)", async () => {
+    const { service } = setupVerification(null);
+
+    await expect(
+      service.assertVerifiedOrganizer(organizer),
+    ).rejects.toMatchObject({ code: "ORGANIZER_NOT_VERIFIED" });
+  });
+
+  it("never blocks an admin, and does not even look them up", async () => {
+    const { deps, service } = setupVerification(null);
+
+    await expect(
+      service.assertVerifiedOrganizer({ id: user.id, role: "admin" }),
+    ).resolves.toBeUndefined();
+    expect(
+      deps.organizerRepository.findVerificationByUserId,
+    ).not.toHaveBeenCalled();
   });
 });

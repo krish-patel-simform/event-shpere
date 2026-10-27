@@ -8,9 +8,9 @@ import { speakerService } from "@/src/features/speakers/server";
 // up their account yet. The old link stops working. Only pending accounts; 60s cooldown.
 export const POST = route<{ slug: string }>(
   { auth: "signed-in", permission: [PERMISSION.SPEAKER_CREATE] },
-  async ({ params }) => {
+  async ({ params, currentUser }) => {
     const { slug } = parseInput(speakerSlugParamsSchema, await params);
-    const result = await speakerService.resendInvite(slug);
+    const result = await speakerService.resendInvite(slug, currentUser);
     return ok(resendInviteResponseSchema.parse(result));
   },
 );

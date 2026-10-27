@@ -6,6 +6,7 @@ import {
   DrizzleQueryError,
   eq,
   ilike,
+  isNotNull,
   isNull,
   sql,
   type SQL,
@@ -20,7 +21,10 @@ import {
   userRolesTable,
   usersTable,
 } from "../../../db/schemas";
-import type { OrganizerSearchField } from "../schemas/organizer.schemas";
+import type {
+  OrganizerSearchField,
+  OrganizerVerificationFilter,
+} from "../schemas/organizer.schemas";
 
 /** Postgres "unique_violation". Drizzle wraps the driver error in DrizzleQueryError.cause. */
 function isUniqueViolation(error: unknown): boolean {
@@ -43,6 +47,7 @@ export type NewOrganizerAccount = {
 };
 
 const verifierTable = alias(usersTable, "verifier");
+const rejecterTable = alias(usersTable, "rejecter");
 
 // Search field (DB column name) → how to search it. Typed as a Record over the schema's
 // whitelist, so adding a field there without a condition here is a compile error.
@@ -54,6 +59,20 @@ const searchConditions: Record<OrganizerSearchField, (pattern: string) => SQL> =
 
 export type OrganizerSearch = { field: OrganizerSearchField; value: string };
 
+// Typed as a Record over the schema's filter list, like searchConditions.
+// Pending = neither decision yet: a rejected applicant is not in the approval queue.
+const verificationConditions: Record<
+  OrganizerVerificationFilter,
+  SQL | undefined
+> = {
+  pending: and(
+    isNull(organizerProfilesTable.verifiedAt),
+    isNull(organizerProfilesTable.rejectedAt),
+  ),
+  verified: isNotNull(organizerProfilesTable.verifiedAt),
+  rejected: isNotNull(organizerProfilesTable.rejectedAt),
+};
+
 export type VerifyOrganizerInfo = {
   /** organizer_profiles.id */
   organizerId: string;
@@ -61,6 +80,14 @@ export type VerifyOrganizerInfo = {
   verifierId: string;
   /** Strapi admin user id, saved in the same UPDATE as the verification. */
   cmsOrganizerId?: number;
+};
+
+export type RejectOrganizerInfo = {
+  /** organizer_profiles.id */
+  organizerId: string;
+  /** users.id of the admin, from the access token (never from the request). */
+  rejecterId: string;
+  reason: string;
 };
 
 export const organizerRepository = {
@@ -119,20 +146,28 @@ export const organizerRepository = {
     }
   },
 
-  /** One page of organizers, newest first, plus the total count for pagination. */
-  /** One page of organizers, newest first, optionally searched, plus the matching total. */
+  /**
+   * One page of organizers, newest first, optionally searched and/or filtered by
+   * verification, plus the matching total.
+   */
   async listOrganizers(params: {
     search?: OrganizerSearch;
+    verification?: OrganizerVerificationFilter;
     limit: number;
     offset: number;
   }) {
     // Contains-match, case-insensitive. undefined = no filter → all organizers.
     // The value is sent as a bound parameter (never pasted into SQL): no injection.
-    const where = params.search
+    const searchCondition = params.search
       ? searchConditions[params.search.field](
           `%${escapeLike(params.search.value)}%`,
         )
       : undefined;
+    const verificationCondition = params.verification
+      ? verificationConditions[params.verification]
+      : undefined;
+    // and() skips undefined parts; with neither it is undefined = no WHERE.
+    const where = and(searchCondition, verificationCondition);
 
     const [rows, [{ total }]] = await Promise.all([
       db
@@ -140,14 +175,20 @@ export const organizerRepository = {
           id: organizerProfilesTable.id,
           organizerFirstName: usersTable.firstName,
           organizerLastName: usersTable.lastName,
+          email: usersTable.email,
+          emailVerifiedAt: usersTable.emailVerifiedAt,
+          accountStatus: usersTable.status,
           organizationName: organizerProfilesTable.organizationName,
           organizationWebsite: organizerProfilesTable.organizationWebsite,
+          appliedAt: organizerProfilesTable.createdAt,
           verifiedAt: organizerProfilesTable.verifiedAt,
           // Joined in SQL: "Ada Admin". `||` with NULL gives NULL, so an unverified
           // organizer (no verifier row from the left join) gets null.
           verifiedBy: sql<
             string | null
           >`${verifierTable.firstName} || ' ' || ${verifierTable.lastName}`,
+          rejectedAt: organizerProfilesTable.rejectedAt,
+          rejectionReason: organizerProfilesTable.rejectionReason,
         })
         .from(organizerProfilesTable)
         .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
@@ -181,10 +222,12 @@ export const organizerRepository = {
    * Already verified → nothing is overwritten: the first verifier and time are kept.
    * `justVerified` is true only for the call that actually verified it, so one-time
    * follow-ups (the CMS access email) happen once even if two Verify clicks race.
+   * A rejected organizer is never updated (rejected is final): `rejectedAt` tells the caller.
    */
   async verifyOrganizer(input: VerifyOrganizerInfo) {
     return db.transaction(async (tx) => {
       // `verified_at IS NULL`: only an unverified organizer is updated (idempotent).
+      // `rejected_at IS NULL`: a reject that won a race is not overwritten.
       // verifiedAt and verifiedBy are set together (the table's check constraint needs both).
       const updated = await tx
         .update(organizerProfilesTable)
@@ -197,6 +240,7 @@ export const organizerRepository = {
           and(
             eq(organizerProfilesTable.id, input.organizerId),
             isNull(organizerProfilesTable.verifiedAt),
+            isNull(organizerProfilesTable.rejectedAt),
           ),
         )
         .returning({ id: organizerProfilesTable.id });
@@ -212,6 +256,7 @@ export const organizerRepository = {
           verifiedBy: sql<
             string | null
           >`${verifierTable.firstName} || ' ' || ${verifierTable.lastName}`,
+          rejectedAt: organizerProfilesTable.rejectedAt,
         })
         .from(organizerProfilesTable)
         .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
@@ -223,6 +268,157 @@ export const organizerRepository = {
 
       return row ? { ...row, justVerified: updated.length > 0 } : null;
     });
+  },
+
+  /**
+   * Rejects a pending applicant with the admin's reason, then reads it back with the names and
+   * email (for the response and the rejection email). The account is kept: the applicant can
+   * still log in and see the reason. Returns null when the organizer does not exist.
+   * Only a pending organizer is updated, in one conditional UPDATE (no race with Verify):
+   * `justRejected` is false when it was already verified or rejected, and the read-back row
+   * tells which, so the first rejection's reason is never overwritten.
+   */
+  async rejectPendingOrganizer(input: RejectOrganizerInfo) {
+    return db.transaction(async (tx) => {
+      // rejectedAt and rejectedBy are set together (the table's check constraints need both).
+      const updated = await tx
+        .update(organizerProfilesTable)
+        .set({
+          rejectedAt: new Date(),
+          rejectedBy: input.rejecterId,
+          rejectionReason: input.reason,
+        })
+        .where(
+          and(
+            eq(organizerProfilesTable.id, input.organizerId),
+            isNull(organizerProfilesTable.verifiedAt),
+            isNull(organizerProfilesTable.rejectedAt),
+          ),
+        )
+        .returning({ id: organizerProfilesTable.id });
+
+      const [row] = await tx
+        .select({
+          organizerId: organizerProfilesTable.id,
+          organizationName: organizerProfilesTable.organizationName,
+          organizerFirstName: usersTable.firstName,
+          organizerLastName: usersTable.lastName,
+          email: usersTable.email,
+          verifiedAt: organizerProfilesTable.verifiedAt,
+          rejectedAt: organizerProfilesTable.rejectedAt,
+          rejectionReason: organizerProfilesTable.rejectionReason,
+          rejectedBy: sql<
+            string | null
+          >`${rejecterTable.firstName} || ' ' || ${rejecterTable.lastName}`,
+        })
+        .from(organizerProfilesTable)
+        .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+        .leftJoin(
+          rejecterTable,
+          eq(rejecterTable.id, organizerProfilesTable.rejectedBy),
+        )
+        .where(eq(organizerProfilesTable.id, input.organizerId));
+
+      return row ? { ...row, justRejected: updated.length > 0 } : null;
+    });
+  },
+
+  /**
+   * Reopens a rejected application: the three rejection columns go back to NULL together (the
+   * check constraints need all three), so the applicant is pending again. Only a rejected
+   * organizer is updated, in one conditional UPDATE: `justReopened` is false when it was not
+   * rejected (already pending, reopened by another click, or verified). The earlier rejection
+   * (who, when, why) is not kept. Returns null when the organizer does not exist.
+   */
+  async reopenRejectedOrganizer(organizerId: string) {
+    return db.transaction(async (tx) => {
+      const updated = await tx
+        .update(organizerProfilesTable)
+        .set({ rejectedAt: null, rejectedBy: null, rejectionReason: null })
+        .where(
+          and(
+            eq(organizerProfilesTable.id, organizerId),
+            isNotNull(organizerProfilesTable.rejectedAt),
+          ),
+        )
+        .returning({ id: organizerProfilesTable.id });
+
+      const [row] = await tx
+        .select({
+          organizerId: organizerProfilesTable.id,
+          organizationName: organizerProfilesTable.organizationName,
+          organizerFirstName: usersTable.firstName,
+          organizerLastName: usersTable.lastName,
+        })
+        .from(organizerProfilesTable)
+        .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+        .where(eq(organizerProfilesTable.id, organizerId));
+
+      return row ? { ...row, justReopened: updated.length > 0 } : null;
+    });
+  },
+
+  /**
+   * Deletes a junk/spam applicant's whole account (a real applicant is rejected instead, which
+   * keeps it). Only while the organizer is not verified. Deleting the users row cascades to the
+   * profile, role, tokens and sessions.
+   * The profile row is locked first (FOR UPDATE), so a Verify running at the same moment
+   * waits, then finds nothing: a just-verified organizer is never deleted.
+   */
+  async deleteUnverifiedOrganizer(
+    organizerId: string,
+  ): Promise<"deleted" | "not_found" | "already_verified"> {
+    return db.transaction(async (tx) => {
+      const [organizer] = await tx
+        .select({
+          userId: organizerProfilesTable.userId,
+          verifiedAt: organizerProfilesTable.verifiedAt,
+        })
+        .from(organizerProfilesTable)
+        .where(eq(organizerProfilesTable.id, organizerId))
+        .for("update");
+
+      if (!organizer) return "not_found";
+      if (organizer.verifiedAt) return "already_verified";
+
+      await tx.delete(usersTable).where(eq(usersTable.id, organizer.userId));
+      return "deleted";
+    });
+  },
+
+  /** The admin decision on a user's organizer profile. null = the user has no profile. */
+  async findVerificationByUserId(
+    userId: string,
+  ): Promise<{ verifiedAt: Date | null; rejectedAt: Date | null } | null> {
+    const [row] = await db
+      .select({
+        verifiedAt: organizerProfilesTable.verifiedAt,
+        rejectedAt: organizerProfilesTable.rejectedAt,
+      })
+      .from(organizerProfilesTable)
+      .where(eq(organizerProfilesTable.userId, userId))
+      .limit(1);
+    return row ?? null;
+  },
+
+  /** A user's own organizer application. null = the user has no organizer profile. */
+  async findApplicationByUserId(userId: string) {
+    const rows = await db
+      .select({
+        organizationName: organizerProfilesTable.organizationName,
+        organizationWebsite: organizerProfilesTable.organizationWebsite,
+        appliedAt: organizerProfilesTable.createdAt,
+        emailVerifiedAt: usersTable.emailVerifiedAt,
+        verifiedAt: organizerProfilesTable.verifiedAt,
+        rejectedAt: organizerProfilesTable.rejectedAt,
+        rejectionReason: organizerProfilesTable.rejectionReason,
+      })
+      .from(organizerProfilesTable)
+      .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+      .where(eq(organizerProfilesTable.userId, userId))
+      .limit(1);
+    // at(0) is typed as possibly undefined, so callers must handle "no profile".
+    return rows.at(0) ?? null;
   },
 
   /** The account behind an organizer profile, for re-sending the invite. */
@@ -237,14 +433,16 @@ export const organizerRepository = {
     return row ?? null;
   },
 
-  /** What verifying needs before the Strapi call. null = no such organizer. */
+  /** What verifying (and rejecting) needs to decide. null = no such organizer. */
   async findForVerify(organizerId: string) {
     const [row] = await db
       .select({
         email: usersTable.email,
         firstName: usersTable.firstName,
         lastName: usersTable.lastName,
+        emailVerifiedAt: usersTable.emailVerifiedAt,
         verifiedAt: organizerProfilesTable.verifiedAt,
+        rejectedAt: organizerProfilesTable.rejectedAt,
       })
       .from(organizerProfilesTable)
       .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))

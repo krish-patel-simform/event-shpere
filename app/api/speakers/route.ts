@@ -26,7 +26,7 @@ export const POST = route(
   { auth: "signed-in", permission: [PERMISSION.SPEAKER_CREATE] },
   async ({ req, currentUser }) => {
     const body = await parseBody(req, createSpeakerBodySchema);
-    const speaker = await speakerService.createSpeaker(body, currentUser.id);
+    const speaker = await speakerService.createSpeaker(body, currentUser);
     return created(createSpeakerResponseSchema.parse(speaker));
   },
 );

@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ServiceUnavailableError,
   ValidationError,
@@ -26,9 +27,12 @@ jest.mock("../speaker.repository", () => ({}));
 jest.mock("../../../auth/server", () => ({}));
 jest.mock("../../../email/server", () => ({}));
 jest.mock("../../../cms/server", () => ({}));
+jest.mock("../../../organizer/server", () => ({}));
 
 const createdAt = new Date("2026-10-23T10:00:00.000Z");
 const organizerId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
+// The signed-in user who invites (from the access token).
+const inviter = { id: organizerId, role: "organizer" as const };
 const user = {
   id: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
   firstName: "Ankit",
@@ -118,6 +122,10 @@ function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
     },
     createSlug: jest.fn().mockReturnValue("ankit-sharma-3f9a1c"),
     appUrl: "http://localhost:3000",
+    // An approved organizer by default; tests for the pending case make it throw.
+    organizerVerification: {
+      assertVerifiedOrganizer: jest.fn().mockResolvedValue(undefined),
+    },
     ...overrides,
   } satisfies SpeakerServiceDeps;
   return { deps, service: createSpeakerService(deps) };
@@ -127,7 +135,7 @@ describe("speakerService.createSpeaker", () => {
   it("creates the Strapi entry first, then saves its documentId with the inviter", async () => {
     const { deps, service } = setup();
 
-    await service.createSpeaker(input, organizerId);
+    await service.createSpeaker(input, inviter);
 
     expect(deps.strapiClient.createSpeaker).toHaveBeenCalledWith({
       name: "Ankit Sharma",
@@ -149,7 +157,7 @@ describe("speakerService.createSpeaker", () => {
   it("returns a pending speaker without secrets or CMS ids", async () => {
     const { service } = setup();
 
-    const result = await service.createSpeaker(input, organizerId);
+    const result = await service.createSpeaker(input, inviter);
 
     expect(result).toEqual({
       id: profile.id,
@@ -169,7 +177,7 @@ describe("speakerService.createSpeaker", () => {
   it("queues the existing account-setup email with an encoded link", async () => {
     const { deps, service } = setup();
 
-    await service.createSpeaker(input, organizerId);
+    await service.createSpeaker(input, inviter);
 
     expect(deps.enqueueAccountSetupEmail).toHaveBeenCalledWith({
       to: "ankit@speaker.test",
@@ -190,7 +198,7 @@ describe("speakerService.createSpeaker", () => {
     });
 
     const error = await service
-      .createSpeaker(input, organizerId)
+      .createSpeaker(input, inviter)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ConflictError);
@@ -217,7 +225,7 @@ describe("speakerService.createSpeaker", () => {
     });
 
     const error = await service
-      .createSpeaker(input, organizerId)
+      .createSpeaker(input, inviter)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ConflictError);
@@ -239,7 +247,7 @@ describe("speakerService.createSpeaker", () => {
     });
 
     const error = await service
-      .createSpeaker(input, organizerId)
+      .createSpeaker(input, inviter)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ServiceUnavailableError);
@@ -264,7 +272,7 @@ describe("speakerService.createSpeaker", () => {
     });
 
     const error = await service
-      .createSpeaker(input, organizerId)
+      .createSpeaker(input, inviter)
       .catch((e: unknown) => e);
 
     expect(error).toMatchObject({
@@ -292,7 +300,7 @@ describe("speakerService.createSpeaker", () => {
     });
 
     const error = await service
-      .createSpeaker(input, organizerId)
+      .createSpeaker(input, inviter)
       .catch((e: unknown) => e);
 
     expect(error).toMatchObject({ status: 409, code: "EMAIL_TAKEN" });
@@ -310,9 +318,7 @@ describe("speakerService.createSpeaker", () => {
       },
     });
 
-    await expect(service.createSpeaker(input, organizerId)).rejects.toBe(
-      dbError,
-    );
+    await expect(service.createSpeaker(input, inviter)).rejects.toBe(dbError);
     expect(deps.strapiClient.deleteSpeaker).toHaveBeenCalledWith(
       "strapi-doc-1",
     );
@@ -334,9 +340,7 @@ describe("speakerService.createSpeaker", () => {
       },
     });
 
-    await expect(service.createSpeaker(input, organizerId)).rejects.toBe(
-      dbError,
-    );
+    await expect(service.createSpeaker(input, inviter)).rejects.toBe(dbError);
     expect(JSON.stringify(log.mock.calls)).toContain("strapi-doc-1");
     log.mockRestore();
   });
@@ -349,7 +353,7 @@ describe("speakerService.createSpeaker", () => {
         .mockRejectedValue(new Error("Redis down")),
     });
 
-    const result = await service.createSpeaker(input, organizerId);
+    const result = await service.createSpeaker(input, inviter);
 
     expect(result.setupEmailQueued).toBe(false);
     expect(deps.strapiClient.deleteSpeaker).not.toHaveBeenCalled();
@@ -1153,7 +1157,7 @@ describe("speakerService.resendInvite", () => {
       repo: { findInviteeBySlug: jest.fn().mockResolvedValue({ userId }) },
     });
 
-    const result = await service.resendInvite("ankit-sharma-3f9a1c");
+    const result = await service.resendInvite("ankit-sharma-3f9a1c", inviter);
 
     expect(deps.speakerRepository.findInviteeBySlug).toHaveBeenCalledWith(
       "ankit-sharma-3f9a1c",
@@ -1170,9 +1174,9 @@ describe("speakerService.resendInvite", () => {
   it("returns 404 for an unknown slug without sending anything", async () => {
     const { deps, service } = setup();
 
-    await expect(service.resendInvite("nobody-000000")).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    await expect(
+      service.resendInvite("nobody-000000", inviter),
+    ).rejects.toBeInstanceOf(NotFoundError);
     expect(deps.accountInviteService.resendAccountSetup).not.toHaveBeenCalled();
   });
 
@@ -1185,8 +1189,47 @@ describe("speakerService.resendInvite", () => {
       },
     });
 
-    await expect(service.resendInvite("ankit-sharma-3f9a1c")).rejects.toBe(
-      alreadyActive,
+    await expect(
+      service.resendInvite("ankit-sharma-3f9a1c", inviter),
+    ).rejects.toBe(alreadyActive);
+  });
+});
+
+describe("speakerService: organizer still waiting for admin approval", () => {
+  const notVerified = new ForbiddenError(
+    "Your organizer account is waiting for admin approval",
+    "ORGANIZER_NOT_VERIFIED",
+  );
+  const pendingOrganizer = () =>
+    setup({
+      repo: { findInviteeBySlug: jest.fn().mockResolvedValue({ userId }) },
+      organizerVerification: {
+        assertVerifiedOrganizer: jest.fn().mockRejectedValue(notVerified),
+      },
+    });
+
+  it("cannot invite a speaker: 403 before Strapi, the database or any email", async () => {
+    const { deps, service } = pendingOrganizer();
+
+    await expect(service.createSpeaker(input, inviter)).rejects.toBe(
+      notVerified,
     );
+    expect(
+      deps.organizerVerification.assertVerifiedOrganizer,
+    ).toHaveBeenCalledWith(inviter);
+    expect(deps.speakerRepository.findAccountByEmail).not.toHaveBeenCalled();
+    expect(deps.strapiClient.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.speakerRepository.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.enqueueAccountSetupEmail).not.toHaveBeenCalled();
+  });
+
+  it("cannot resend a speaker's invite either", async () => {
+    const { deps, service } = pendingOrganizer();
+
+    await expect(
+      service.resendInvite("ankit-sharma-3f9a1c", inviter),
+    ).rejects.toBe(notVerified);
+    expect(deps.speakerRepository.findInviteeBySlug).not.toHaveBeenCalled();
+    expect(deps.accountInviteService.resendAccountSetup).not.toHaveBeenCalled();
   });
 });

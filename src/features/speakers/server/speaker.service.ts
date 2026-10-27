@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "../../../config/env";
+import type { CurrentUser } from "../../../core/auth/server/auth-session";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
 import {
   ConflictError,
@@ -23,6 +24,10 @@ import {
   type StrapiSpeakerClient,
 } from "../../cms/server";
 import { enqueueAccountSetupEmail } from "../../email/server";
+import {
+  organizerService,
+  type OrganizerService,
+} from "../../organizer/server";
 import type {
   CreateSpeakerBody,
   CreateSpeakerResponseDto,
@@ -81,7 +86,12 @@ export type SpeakerServiceDeps = {
   >;
   createSlug: typeof createSpeakerSlug;
   appUrl: string;
+  /** Organizers may invite speakers only once an admin has approved them. */
+  organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
 };
+
+/** The signed-in user doing the invite: an organizer or an admin. */
+type Inviter = Pick<CurrentUser, "id" | "role">;
 
 /** The photo upload as it arrived: streamed on to Strapi, never stored here. */
 export type PhotoUpload = {
@@ -276,12 +286,14 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
      *    (fails → the Strapi entry is deleted again)
      * 4. after the commit: queue the existing account-setup email
      * The speaker fills bio, photo, links... later, after setting a password.
-     * `createdBy` is the inviter's id from the access token, never from the request body.
+     * `inviter` is the signed-in user from the access token, never from the request body.
+     * An organizer still waiting for admin approval → 403 before anything else happens.
      */
     async createSpeaker(
       input: CreateSpeakerBody,
-      createdBy: string,
+      inviter: Inviter,
     ): Promise<CreateSpeakerResponseDto> {
+      await deps.organizerVerification.assertVerifiedOrganizer(inviter);
       await assertEmailFree(input.email);
 
       const cmsSpeaker = await createCmsSpeaker(
@@ -297,7 +309,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
           email: input.email,
           slug: deps.createSlug(input.firstName, input.lastName),
           cmsSpeakerId: cmsSpeaker.documentId,
-          createdBy,
+          createdBy: inviter.id,
           setupToken: {
             tokenHash: setupToken.tokenHash,
             expiresAt: setupToken.expiresAt,
@@ -342,8 +354,13 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
      * ADM-6: a new set-password invite for a speaker who has not set up their account yet.
      * Any organizer or admin may ask (speakers are shared, no organizer owns one); the email
      * only ever goes to the speaker's own inbox, and a cooldown stops spamming it.
+     * An organizer still waiting for admin approval → 403.
      */
-    async resendInvite(slug: string): Promise<ResendInviteResponseDto> {
+    async resendInvite(
+      slug: string,
+      requester: Inviter,
+    ): Promise<ResendInviteResponseDto> {
+      await deps.organizerVerification.assertVerifiedOrganizer(requester);
       const invitee = await deps.speakerRepository.findInviteeBySlug(slug);
       if (!invitee) throw new NotFoundError("Speaker not found");
       return deps.accountInviteService.resendAccountSetup(invitee.userId);
@@ -544,4 +561,5 @@ export const speakerService = createSpeakerService({
   strapiClient: strapiSpeakerClient,
   createSlug: createSpeakerSlug,
   appUrl: env.APP_URL,
+  organizerVerification: organizerService,
 });
