@@ -4,8 +4,8 @@ import type {
   EventStatusCounts,
   RoleCounts,
 } from "../../types/admin-overview";
-import { formatCount } from "../../utils/format-number";
-import { roleLabel } from "../../utils/role-label";
+import { roleLabel } from "@/src/core/auth/role-label";
+import { formatCount } from "@/src/core/format/format-number";
 
 const STATUSES: readonly {
   status: EventStatus;

@@ -8,7 +8,7 @@ import {
   buildWeeklySignupsOption,
   formatWeekLabel,
 } from "../../utils/chart-options";
-import { formatCount } from "../../utils/format-number";
+import { formatCount } from "@/src/core/format/format-number";
 
 const CHART_HEIGHT = "h-48";
 

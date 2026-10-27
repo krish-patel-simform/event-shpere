@@ -11,6 +11,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { PermissionCode } from "@/src/core/auth/permission-catalog";
+import { ORGANIZER_ROUTES } from "@/src/features/organizer";
+import { USER_ROUTES } from "@/src/features/users";
 
 /**
  * Who sees a menu link: "public" (guests too), "signed-in" (any account) or one permission code.
@@ -27,21 +29,15 @@ export type NavItem = {
 };
 export type NavSection = { heading?: string; items: readonly NavItem[] };
 
-/** Admin pages (the organizers list is built, the rest are not yet); the dashboard links to them too. */
+/**
+ * Admin pages the dashboard links to. Each path belongs to its feature (ORGANIZER_ROUTES,
+ * USER_ROUTES), so a page is renamed in one place; this only gathers them for the menu and the
+ * admin overview.
+ */
 export const ADMIN_ROUTES = {
-  organizers: "/admin/organizers",
-  users: "/admin/users",
+  organizers: ORGANIZER_ROUTES.list,
+  users: USER_ROUTES.list,
 } as const;
-
-/** The profile page of one user (not built yet). `id` = users.id. */
-export function adminUserHref(id: string): string {
-  return `${ADMIN_ROUTES.users}/${id}`;
-}
-
-/** The page where the admin reviews one application (not built yet). `id` = organizer_profiles.id. */
-export function adminOrganizerHref(id: string): string {
-  return `${ADMIN_ROUTES.organizers}/${id}`;
-}
 
 /**
  * The app's side menu. Pages other than the dashboard are built in later weeks; their links

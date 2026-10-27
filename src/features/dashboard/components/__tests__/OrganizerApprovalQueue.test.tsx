@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { PendingOrganizer } from "../../types/admin-overview";
+import type { PendingOrganizer } from "@/src/features/organizer";
 import { OrganizerApprovalQueue } from "../admin/OrganizerApprovalQueue";
 
 const verified: PendingOrganizer = {

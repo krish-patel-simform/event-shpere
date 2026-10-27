@@ -9,7 +9,7 @@ import {
   useLogout,
   useMe,
 } from "@/src/features/auth";
-import { roleLabel } from "../utils/role-label";
+import { roleLabel } from "@/src/core/auth/role-label";
 import { DashboardShell } from "./DashboardShell";
 
 function SessionLoading({ label }: { label: string }) {

@@ -5,7 +5,7 @@ import {
   OrganizerReviewStatus,
   type OrganizerApplication,
 } from "../OrganizerReviewStatus";
-import { formatDate } from "../../utils/format-date";
+import { formatDate } from "@/src/core/format/format-date";
 
 const application: OrganizerApplication = {
   status: "pending",

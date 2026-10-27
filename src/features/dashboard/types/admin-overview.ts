@@ -1,24 +1,8 @@
 import type { MeDto } from "@/src/features/auth";
-import type { OrganizerListItemDto } from "@/src/features/organizer";
+import type { PendingOrganizer } from "@/src/features/organizer";
 
 // What the admin's "Platform overview" shows. No admin stats API exists yet: the page renders
 // sample data (utils/admin-overview.sample.ts) in these shapes until it does.
-
-/**
- * One row of the approval queue: the fields it shows from a row of
- * GET /api/admin/organizers?verification=pending.
- */
-export type PendingOrganizer = Pick<
-  OrganizerListItemDto,
-  | "id"
-  | "organizerFirstName"
-  | "organizerLastName"
-  | "email"
-  | "emailVerified"
-  | "organizationName"
-  | "organizationWebsite"
-  | "appliedAt"
->;
 
 export type AdminKpis = {
   totalUsers: number;

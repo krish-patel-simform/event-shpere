@@ -2,7 +2,7 @@
 
 import { ADMIN_ROUTES } from "../../nav-items";
 import type { AdminKpis, AdminOverviewData } from "../../types/admin-overview";
-import { formatCount } from "../../utils/format-number";
+import { formatCount } from "@/src/core/format/format-number";
 import { KpiCard, type KpiTrend } from "../KpiCard";
 import { OrganizerApprovalQueue } from "./OrganizerApprovalQueue";
 import { PlatformBreakdown } from "./PlatformBreakdown";

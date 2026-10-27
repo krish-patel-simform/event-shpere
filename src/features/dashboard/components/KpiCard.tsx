@@ -1,5 +1,5 @@
 import { cn } from "@/src/core/ui";
-import { formatCount } from "../utils/format-number";
+import { formatCount } from "@/src/core/format/format-number";
 
 export type KpiTrend = {
   /** Says what changed in words ("▲ 312 new"), so the meaning never depends on colour. */

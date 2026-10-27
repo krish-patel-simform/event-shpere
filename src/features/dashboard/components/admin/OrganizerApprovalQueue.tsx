@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge, Button } from "@/src/core/ui";
-import type { PendingOrganizer } from "../../types/admin-overview";
-import { formatDate } from "../../utils/format-date";
+import { formatDate } from "@/src/core/format/format-date";
+import type { PendingOrganizer } from "@/src/features/organizer";
 
 type OrganizerApprovalQueueProps = {
   organizers: readonly PendingOrganizer[];

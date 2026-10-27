@@ -1,7 +1,7 @@
 import { Clock, XCircle } from "lucide-react";
 import Link from "next/link";
 import { Badge, buttonStyles } from "@/src/core/ui";
-import { formatDate } from "../utils/format-date";
+import { formatDate } from "@/src/core/format/format-date";
 import { ReviewTimeline, type ReviewStep } from "./ReviewTimeline";
 
 // Support page does not exist yet (same as the auth footer).
