@@ -2,7 +2,7 @@ import type { ComponentProps } from "react";
 import { cn } from "./cn";
 import { Spinner } from "./Spinner";
 
-type Variant = "primary" | "secondary";
+type Variant = "primary" | "secondary" | "danger";
 
 const base =
   "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed";
@@ -12,6 +12,9 @@ const variants: Record<Variant, string> = {
     "bg-brand text-brand-foreground hover:bg-brand-hover disabled:opacity-70 disabled:hover:bg-brand",
   secondary:
     "border border-field bg-surface text-foreground hover:bg-surface-subtle disabled:text-muted disabled:hover:bg-surface",
+  // text-surface = the page colour: white on the dark red in light mode, dark on the light red in dark mode.
+  danger:
+    "bg-danger text-surface hover:opacity-90 disabled:opacity-70 disabled:hover:opacity-70",
 };
 
 /**
