@@ -61,5 +61,27 @@ describe("SidebarNav", () => {
     expect(links()).not.toContain("My schedule");
     expect(screen.queryByText("My activity")).not.toBeInTheDocument();
     expect(links()).toContain("Dashboard");
+    // Admin links need admin permissions.
+    expect(screen.queryByText("Manage")).not.toBeInTheDocument();
+  });
+
+  it("an admin gets the Manage section, in the same place as for every role", () => {
+    renderNavFor("admin", [
+      "ORGANIZER_VERIFY",
+      "USER_VIEW",
+      "NOTIFICATION_VIEW",
+      "PROFILE_VIEW",
+    ]);
+
+    expect(links()).toEqual([
+      "Dashboard",
+      "Browse events",
+      "Speakers",
+      "Organizers",
+      "Users",
+      "Notifications",
+      "Profile & settings",
+    ]);
+    expect(screen.getByText("Manage")).toBeInTheDocument();
   });
 });

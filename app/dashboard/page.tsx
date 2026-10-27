@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { PermissionGate } from "@/src/features/auth";
 import {
-  OrganizerReviewStatus,
+  DashboardHome,
   type OrganizerApplication,
 } from "@/src/features/dashboard";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-// TODO(API): load the signed-in user's application (organizer profile) and show this screen
-// only while it is pending. Sample data until then.
+// TODO(API): load the signed-in user's application from GET /api/me/organizer-application and
+// show this screen while it is pending or rejected. Sample data until then.
 const SAMPLE_APPLICATION: OrganizerApplication = {
+  status: "pending",
   organisationName: "Acme Events Pvt Ltd",
   website: "https://acme-events.example.com",
   contactName: "Ananya Rao",
@@ -19,10 +20,11 @@ const SAMPLE_APPLICATION: OrganizerApplication = {
 };
 
 // Private page: any signed-in user. A guest who opens the URL sees "log in to continue".
+// What it shows depends on the user's permissions (DashboardHome).
 export default function DashboardPage() {
   return (
     <PermissionGate>
-      <OrganizerReviewStatus application={SAMPLE_APPLICATION} />
+      <DashboardHome organizerApplication={SAMPLE_APPLICATION} />
     </PermissionGate>
   );
 }
