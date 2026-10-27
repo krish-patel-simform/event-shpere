@@ -97,6 +97,38 @@ describe("processEmailJob: cms-access", () => {
   });
 });
 
+describe("processEmailJob: organizer-rejected", () => {
+  const rejectedData = {
+    to: "olga@acme.test",
+    firstName: "Olga",
+    organizationName: "Acme Events",
+    reason: "Website could not be verified",
+    loginUrl: "https://app.test/login",
+  };
+
+  it("sends the rejection email with the reason", async () => {
+    await processEmailJob(
+      fakeJob("organizer-rejected", rejectedData, "organizer-rejected-1"),
+    );
+
+    const [email, options] = send.mock.calls[0];
+    expect(email.to).toBe("olga@acme.test");
+    expect(email.html).toContain(rejectedData.reason);
+    expect(options).toEqual({
+      idempotencyKey: "organizer-rejected/organizer-rejected-1",
+    });
+  });
+
+  it("a job without a reason sends nothing", async () => {
+    await expect(
+      processEmailJob(
+        fakeJob("organizer-rejected", { ...rejectedData, reason: "" }),
+      ),
+    ).rejects.toThrow();
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe("startEmailWorker", () => {
   it("listens on the email queue with the shared connection and a concurrency of 5", () => {
     startEmailWorker();

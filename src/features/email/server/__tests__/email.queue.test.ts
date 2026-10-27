@@ -3,6 +3,7 @@ import {
   EMAIL_QUEUE_NAME,
   enqueueAccountSetupEmail,
   enqueueCmsAccessEmail,
+  enqueueOrganizerRejectedEmail,
 } from "../email.queue";
 
 // No Redis: Queue is replaced, so these tests only check how the queue is set up and used.
@@ -93,7 +94,30 @@ describe("enqueueCmsAccessEmail", () => {
   it("uses a job id without ':' (BullMQ rejects it in custom ids)", async () => {
     await enqueueCmsAccessEmail(cmsData, organizerId);
 
-    const [, , options] = mockAdd.mock.calls[0] as [string, unknown, { jobId: string }];
+    const [, , options] = mockAdd.mock.calls[0] as [
+      string,
+      unknown,
+      { jobId: string },
+    ];
     expect(options.jobId).not.toContain(":");
+  });
+});
+
+describe("enqueueOrganizerRejectedEmail", () => {
+  it("adds an 'organizer-rejected' job with one fixed id per organizer", async () => {
+    const rejectedData = {
+      to: "olga@acme.test",
+      firstName: "Olga",
+      organizationName: "Acme Events",
+      reason: "Website could not be verified",
+      loginUrl: "https://app.test/login",
+    };
+    const organizerId = "0b7c2d1e-3f4a-4b5c-8d6e-7f8091a2b3c4";
+
+    await enqueueOrganizerRejectedEmail(rejectedData, organizerId);
+
+    expect(mockAdd).toHaveBeenCalledWith("organizer-rejected", rejectedData, {
+      jobId: `organizer-rejected-${organizerId}`,
+    });
   });
 });

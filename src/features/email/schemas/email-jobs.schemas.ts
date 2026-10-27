@@ -19,9 +19,20 @@ export const cmsAccessJobSchema = z.object({
 });
 export type CmsAccessJob = z.infer<typeof cmsAccessJobSchema>;
 
+// After an admin rejects an organizer application: the decision and the admin's reason.
+export const organizerRejectedJobSchema = z.object({
+  to: z.email(),
+  firstName: z.string().min(1),
+  organizationName: z.string().min(1),
+  reason: z.string().min(1),
+  loginUrl: z.url(),
+});
+export type OrganizerRejectedJob = z.infer<typeof organizerRejectedJobSchema>;
+
 /** Every email job: name → data. Add a line here for each new email type. */
 export type EmailJobs = {
   "account-setup": AccountSetupJob;
   "cms-access": CmsAccessJob;
+  "organizer-rejected": OrganizerRejectedJob;
 };
 export type EmailJobName = keyof EmailJobs;

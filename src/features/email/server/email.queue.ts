@@ -46,3 +46,16 @@ export function enqueueCmsAccessEmail(
 ) {
   return enqueue("cms-access", data, { jobId: `cms-access-${organizerId}` });
 }
+
+/**
+ * One rejection email per rejection: `rejectionKey` identifies it (organizer id + rejection
+ * time), because a reopened application can be rejected again and must get a new email.
+ */
+export function enqueueOrganizerRejectedEmail(
+  data: EmailJobs["organizer-rejected"],
+  rejectionKey: string,
+) {
+  return enqueue("organizer-rejected", data, {
+    jobId: `organizer-rejected-${rejectionKey}`,
+  });
+}
