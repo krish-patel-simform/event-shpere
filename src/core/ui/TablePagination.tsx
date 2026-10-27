@@ -1,5 +1,5 @@
-import { Button } from "@/src/core/ui";
-import { formatCount } from "../../utils/format-number";
+import { formatCount } from "../format/format-number";
+import { Button } from "./Button";
 
 /** "Showing 1–4 of 37" with Previous / Next. Pages start at 1. */
 export function TablePagination({

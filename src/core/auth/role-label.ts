@@ -1,13 +1,13 @@
-import type { MeDto } from "@/src/features/auth";
+import type { RoleName } from "../../db/schemas";
 
-const ROLE_LABELS: Record<MeDto["role"], string> = {
+const ROLE_LABELS: Record<RoleName, string> = {
   user: "Attendee",
   speaker: "Speaker",
   organizer: "Organizer",
   admin: "Administrator",
 };
 
-/** The line under the user's name in the side menu. */
-export function roleLabel(role: MeDto["role"]): string {
+/** The role as people read it ("user" → "Attendee"): the side menu, user lists, breakdowns. */
+export function roleLabel(role: RoleName): string {
   return ROLE_LABELS[role];
 }

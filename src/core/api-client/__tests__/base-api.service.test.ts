@@ -1,6 +1,11 @@
 import { AxiosError, type AxiosAdapter } from "axios";
 import { z } from "zod";
-import { ApiError, apiRequest, baseApiService } from "../base-api.service";
+import {
+  ApiError,
+  apiRequest,
+  apiRequestPage,
+  baseApiService,
+} from "../base-api.service";
 
 type Reply = { status: number; data?: unknown };
 type Call = { method: string | undefined; url: string; body: unknown };
@@ -194,5 +199,68 @@ describe("response interceptor: refresh on 401", () => {
     });
 
     await expect(getMe()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("apiRequestPage", () => {
+  const rowsSchema = z.array(z.object({ id: z.string() }));
+  const list = () =>
+    apiRequestPage({ method: "GET", url: "/admin/users" }, rowsSchema);
+
+  it("returns the rows and the paging meta", async () => {
+    reply = () => ({
+      status: 200,
+      data: {
+        data: [{ id: "a" }, { id: "b" }],
+        meta: { page: 2, pageSize: 10, total: 23 },
+      },
+    });
+
+    await expect(list()).resolves.toEqual({
+      items: [{ id: "a" }, { id: "b" }],
+      meta: { page: 2, pageSize: 10, total: 23 },
+    });
+  });
+
+  it("drops fields the schema does not know (a sensitive column can not slip through)", async () => {
+    reply = () => ({
+      status: 200,
+      data: {
+        data: [{ id: "a", passwordHash: "secret" }],
+        meta: { page: 1, pageSize: 10, total: 1 },
+      },
+    });
+
+    const { items } = await list();
+
+    expect(items[0]).not.toHaveProperty("passwordHash");
+  });
+
+  it.each([
+    ["no meta", { data: [{ id: "a" }] }],
+    [
+      "a bad row",
+      { data: [{ id: 1 }], meta: { page: 1, pageSize: 10, total: 1 } },
+    ],
+    ["a bad meta", { data: [], meta: { page: 0, pageSize: 10, total: 0 } }],
+  ])(
+    "a reply with %s is INVALID_RESPONSE, not trusted",
+    async (_name, data) => {
+      reply = () => ({ status: 200, data });
+
+      await expect(list()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+    },
+  );
+
+  it("a failure is a typed ApiError with the server's code", async () => {
+    reply = () => ({
+      status: 403,
+      data: { error: { code: "FORBIDDEN", message: "No" } },
+    });
+
+    await expect(list()).rejects.toMatchObject({
+      status: 403,
+      code: "FORBIDDEN",
+    });
   });
 });

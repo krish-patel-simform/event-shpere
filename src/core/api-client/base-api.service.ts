@@ -124,6 +124,16 @@ function toApiError(error: unknown): ApiError {
   );
 }
 
+/** Sends the request and returns the raw response body; any failure becomes an ApiError. */
+async function send(config: AxiosRequestConfig): Promise<unknown> {
+  try {
+    const { data } = await baseApiService.request<unknown>(config);
+    return data;
+  } catch (error) {
+    throw toApiError(error);
+  }
+}
+
 /** Calls the API and returns the parsed `data` of the `{ data }` envelope. */
 export async function apiRequest<S extends z.ZodType>(
   config: AxiosRequestConfig,
@@ -135,12 +145,7 @@ export async function apiRequest(
   config: AxiosRequestConfig,
   dataSchema?: z.ZodType,
 ): Promise<unknown> {
-  let body: unknown;
-  try {
-    ({ data: body } = await baseApiService.request<unknown>(config));
-  } catch (error) {
-    throw toApiError(error);
-  }
+  const body = await send(config);
 
   if (!dataSchema) return undefined;
 
@@ -150,4 +155,36 @@ export async function apiRequest(
     throw new ApiError(200, "INVALID_RESPONSE", "Unexpected server response");
   }
   return parsed.data.data;
+}
+
+// The `meta` next to `data` in every list response (core/http `paginated`).
+const pageMetaSchema = z.object({
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1),
+  /** All rows matching the filters, not just this page. */
+  total: z.number().int().min(0),
+});
+export type PageMeta = z.infer<typeof pageMetaSchema>;
+
+/**
+ * For list endpoints (`{ data: [...], meta }`): returns the rows and the paging meta, both
+ * parsed. Pass the schema of the whole array, as the server uses for `data`.
+ */
+export async function apiRequestPage<S extends z.ZodType>(
+  config: AxiosRequestConfig,
+  rowsSchema: S,
+): Promise<{ items: z.infer<S>; meta: PageMeta }>;
+export async function apiRequestPage(
+  config: AxiosRequestConfig,
+  rowsSchema: z.ZodType,
+): Promise<{ items: unknown; meta: PageMeta }> {
+  const body = await send(config);
+
+  const parsed = z
+    .object({ data: rowsSchema, meta: pageMetaSchema })
+    .safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(200, "INVALID_RESPONSE", "Unexpected server response");
+  }
+  return { items: parsed.data.data, meta: parsed.data.meta };
 }
