@@ -97,6 +97,16 @@ export type ResendInviteResponseDto = z.infer<
   typeof resendInviteResponseSchema
 >;
 
+// Admin "send a password reset link" to a user (POST /api/admin/users/[userId]/send-reset-link).
+// Never contains the link itself: it only goes to the user's inbox.
+export const sendResetLinkResponseSchema = z.object({
+  /** When the link stops working. */
+  expiresAt: z.iso.datetime(),
+});
+export type SendResetLinkResponseDto = z.infer<
+  typeof sendResetLinkResponseSchema
+>;
+
 // Verify-email page (opened from the signup email): `token` comes from the link's
 // ?token=…, `otp` is the 6-digit code the user types. The email is not sent: the server
 // takes it from the token's user, so a code can only be tried against its own account.

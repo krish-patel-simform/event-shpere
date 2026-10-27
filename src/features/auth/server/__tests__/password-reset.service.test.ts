@@ -1,5 +1,12 @@
 import { hashToken } from "../../../../core/auth/server/tokens";
-import { ValidationError } from "../../../../core/http/errors";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  RateLimitError,
+  ServiceUnavailableError,
+  ValidationError,
+} from "../../../../core/http/errors";
 import {
   createPasswordResetService,
   type PasswordResetServiceDeps,
@@ -31,9 +38,19 @@ const owner = {
   passwordHash: "stored-hash-of-the-current-password",
 };
 
+// The account an admin sends a link to: any status, so the service can say why it refuses.
+const target = {
+  ...user,
+  status: "active" as "active" | "pending" | "suspended",
+};
+
 function setup(
   results: {
     user?: typeof user | null;
+    /** What findUserById finds for an admin's "send a reset link": an account, or null. */
+    target?: typeof target | null;
+    /** When that account's newest link was made; null = never. */
+    lastLinkAt?: Date | null;
     sendFails?: boolean;
     /** What findValidResetToken finds: the link's owner, or null for a bad link. */
     owner?: typeof owner | { userId: string; passwordHash: null } | null;
@@ -48,6 +65,14 @@ function setup(
       findActiveUserByEmail: jest
         .fn()
         .mockResolvedValue(results.user === undefined ? user : results.user),
+      findUserById: jest
+        .fn()
+        .mockResolvedValue(
+          results.target === undefined ? target : results.target,
+        ),
+      findLastResetTokenCreatedAt: jest
+        .fn()
+        .mockResolvedValue(results.lastLinkAt ?? null),
       createResetToken: jest.fn().mockResolvedValue(undefined),
       findValidResetToken: jest
         .fn()
@@ -60,6 +85,7 @@ function setup(
       ? jest.fn().mockRejectedValue(new Error("Resend is down"))
       : jest.fn().mockResolvedValue(undefined),
     tokenTtlMinutes: 10,
+    adminCooldownSeconds: 60,
     appUrl: "https://app.test",
   } satisfies PasswordResetServiceDeps;
   return { deps, service: createPasswordResetService(deps) };
@@ -206,6 +232,192 @@ describe("passwordResetService.requestReset", () => {
       service.requestReset({ email: user.email }, now),
     ).rejects.toThrow("db down");
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("passwordResetService.sendResetLinkToUser (an admin sends the link)", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const expectNothingSent = (deps: ReturnType<typeof setup>["deps"]) => {
+    expect(
+      deps.passwordResetRepository.createResetToken,
+    ).not.toHaveBeenCalled();
+    expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  };
+
+  it("looks the account up by the id it was given", async () => {
+    const { deps, service } = setup();
+
+    await service.sendResetLinkToUser(user.id, now);
+
+    expect(deps.passwordResetRepository.findUserById).toHaveBeenCalledWith(
+      user.id,
+    );
+  });
+
+  it("404 for an unknown user: no token, no email", async () => {
+    const { deps, service } = setup({ target: null });
+
+    await expect(
+      service.sendResetLinkToUser(user.id, now),
+    ).rejects.toBeInstanceOf(NotFoundError);
+
+    expectNothingSent(deps);
+  });
+
+  it('403 for an administrator, like "forgot password" (no token, no email)', async () => {
+    const { deps, service } = setup({ target: { ...target, role: "admin" } });
+
+    await expect(
+      service.sendResetLinkToUser(user.id, now),
+    ).rejects.toMatchObject({
+      constructor: ForbiddenError,
+      code: "CANNOT_RESET_ADMIN",
+      status: 403,
+    });
+
+    expectNothingSent(deps);
+  });
+
+  it("409 for a pending account: it has no password yet, so it needs the set-password invite", async () => {
+    const { deps, service } = setup({
+      target: { ...target, status: "pending" },
+    });
+
+    await expect(
+      service.sendResetLinkToUser(user.id, now),
+    ).rejects.toMatchObject({
+      constructor: ConflictError,
+      code: "ACCOUNT_PENDING",
+    });
+
+    expectNothingSent(deps);
+  });
+
+  it("409 for a suspended account (no token, no email)", async () => {
+    const { deps, service } = setup({
+      target: { ...target, status: "suspended" },
+    });
+
+    await expect(
+      service.sendResetLinkToUser(user.id, now),
+    ).rejects.toMatchObject({
+      constructor: ConflictError,
+      code: "ACCOUNT_SUSPENDED",
+    });
+
+    expectNothingSent(deps);
+  });
+
+  it("still sends a link to an active account that has no role row", async () => {
+    const { deps, service } = setup({ target: { ...target, role: null } });
+
+    await service.sendResetLinkToUser(user.id, now);
+
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes the same kind of token as "forgot password": only the hash is stored, with the same expiry', async () => {
+    const { deps, service } = setup();
+
+    await service.sendResetLinkToUser(user.id, now);
+
+    const stored =
+      deps.passwordResetRepository.createResetToken.mock.calls[0][0];
+    const raw = tokenFromEmail(deps.sendPasswordResetEmail);
+    expect(stored.userId).toBe(user.id);
+    expect(stored.tokenHash).toBe(hashToken(raw));
+    expect(stored.tokenHash).not.toBe(raw);
+    expect(stored.expiresAt).toEqual(new Date("2026-10-20T10:10:00Z"));
+    expect(stored.now).toEqual(now);
+  });
+
+  it("sends the same email to the account's address, with the wording for an admin's link", async () => {
+    const { deps, service } = setup();
+
+    await service.sendResetLinkToUser(user.id, now);
+
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+    const mail = deps.sendPasswordResetEmail.mock.calls[0][0];
+    expect(mail.to).toBe(user.email);
+    expect(mail.firstName).toBe("Olga");
+    expect(mail.expiresInMinutes).toBe(10);
+    expect(mail.sentByAdmin).toBe(true);
+    expect(
+      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+    ).toBe(true);
+  });
+
+  it("answers with the expiry only, never the link or the token", async () => {
+    const { deps, service } = setup();
+
+    const result = await service.sendResetLinkToUser(user.id, now);
+
+    expect(result).toEqual({ expiresAt: "2026-10-20T10:10:00.000Z" });
+    expect(JSON.stringify(result)).not.toContain(
+      tokenFromEmail(deps.sendPasswordResetEmail),
+    );
+  });
+
+  it("429 when a link was made less than a minute ago, and says how long to wait", async () => {
+    const { deps, service } = setup({
+      lastLinkAt: new Date("2026-10-20T09:59:30Z"),
+    });
+
+    const attempt = service.sendResetLinkToUser(user.id, now);
+
+    await expect(attempt).rejects.toBeInstanceOf(RateLimitError);
+    await expect(attempt).rejects.toThrow("30 seconds");
+    expectNothingSent(deps);
+  });
+
+  it("sends again once the minute is over (also exactly at 60 seconds)", async () => {
+    const exactly = setup({ lastLinkAt: new Date("2026-10-20T09:59:00Z") });
+    await expect(
+      exactly.service.sendResetLinkToUser(user.id, now),
+    ).resolves.toBeDefined();
+
+    const earlier = setup({ lastLinkAt: new Date("2026-10-20T09:00:00Z") });
+    await expect(
+      earlier.service.sendResetLinkToUser(user.id, now),
+    ).resolves.toBeDefined();
+  });
+
+  it("503 when the email cannot be sent, so the admin knows; the log has no link in it", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const { deps, service } = setup({ sendFails: true });
+
+    await expect(
+      service.sendResetLinkToUser(user.id, now),
+    ).rejects.toMatchObject({
+      constructor: ServiceUnavailableError,
+      code: "EMAIL_NOT_SENT",
+      status: 503,
+    });
+
+    // The link was saved (and is useless to anyone); the admin can send again after the minute.
+    expect(deps.passwordResetRepository.createResetToken).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(log).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(log.mock.calls);
+    const raw = new URL(
+      (deps.sendPasswordResetEmail.mock.calls[0][0] as { resetUrl: string })
+        .resetUrl,
+    ).searchParams.get("token");
+    expect(logged).toContain("Resend is down");
+    expect(logged).not.toContain(raw);
+    expect(logged).not.toContain("reset-password?token");
+  });
+
+  it('does not change "forgot password": that email has no admin wording', async () => {
+    const { deps, service } = setup();
+
+    await service.requestReset({ email: user.email }, now);
+
+    expect(deps.sendPasswordResetEmail.mock.calls[0][0]).not.toHaveProperty(
+      "sentByAdmin",
+    );
   });
 });
 

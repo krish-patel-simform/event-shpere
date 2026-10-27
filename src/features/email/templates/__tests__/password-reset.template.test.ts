@@ -18,6 +18,24 @@ describe("passwordResetEmail", () => {
     expect(email.subject).toBe("Reset your EventSphere password");
   });
 
+  it("says the person asked for it, unless an admin sent it", () => {
+    const own = passwordResetEmail(data);
+    expect(own.text).toContain("We received a request to reset");
+    expect(own.text).not.toContain("administrator");
+  });
+
+  it("says an administrator started it when an admin sent the link, with the same link and expiry", () => {
+    const email = passwordResetEmail({ ...data, sentByAdmin: true });
+
+    for (const body of [email.html, email.text]) {
+      expect(body).toContain("An EventSphere administrator has started");
+      expect(body).not.toContain("We received a request");
+      expect(body).toContain(data.resetUrl);
+      expect(body).toContain("10 minutes");
+      expect(body).toContain("ignore this email");
+    }
+  });
+
   it("escapes the first name in the HTML (it comes from a signup form)", () => {
     const email = passwordResetEmail({
       ...data,

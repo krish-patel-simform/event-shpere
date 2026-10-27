@@ -1,5 +1,12 @@
 import "server-only";
-import { and, eq, gt, isNull, TransactionRollbackError } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  isNull,
+  TransactionRollbackError,
+} from "drizzle-orm";
 import { db } from "../../../db/dbClient";
 import {
   authSessionsTable,
@@ -42,6 +49,49 @@ export const passwordResetRepository = {
       .where(and(eq(usersTable.email, email), eq(usersTable.status, "active")))
       .limit(1);
     return user ?? null;
+  },
+
+  /**
+   * Admin "send a reset link": the account whatever its status, so the service can tell an admin
+   * why a link cannot be sent (pending, suspended). Only what the email and the checks need.
+   */
+  async findUserById(userId: string): Promise<{
+    id: string;
+    email: string;
+    firstName: string;
+    status: (typeof usersTable.$inferSelect)["status"];
+    role: RoleName | null;
+  } | null> {
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        firstName: usersTable.firstName,
+        status: usersTable.status,
+        role: rolesTable.role,
+      })
+      .from(usersTable)
+      .leftJoin(userRolesTable, eq(userRolesTable.userId, usersTable.id))
+      .leftJoin(rolesTable, eq(rolesTable.id, userRolesTable.roleId))
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    return user ?? null;
+  },
+
+  /** When the newest reset link of this account was made (any state); null = never. */
+  async findLastResetTokenCreatedAt(userId: string): Promise<Date | null> {
+    const [last] = await db
+      .select({ createdAt: authTokensTable.createdAt })
+      .from(authTokensTable)
+      .where(
+        and(
+          eq(authTokensTable.userId, userId),
+          eq(authTokensTable.type, "password_reset"),
+        ),
+      )
+      .orderBy(desc(authTokensTable.createdAt))
+      .limit(1);
+    return last?.createdAt ?? null;
   },
 
   async createResetToken(input: {
