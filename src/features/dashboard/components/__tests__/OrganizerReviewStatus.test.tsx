@@ -8,6 +8,7 @@ import {
 import { formatDate } from "../../utils/format-date";
 
 const application: OrganizerApplication = {
+  status: "pending",
   organisationName: "Acme Events Pvt Ltd",
   website: "https://acme-events.example.com",
   contactName: "Ananya Rao",
@@ -73,5 +74,51 @@ describe("OrganizerReviewStatus", () => {
     expect(
       screen.getByRole("link", { name: "Complete your profile" }),
     ).toHaveAttribute("href", "/profile");
+  });
+});
+
+describe("OrganizerReviewStatus: rejected", () => {
+  const rejected: OrganizerApplication = {
+    ...application,
+    status: "rejected",
+    rejectedAt: "2026-10-22T09:00:00Z",
+    rejectionReason: "Website could not be verified.\nPlease contact support.",
+  };
+
+  it("says the request was not approved and shows the admin's reason", () => {
+    render(<OrganizerReviewStatus application={rejected} />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Your organizer request was not approved",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Not approved")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Website could not be verified\.\s+Please contact support\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Pending review")).not.toBeInTheDocument();
+  });
+
+  it("marks admin review as not approved with its date, and no step as current", () => {
+    render(<OrganizerReviewStatus application={rejected} />);
+    const items = screen.getAllByRole("listitem");
+
+    expect(items[2]).toHaveTextContent("Not approved. 22 Oct 2026");
+    expect(items[2]).not.toHaveAttribute("aria-current");
+    expect(items[3]).toHaveTextContent("Not available");
+  });
+
+  it("still offers the attendee actions", () => {
+    render(<OrganizerReviewStatus application={rejected} />);
+
+    expect(
+      screen.getByRole("heading", { name: "What you can do" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Browse events" }),
+    ).toBeInTheDocument();
   });
 });
