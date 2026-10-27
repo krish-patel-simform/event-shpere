@@ -66,21 +66,13 @@ export function ProfileHeaderCard({
   );
 }
 
-/** The account itself: id, email, password, when it was created. */
+/** The account itself: email, password, when it was created. The id is not shown: it is in the URL. */
 export function AccountCard({ user }: { user: UserDetailDto }) {
   return (
     <Card title="Account">
       <DescriptionList
         labelWidth="sm"
         items={[
-          {
-            label: "User ID",
-            value: (
-              <code className="break-all rounded border border-line bg-surface-subtle px-1.5 py-0.5 font-mono text-xs">
-                {user.id}
-              </code>
-            ),
-          },
           {
             label: "Email",
             value: user.emailVerifiedAt ? (

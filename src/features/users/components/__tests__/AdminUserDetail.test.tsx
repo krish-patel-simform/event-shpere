@@ -167,12 +167,14 @@ describe("AdminUserDetail: what the admin reads", () => {
     expect(top.getByText("Attendee")).toBeInTheDocument();
   });
 
-  it("shows the account: id, verified email, password and when they joined", async () => {
+  it("shows the account: verified email, password and when they joined, but not the user id", async () => {
     renderUser();
     await loaded();
     const account = card("Account");
 
-    expect(within(account).getByText(userId)).toBeInTheDocument();
+    // The id is an internal detail (it is already in the URL): it is not on the page.
+    expect(screen.queryByText(userId)).not.toBeInTheDocument();
+    expect(within(account).queryByText("User ID")).not.toBeInTheDocument();
     expect(within(account).getByText("Verified")).toBeInTheDocument();
     expect(within(account).getByText("Set by user")).toBeInTheDocument();
     expect(
