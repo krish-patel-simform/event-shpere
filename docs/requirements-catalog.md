@@ -27,18 +27,21 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ### Authentication
 
-| ID                 | Requirement                                                                                                                               | Week | Status      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------- |
-| AUTH-1             | Sign up with email: first name, last name, email, password                                                                                | 1    | Todo        |
-| AUTH-2             | Login with email and password                                                                                                             | 1    | Todo        |
-| AUTH-3             | Update profile information                                                                                                                | 1    | Todo        |
-| AUTH-4             | Change profile image                                                                                                                      | 1    | Todo        |
-| AUTH-5             | Change password                                                                                                                           | 1    | Todo        |
-| AUTH-6             | Forgot password: request reset                                                                                                            | 1    | Todo        |
-| AUTH-7             | Forgot password: set new password via expiring, hashed, single-use token                                                                  | 1    | Todo        |
-| AUTH-8             | Roles (Guest/User/Organizer) with route + API protection                                                                                  | 1    | Todo        |
-| AUTH-9 **(added)** | Logout (ends the session; clears client auth state)                                                                                       | 1    | Todo        |
-| ADM-6 **(added)**  | Resend the set-password invite to a speaker or organizer whose account is still pending (new link, old links stop working, 60 s cooldown) | 1    | In progress |
+| ID                 | Requirement                                                                                                                                                           | Week | Status      |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------- |
+| AUTH-1             | Sign up with email: first name, last name, email, password                                                                                                            | 1    | Todo        |
+| AUTH-2             | Login with email and password                                                                                                                                         | 1    | Todo        |
+| AUTH-3             | Update profile information                                                                                                                                            | 1    | Todo        |
+| AUTH-4             | Change profile image                                                                                                                                                  | 1    | Todo        |
+| AUTH-5             | Change password                                                                                                                                                       | 1    | Todo        |
+| AUTH-6             | Forgot password: request reset                                                                                                                                        | 1    | Todo        |
+| AUTH-7             | Forgot password: set new password via expiring, hashed, single-use token                                                                                              | 1    | Todo        |
+| AUTH-8             | Roles (Guest/User/Organizer) with route + API protection                                                                                                              | 1    | Todo        |
+| AUTH-9 **(added)** | Logout (ends the session; clears client auth state)                                                                                                                   | 1    | Todo        |
+| ADM-6 **(added)**  | Resend the set-password invite to a speaker or organizer whose account is still pending (new link, old links stop working, 60 s cooldown)                             | 1    | In progress |
+| ADM-7 **(added)**  | Admin suspends an active user: login and API access stop at once, sessions are ended (not yourself, not an administrator)                                             | 1    | In progress |
+| ADM-8 **(added)**  | Admin reactivates a suspended user                                                                                                                                    | 1    | In progress |
+| ADM-9 **(added)**  | Admin sends a password reset link to an active user (same one-time link and email as "forgot password"; not for admins, pending or suspended accounts; 60 s cooldown) | 1    | In progress |
 
 ### Event listing
 
@@ -211,13 +214,15 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ## Spec gaps added after reading poc-spec.md
 
-| New ID  | Why it was added                                                                                                                                                                         | Spec reference                    |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| AUTH-9  | The spec lists login but never logout; a session needs an end.                                                                                                                           | §5 Module 1                       |
-| NOTIF-7 | The spec title is "Notification Center", but the catalog only had the notification _producers_ and the SSE transport. The user-facing list/unread/mark-read UI had no ID.                | §5 Module 8                       |
-| ORG-4   | Polls are "answered" by users (Module 7) but nothing says who creates them. Organizers "manage sessions/events"; poll authoring is the missing piece.                                    | §4, §5 Module 7                   |
-| DOD-1   | "Code review feedback is addressed" is an explicit Definition of Done item with no owner.                                                                                                | Definition of Done                |
-| ADM-6   | Speakers and organizers only become active through the emailed set-password link. If that email fails or the 24 h link expires, the account stays pending with no way to get a new link. | §4 accounts, custom-auth decision |
+| New ID  | Why it was added                                                                                                                                                                                                  | Spec reference                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| AUTH-9  | The spec lists login but never logout; a session needs an end.                                                                                                                                                    | §5 Module 1                       |
+| NOTIF-7 | The spec title is "Notification Center", but the catalog only had the notification _producers_ and the SSE transport. The user-facing list/unread/mark-read UI had no ID.                                         | §5 Module 8                       |
+| ORG-4   | Polls are "answered" by users (Module 7) but nothing says who creates them. Organizers "manage sessions/events"; poll authoring is the missing piece.                                                             | §4, §5 Module 7                   |
+| DOD-1   | "Code review feedback is addressed" is an explicit Definition of Done item with no owner.                                                                                                                         | Definition of Done                |
+| ADM-6   | Speakers and organizers only become active through the emailed set-password link. If that email fails or the 24 h link expires, the account stays pending with no way to get a new link.                          | §4 accounts, custom-auth decision |
+| ADM-7/8 | The schema has a `suspended` status and the `user:status_manage` permission, but nothing let an admin suspend or reactivate an account.                                                                           | §4 permissions                    |
+| ADM-9   | When a user is locked out, the only way to a new password is their own "forgot password". An admin helping them had no way to start it. ADM-9 reuses the AUTH-7 token and page, so there is no second reset flow. | §4 permissions                    |
 
 Interpretation notes (no new ID, but they shape the schema):
 
