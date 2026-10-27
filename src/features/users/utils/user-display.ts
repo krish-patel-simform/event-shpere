@@ -1,43 +1,31 @@
 import type { ComponentProps } from "react";
-import type { Badge } from "@/src/core/ui";
-import type {
-  AccountStatus,
-  AdminUser,
-  UserRole,
-  UserTabKey,
-} from "../types/admin-users";
-import { formatDate } from "./format-date";
-import { roleLabel } from "./role-label";
+import { roleLabel } from "@/src/core/auth/role-label";
+import type { Badge, Tab } from "@/src/core/ui";
+import type { AccountStatus, UserRole, UserTabKey } from "../types/admin-users";
 
 type BadgeTone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-
-export function userFullName(
-  user: Pick<AdminUser, "firstName" | "lastName">,
-): string {
+export function userFullName(user: {
+  firstName: string;
+  lastName: string;
+}): string {
   return `${user.firstName} ${user.lastName}`;
 }
 
-/** What the Role column shows: an organizer's badge also says where their application stands. */
-export function roleBadge(user: Pick<AdminUser, "role" | "organizerStatus">): {
+const ROLE_TONES: Record<UserRole, BadgeTone> = {
+  user: "brand",
+  speaker: "success",
+  organizer: "neutral",
+  admin: "surface",
+};
+
+/** What the Role column shows. An account with no role (broken data) says so. */
+export function roleBadge(role: UserRole | null): {
   label: string;
   tone: BadgeTone;
 } {
-  if (user.role === "organizer") {
-    if (user.organizerStatus === "pending")
-      return { label: "Organizer pending", tone: "warning" };
-    if (user.organizerStatus === "rejected")
-      return { label: "Organizer rejected", tone: "danger" };
-    return { label: roleLabel("organizer"), tone: "neutral" };
-  }
-  const tones: Record<Exclude<UserRole, "organizer">, BadgeTone> = {
-    user: "brand",
-    speaker: "success",
-    admin: "surface",
-  };
-  return { label: roleLabel(user.role), tone: tones[user.role] };
+  if (role === null) return { label: "No role", tone: "neutral" };
+  return { label: roleLabel(role), tone: ROLE_TONES[role] };
 }
 
 const STATUS_BADGES: Record<AccountStatus, { label: string; tone: BadgeTone }> =
@@ -51,77 +39,60 @@ export function statusBadge(status: AccountStatus) {
   return STATUS_BADGES[status];
 }
 
-const utcDay = (time: number) => Math.floor(time / DAY_MS);
+/** What a role lets a person do, in one line: the role picker and the profile page. */
+export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+  user: "Can register for events, book sessions and vote in polls",
+  speaker: "Can edit their speaker profile and see their sessions",
+  organizer:
+    "Can create and publish their own events. Normally added by approving an application.",
+  admin: "Full platform access, including approvals and suspensions",
+};
 
 /**
- * "Never", "Just now", "2 hours ago" (earlier the same UTC day), "Yesterday", or a date.
- * Counts up to `asOf` (not the clock), so the server and the browser print the same text.
+ * Which admin actions the profile page offers for this account. The server refuses the same
+ * ones: an administrator is never suspended or sent a reset link, a reset link needs an active
+ * account (a pending one has no password yet and needs the set-password invite instead), and
+ * only an active user can be suspended or a suspended one reactivated.
  */
-export function formatLastActive(
-  lastActiveAt: string | null,
-  asOf: string,
-): string {
-  if (lastActiveAt === null) return "Never";
-  const then = new Date(lastActiveAt).getTime();
-  const now = new Date(asOf).getTime();
-
-  const daysAgo = utcDay(now) - utcDay(then);
-  if (daysAgo <= 0) {
-    const hours = Math.floor((now - then) / HOUR_MS);
-    if (hours < 1) return "Just now";
-    return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
-  }
-  if (daysAgo === 1) return "Yesterday";
-  return formatDate(lastActiveAt);
+export function adminActionsFor(user: {
+  status: AccountStatus;
+  role: UserRole | null;
+}) {
+  const isAdmin = user.role === "admin";
+  return {
+    canSuspend: user.status === "active" && !isAdmin,
+    canReactivate: user.status === "suspended",
+    canSendResetLink: user.status === "active" && !isAdmin,
+    /** Why there is no reset link button, when there is a reason worth showing. */
+    resetLinkUnavailable:
+      user.status === "pending"
+        ? "They have not set up their account yet, so they need the set-password invite instead."
+        : user.status === "suspended"
+          ? "A suspended account cannot be sent a reset link. Reactivate it first."
+          : null,
+  };
 }
 
-export const USER_TABS: readonly { key: UserTabKey; label: string }[] = [
+export const USER_TABS: readonly Tab<UserTabKey>[] = [
   { key: "all", label: "All users" },
   { key: "user", label: "Attendees" },
   { key: "speaker", label: "Speakers" },
   { key: "organizer", label: "Organizers" },
   { key: "admin", label: "Administrators" },
-  { key: "unverified", label: "Unverified email" },
-  { key: "suspended", label: "Suspended" },
+  { key: "suspended", label: "Suspended", tone: "danger" },
 ];
 
-export function matchesTab(user: AdminUser, tab: UserTabKey): boolean {
+/** What a tab asks the server for: a role, a status, or (for "all") nothing. */
+export function tabFilter(tab: UserTabKey): {
+  role?: UserRole;
+  status?: AccountStatus;
+} {
   switch (tab) {
     case "all":
-      return true;
-    case "unverified":
-      return !user.emailVerified;
+      return {};
     case "suspended":
-      return user.status === "suspended";
+      return { status: "suspended" };
     default:
-      return user.role === tab;
+      return { role: tab };
   }
-}
-
-export function matchesUserSearch(user: AdminUser, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return true;
-  return [userFullName(user), user.email].some((field) =>
-    field.toLowerCase().includes(needle),
-  );
-}
-
-export type UserSort = "newest" | "name" | "seen";
-
-/** A new sorted array: newest joined first, name A–Z, or most recently active first (never-active last). */
-export function sortUsers(
-  users: readonly AdminUser[],
-  sort: UserSort,
-): AdminUser[] {
-  const time = (iso: string | null) =>
-    iso === null ? -Infinity : Date.parse(iso);
-  return [...users].sort((a, b) => {
-    if (sort === "name")
-      return userFullName(a).localeCompare(userFullName(b), "en");
-    if (sort === "seen") {
-      const diff = time(b.lastActiveAt) - time(a.lastActiveAt);
-      return Number.isNaN(diff) ? 0 : diff;
-    }
-    return Date.parse(b.joinedAt) - Date.parse(a.joinedAt);
-  });
 }

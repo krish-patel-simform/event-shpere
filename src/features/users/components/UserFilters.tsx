@@ -1,19 +1,19 @@
 import { Search } from "lucide-react";
-import type { AccountStatus, UserRole } from "../../types/admin-users";
-import type { UserSort } from "../../utils/user-display";
+import type { UserSort } from "../schemas/users.schema";
+import type { AccountStatus } from "../types/admin-users";
 
-export type RoleFilter = "any" | UserRole;
 export type StatusFilter = "any" | AccountStatus;
 
 const selectClass =
   "rounded-md border border-field bg-surface px-3 py-2 text-sm";
 
-/** Search box plus the role, status and sort selects. Controlled: the page owns the values. */
+/**
+ * Search box plus the status and sort selects. Controlled: the page owns the values. There is no
+ * role select: the tabs above the list already pick the role.
+ */
 export function UserFilters({
   search,
   onSearchChange,
-  role,
-  onRoleChange,
   status,
   onStatusChange,
   sort,
@@ -21,8 +21,6 @@ export function UserFilters({
 }: {
   search: string;
   onSearchChange: (value: string) => void;
-  role: RoleFilter;
-  onRoleChange: (value: RoleFilter) => void;
   status: StatusFilter;
   onStatusChange: (value: StatusFilter) => void;
   sort: UserSort;
@@ -45,18 +43,6 @@ export function UserFilters({
         />
       </div>
       <select
-        aria-label="Role"
-        value={role}
-        onChange={(event) => onRoleChange(event.target.value as RoleFilter)}
-        className={selectClass}
-      >
-        <option value="any">Any role</option>
-        <option value="user">Attendee</option>
-        <option value="speaker">Speaker</option>
-        <option value="organizer">Organizer</option>
-        <option value="admin">Administrator</option>
-      </select>
-      <select
         aria-label="Status"
         value={status}
         onChange={(event) => onStatusChange(event.target.value as StatusFilter)}
@@ -75,7 +61,6 @@ export function UserFilters({
       >
         <option value="newest">Sort: Newest first</option>
         <option value="name">Sort: Name A–Z</option>
-        <option value="seen">Sort: Last active</option>
       </select>
     </div>
   );

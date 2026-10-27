@@ -1,290 +1,525 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Activity } from "react";
-import { ADMIN_USERS_SAMPLE } from "../../utils/admin-users.sample";
-import { AdminUsers } from "../admin/AdminUsers";
+import { ApiError } from "@/src/core/api-client/base-api.service";
+import { dev, noRole, rahul, userRows } from "../../__fixtures__/users";
+import { usersApiService } from "../../api/users-api.service";
+import type { UserListItemDto } from "../../schemas/users.schema";
+import { AdminUsers } from "../AdminUsers";
 
-const [, , rahul, , meera, , dev, vikram] =
-  ADMIN_USERS_SAMPLE.users;
+// Only the API layer is replaced: the hooks, the cache and the screens are the real ones.
+jest.mock("../../api/users-api.service", () => ({
+  usersApiService: {
+    list: jest.fn(),
+    suspend: jest.fn(),
+    reactivate: jest.fn(),
+  },
+}));
+const api = jest.mocked(usersApiService);
+
+/** A fake server: filters, sorts and pages like the real endpoint. */
+function serve(rows: UserListItemDto[] = userRows) {
+  api.list.mockImplementation(
+    async ({
+      role,
+      status,
+      search = "",
+      sort = "newest",
+      page = 1,
+      pageSize,
+    }) => {
+      const matches = rows
+        .filter((row) => !role || row.role === role)
+        .filter((row) => !status || row.status === status)
+        .filter((row) =>
+          `${row.firstName} ${row.lastName} ${row.email}`
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+        );
+      if (sort === "name") {
+        matches.sort((a, b) =>
+          `${a.firstName} ${a.lastName}`.localeCompare(
+            `${b.firstName} ${b.lastName}`,
+          ),
+        );
+      }
+      return {
+        items: matches.slice((page - 1) * pageSize, page * pageSize),
+        meta: { page, pageSize, total: matches.length },
+      };
+    },
+  );
+}
 
 function renderPage() {
-  const handlers = {
-    onInvite: jest.fn(),
-    onChangeRole: jest.fn(),
-    onSuspend: jest.fn(),
-    onReactivate: jest.fn(),
-    onResendSetup: jest.fn(),
-    onPageChange: jest.fn(),
-  };
-  render(<AdminUsers data={ADMIN_USERS_SAMPLE} {...handlers} />);
-  return handlers;
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <AdminUsers />
+    </QueryClientProvider>,
+  );
 }
 
 const rows = () => screen.getAllByRole("row").slice(1);
 const row = (name: RegExp) => screen.getByRole("row", { name });
-const openMenu = (name: string) =>
-  userEvent.click(screen.getByRole("button", { name: `Actions for ${name}` }));
+const openMenu = async (name: string) => {
+  await userEvent.click(
+    await screen.findByRole("button", { name: `Actions for ${name}` }),
+  );
+  return screen.getByRole("menu", { name: `Actions for ${name}` });
+};
+const lastListCall = () => api.list.mock.calls.at(-1)?.[0];
+
+beforeEach(() => {
+  jest.resetAllMocks();
+  serve();
+  api.suspend.mockResolvedValue({
+    id: rahul.id,
+    firstName: "Rahul",
+    lastName: "Sharma",
+    status: "suspended",
+  });
+  api.reactivate.mockResolvedValue({
+    id: dev.id,
+    firstName: "Dev",
+    lastName: "Verma",
+    status: "active",
+  });
+});
 
 describe("AdminUsers: list", () => {
-  it("shows each account with role, email status, account status, joined and last active", () => {
+  it("shows a loading state first, then the accounts", async () => {
     renderPage();
-    const first = row(/Ananya Rao/);
+    expect(
+      screen.getByRole("status", { name: "Loading users" }),
+    ).toBeInTheDocument();
+
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+
+    expect(
+      screen.queryByRole("status", { name: "Loading users" }),
+    ).not.toBeInTheDocument();
+    expect(rows()).toHaveLength(8);
+  });
+
+  it("asks the server for the first page, newest first, with no filters", async () => {
+    renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+
+    expect(api.list).toHaveBeenCalledWith({
+      role: undefined,
+      status: undefined,
+      search: "",
+      sort: "newest",
+      page: 1,
+      pageSize: 10,
+    });
+  });
+
+  it("shows each account with role, email status, account status and joined date", async () => {
+    renderPage();
+    const first = await screen.findByRole("row", { name: /Ananya Rao/ });
 
     expect(
       within(first).getByText("ananya.rao@example.com"),
     ).toBeInTheDocument();
-    expect(within(first).getByText("Organizer pending")).toBeInTheDocument();
+    expect(within(first).getByText("Organizer")).toBeInTheDocument();
     expect(within(first).getByText("Verified")).toBeInTheDocument();
     expect(within(first).getByText("Active")).toBeInTheDocument();
     expect(within(first).getByText("20 Oct 2026")).toBeInTheDocument();
-    expect(within(first).getByText("3 hours ago")).toBeInTheDocument();
   });
 
-  it("says Never for someone who has not logged in, and Yesterday for yesterday", () => {
+  it("marks a suspended account, a pending one and an unconfirmed email", async () => {
     renderPage();
 
-    expect(within(row(/Fatima Sheikh/)).getByText("Never")).toBeInTheDocument();
     expect(
-      within(row(/Meera Joshi/)).getByText("Yesterday"),
-    ).toBeInTheDocument();
-  });
-
-  it("marks a suspended account and an unconfirmed email", () => {
-    renderPage();
-
-    expect(within(row(/Dev Verma/)).getByText("Suspended")).toBeInTheDocument();
-    expect(
-      within(row(/Fatima Sheikh/)).getByText("Not verified"),
+      within(await screen.findByRole("row", { name: /Dev Verma/ })).getByText(
+        "Suspended",
+      ),
     ).toBeInTheDocument();
     expect(
       within(row(/Fatima Sheikh/)).getByText("Pending"),
     ).toBeInTheDocument();
+    expect(
+      within(row(/Fatima Sheikh/)).getByText("Not verified"),
+    ).toBeInTheDocument();
   });
 
-  it("links each name to the user's profile page", () => {
+  it("has no Last active column and no Invite button: the API has no such data and admins do not create users here", async () => {
+    renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+
+    expect(
+      screen.queryByRole("columnheader", { name: "Last active" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Invite user" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("an account with no role still shows", async () => {
+    serve([noRole]);
     renderPage();
 
     expect(
-      within(row(/Rahul Sharma/)).getByRole("link", { name: "Rahul Sharma" }),
+      within(await screen.findByRole("row", { name: /Nora Norole/ })).getByText(
+        "No role",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("links each name to the user's profile page", async () => {
+    renderPage();
+
+    expect(
+      within(
+        await screen.findByRole("row", { name: /Rahul Sharma/ }),
+      ).getByRole("link", { name: "Rahul Sharma" }),
     ).toHaveAttribute("href", `/admin/users/${rahul.id}`);
   });
 
-  it("shows the paging line from the platform total", () => {
+  it("says so when there are no users", async () => {
+    serve([]);
     renderPage();
 
-    expect(
-      screen.getByRole("navigation", { name: "Pagination" }),
-    ).toHaveTextContent("Showing 1–8 of 4,812");
+    expect(await screen.findByText("No users yet.")).toBeInTheDocument();
   });
 
-  it("Next asks for page 2 and Previous is off on the first page", async () => {
-    const { onPageChange } = renderPage();
-    const pagination = screen.getByRole("navigation", { name: "Pagination" });
+  it("shows the error with Try again when the list cannot be loaded", async () => {
+    api.list.mockRejectedValueOnce(
+      new ApiError(500, "INTERNAL", "Something went wrong"),
+    );
+    renderPage();
 
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("We couldn't load the users");
+    expect(alert).toHaveTextContent("Something went wrong");
+
+    await userEvent.click(
+      within(alert).getByRole("button", { name: "Try again" }),
+    );
+
+    expect(
+      await screen.findByRole("row", { name: /Ananya Rao/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminUsers: paging", () => {
+  it("shows the total from the server and pages with Next and Previous", async () => {
+    serve(
+      Array.from({ length: 23 }, (_, i) => ({
+        ...rahul,
+        id: `6f1d2a40-1c1e-4b8e-9d55-2a8f0c3b7e${i}`,
+        firstName: `User${i}`,
+      })),
+    );
+    renderPage();
+    const pagination = await screen.findByRole("navigation", {
+      name: "Pagination",
+    });
+    expect(pagination).toHaveTextContent("Showing 1–10 of 23");
     expect(
       within(pagination).getByRole("button", { name: "Previous" }),
     ).toBeDisabled();
+
     await userEvent.click(
       within(pagination).getByRole("button", { name: "Next" }),
     );
 
-    expect(onPageChange).toHaveBeenCalledWith(2);
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(expect.objectContaining({ page: 2 })),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: "Pagination" }),
+      ).toHaveTextContent("Showing 11–20 of 23"),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(expect.objectContaining({ page: 1 })),
+    );
+  });
+
+  it("a new filter starts again from page 1", async () => {
+    serve(
+      Array.from({ length: 23 }, (_, i) => ({
+        ...rahul,
+        id: `6f1d2a40-1c1e-4b8e-9d55-2a8f0c3b7e${i}`,
+        firstName: `User${i}`,
+      })),
+    );
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(expect.objectContaining({ page: 2 })),
+    );
+
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Status" }),
+      "active",
+    );
+
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ status: "active", page: 1 }),
+      ),
+    );
   });
 });
 
 describe("AdminUsers: tabs", () => {
-  it("shows a count on each tab, the suspended one included", () => {
+  it("starts on All users and has no counts (the API does not give them yet)", async () => {
     renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
 
-    expect(screen.getByRole("tab", { name: /All users/ })).toHaveTextContent(
-      "4,812",
-    );
-    expect(screen.getByRole("tab", { name: /Attendees/ })).toHaveTextContent(
-      "4,701",
-    );
-    expect(screen.getByRole("tab", { name: /Suspended/ })).toHaveTextContent(
-      "6",
-    );
-  });
-
-  it("starts on All users; picking a tab selects it and filters the list", async () => {
-    renderPage();
-    expect(screen.getByRole("tab", { name: /All users/ })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "All users" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-
-    await userEvent.click(screen.getByRole("tab", { name: /Suspended/ }));
-
-    expect(screen.getByRole("tab", { name: /Suspended/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0]).toHaveTextContent("Dev Verma");
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(
+      screen.queryByRole("tab", { name: /Unverified/ }),
+    ).not.toBeInTheDocument();
   });
 
-  it("the Unverified email tab lists the accounts whose email is not confirmed", async () => {
+  it("a role tab asks the server for that role", async () => {
     renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
 
-    await userEvent.click(
-      screen.getByRole("tab", { name: /Unverified email/ }),
+    await userEvent.click(screen.getByRole("tab", { name: "Speakers" }));
+
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ role: "speaker", status: undefined }),
+      ),
     );
-
-    expect(rows().map((r) => r.textContent)).toEqual([
-      expect.stringContaining("Vikram Mehta"),
-      expect.stringContaining("Fatima Sheikh"),
-    ]);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(
+      screen.getByRole("tabpanel", { name: "Speakers" }),
+    ).toBeInTheDocument();
   });
 
-  it("the list is the tab's panel, labelled by the selected tab", async () => {
+  it("shows the loading skeleton, not the previous tab's rows, while another tab loads", async () => {
     renderPage();
-    await userEvent.click(screen.getByRole("tab", { name: /Speakers/ }));
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+
+    // The next request is held back, so what is on screen meanwhile can be checked.
+    const release: { run: () => void } = { run: () => {} };
+    const held = new Promise<void>((resolve) => (release.run = resolve));
+    const respond = api.list.getMockImplementation()!;
+    api.list.mockImplementation(async (params) => {
+      await held;
+      return respond(params);
+    });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Speakers" }));
 
     expect(
-      screen.getByRole("tabpanel", { name: /Speakers/ }),
+      await screen.findByRole("status", { name: "Loading users" }),
     ).toBeInTheDocument();
+    expect(screen.queryAllByRole("row")).toHaveLength(0);
+    expect(screen.queryByText("Ananya Rao")).not.toBeInTheDocument();
+
+    release.run();
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(
+      screen.queryByRole("status", { name: "Loading users" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("the Suspended tab asks for the suspended status", async () => {
+    renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Suspended" }));
+
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ status: "suspended", role: undefined }),
+      ),
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toHaveTextContent("Dev Verma");
   });
 
   it("only the selected tab is in the Tab order; arrow keys move to the next tab and select it", async () => {
     renderPage();
-    const all = screen.getByRole("tab", { name: /All users/ });
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+    const all = screen.getByRole("tab", { name: "All users" });
     expect(all).toHaveAttribute("tabindex", "0");
-    expect(screen.getByRole("tab", { name: /Attendees/ })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Attendees" })).toHaveAttribute(
       "tabindex",
       "-1",
     );
 
     all.focus();
     await userEvent.keyboard("{ArrowRight}");
-
-    expect(screen.getByRole("tab", { name: /Attendees/ })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Attendees" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    expect(screen.getByRole("tab", { name: /Attendees/ })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Attendees" })).toHaveFocus();
 
     await userEvent.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: /Suspended/ })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Suspended" })).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: /All users/ })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "All users" })).toHaveFocus();
   });
 
-  it("with a tab picked, the paging line uses that tab's platform count", async () => {
+  it("has no Role select: the tabs are the only way to pick a role", async () => {
     renderPage();
-
-    await userEvent.click(screen.getByRole("tab", { name: /Suspended/ }));
+    await screen.findByRole("row", { name: /Ananya Rao/ });
 
     expect(
-      screen.getByRole("navigation", { name: "Pagination" }),
-    ).toHaveTextContent("Showing 1–1 of 6");
+      screen.queryByRole("combobox", { name: "Role" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("combobox").map((select) => select.ariaLabel),
+    ).toEqual(["Status", "Sort"]);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Speakers" }));
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ role: "speaker" }),
+      ),
+    );
   });
 });
 
-describe("AdminUsers: search and filters", () => {
-  it("searches by name or email", async () => {
+describe("AdminUsers: search, filters, sort", () => {
+  it("asks the server for the typed text once typing pauses, not for every key", async () => {
     renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
 
     await userEvent.type(
       screen.getByRole("searchbox", { name: "Search users" }),
       "joshi",
     );
 
-    expect(rows()).toHaveLength(1);
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ search: "joshi" }),
+      ),
+    );
+    expect(api.list.mock.calls.map(([params]) => params.search)).not.toContain(
+      "jo",
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
     expect(rows()[0]).toHaveTextContent("Meera Joshi");
   });
 
   it("says so when nothing matches", async () => {
     renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
 
     await userEvent.type(
       screen.getByRole("searchbox", { name: "Search users" }),
       "zzzz",
     );
 
-    expect(screen.getByText("No users match your search.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No users match your search."),
+    ).toBeInTheDocument();
   });
 
-  it("filters by role and by status together", async () => {
+  it("sends the Status select, together with the tab's role, to the server", async () => {
     renderPage();
-
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Role" }),
-      "user",
-    );
-    expect(rows()).toHaveLength(2);
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+    await userEvent.click(screen.getByRole("tab", { name: "Attendees" }));
 
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: "Status" }),
       "suspended",
     );
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0]).toHaveTextContent("Dev Verma");
+
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(
+        expect.objectContaining({ role: "user", status: "suspended" }),
+      ),
+    );
+    await waitFor(() => expect(rows()).toHaveLength(1));
   });
 
-  it("sorts by name A–Z", async () => {
+  it("sorts by name on the server, and offers only the sorts the server has", async () => {
     renderPage();
+    await screen.findByRole("row", { name: /Ananya Rao/ });
+    const sort = screen.getByRole("combobox", { name: "Sort" });
+    expect(
+      within(sort)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Sort: Newest first", "Sort: Name A–Z"]);
 
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Sort" }),
-      "name",
+    await userEvent.selectOptions(sort, "name");
+
+    await waitFor(() =>
+      expect(lastListCall()).toEqual(expect.objectContaining({ sort: "name" })),
     );
-
-    expect(rows()[0]).toHaveTextContent("Admin User");
+    await waitFor(() => expect(rows()[0]).toHaveTextContent("Admin User"));
   });
 });
 
 describe("AdminUsers: row menu", () => {
-  it("offers view profile, change role and suspend for an active user", async () => {
+  it("offers view profile and suspend for an active user", async () => {
     renderPage();
 
-    await openMenu("Rahul Sharma");
+    const menu = await openMenu("Rahul Sharma");
 
-    const menu = screen.getByRole("menu", { name: "Actions for Rahul Sharma" });
     expect(
       within(menu).getByRole("menuitem", { name: "View profile" }),
     ).toHaveAttribute("href", `/admin/users/${rahul.id}`);
     expect(
-      within(menu).getByRole("menuitem", { name: "Change role" }),
-    ).toBeInTheDocument();
-    expect(
       within(menu).getByRole("menuitem", { name: "Suspend user" }),
     ).toBeInTheDocument();
     expect(
-      within(menu).queryByRole("menuitem", {
-        name: "Send password setup link",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
       within(menu).queryByRole("menuitem", { name: "Reactivate user" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("offers a setup link only to an account that has not set a password yet", async () => {
-    const { onResendSetup } = renderPage();
-
-    await openMenu("Vikram Mehta");
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Send password setup link" }),
-    );
-
-    expect(onResendSetup).toHaveBeenCalledWith(vikram.id);
+    expect(
+      within(menu).queryByRole("menuitem", { name: /Change role|setup link/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers Reactivate instead of Suspend for a suspended user", async () => {
-    const { onReactivate } = renderPage();
+    renderPage();
 
-    await openMenu("Dev Verma");
+    const menu = await openMenu("Dev Verma");
+
     expect(
-      screen.queryByRole("menuitem", { name: "Suspend user" }),
+      within(menu).getByRole("menuitem", { name: "Reactivate user" }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: "Suspend user" }),
     ).not.toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Reactivate user" }),
-    );
+  });
 
-    expect(onReactivate).toHaveBeenCalledWith(dev.id);
+  it("offers no Suspend for an administrator (the server refuses it too)", async () => {
+    renderPage();
+
+    const menu = await openMenu("Admin User");
+
+    expect(
+      within(menu).queryByRole("menuitem", { name: "Suspend user" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: "View profile" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no Suspend for a pending account (nothing to suspend yet)", async () => {
+    renderPage();
+
+    const menu = await openMenu("Vikram Mehta");
+
+    expect(
+      within(menu).queryByRole("menuitem", { name: /Suspend|Reactivate/ }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -297,231 +532,138 @@ describe("AdminUsers: suspend", () => {
     return screen.getByRole("dialog", { name: "Suspend Rahul Sharma?" });
   }
 
-  it("explains what suspending does and offers to email the person, ticked by default", async () => {
+  it("explains what suspending does; there is nothing to type", async () => {
     renderPage();
     const dialog = await openSuspend();
 
     expect(dialog).toHaveTextContent("Rahul will not be able to log in");
-    expect(
-      within(dialog).getByRole("checkbox", { name: /Email Rahul/ }),
-    ).toBeChecked();
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(api.suspend).not.toHaveBeenCalled();
   });
 
-  it("will not suspend without a reason", async () => {
-    const { onSuspend } = renderPage();
+  it("suspends that user, closes, and loads the list again", async () => {
+    renderPage();
     const dialog = await openSuspend();
+    const callsBefore = api.list.mock.calls.length;
 
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Suspend user" }),
     );
 
-    expect(
-      await within(dialog).findByText(
-        "Enter a reason: it is kept in the audit log.",
-      ),
-    ).toBeInTheDocument();
-    expect(onSuspend).not.toHaveBeenCalled();
-  });
-
-  it("suspends that user with the trimmed reason and the notify choice, then closes", async () => {
-    const { onSuspend } = renderPage();
-    const dialog = await openSuspend();
-
-    await userEvent.type(
-      within(dialog).getByLabelText("Reason"),
-      "  Repeated spam  ",
-    );
-    await userEvent.click(
-      within(dialog).getByRole("checkbox", { name: /Email Rahul/ }),
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Suspend user" }),
-    );
-
+    await waitFor(() => expect(api.suspend).toHaveBeenCalledWith(rahul.id));
     await waitFor(() =>
-      expect(onSuspend).toHaveBeenCalledWith(rahul.id, {
-        reason: "Repeated spam",
-        notifyUser: false,
-      }),
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.list.mock.calls.length).toBeGreaterThan(callsBefore),
+    );
+  });
+
+  it("shows why it failed and stays open to try again", async () => {
+    api.suspend.mockRejectedValueOnce(
+      new ApiError(
+        409,
+        "USER_NOT_ACTIVE",
+        "Only an active user can be suspended",
+      ),
+    );
+    renderPage();
+    const dialog = await openSuspend();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Suspend user" }),
+    );
+
+    expect(
+      await within(dialog).findByText("Only an active user can be suspended"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("cannot be pressed twice while the request runs", async () => {
+    api.suspend.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const dialog = await openSuspend();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Suspend user" }),
+    );
+
+    expect(
+      await within(dialog).findByRole("button", { name: "Suspending…" }),
+    ).toBeDisabled();
+    expect(api.suspend).toHaveBeenCalledTimes(1);
   });
 
   it("Cancel closes without suspending", async () => {
-    const { onSuspend } = renderPage();
+    renderPage();
     const dialog = await openSuspend();
 
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Cancel" }),
     );
 
-    expect(onSuspend).not.toHaveBeenCalled();
+    expect(api.suspend).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
-describe("AdminUsers: change role", () => {
-  async function openRole(name: string) {
-    await openMenu(name);
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Change role" }),
-    );
-    return screen.getByRole("dialog", { name: `Change role for ${name}` });
-  }
-
-  it("starts on the user's current role and cannot save until another is picked", async () => {
+describe("AdminUsers: reactivate", () => {
+  it("reactivates the user straight from the menu and loads the list again", async () => {
     renderPage();
-    const dialog = await openRole("Meera Joshi");
-
-    expect(
-      within(dialog).getByRole("radio", { name: /Speaker/ }),
-    ).toBeChecked();
-    expect(
-      within(dialog).getByRole("button", { name: "Save role" }),
-    ).toBeDisabled();
+    await openMenu("Dev Verma");
+    const callsBefore = api.list.mock.calls.length;
 
     await userEvent.click(
-      within(dialog).getByRole("radio", { name: /Attendee/ }),
+      screen.getByRole("menuitem", { name: "Reactivate user" }),
     );
 
-    expect(
-      within(dialog).getByRole("button", { name: "Save role" }),
-    ).toBeEnabled();
-  });
-
-  it("offers one role at a time, not several", async () => {
-    renderPage();
-    const dialog = await openRole("Meera Joshi");
-
-    expect(within(dialog).getAllByRole("radio")).toHaveLength(4);
-  });
-
-  it("saves the new role for that user and closes", async () => {
-    const { onChangeRole } = renderPage();
-    const dialog = await openRole("Meera Joshi");
-
-    await userEvent.click(
-      within(dialog).getByRole("radio", { name: /Organizer/ }),
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Save role" }),
-    );
-
+    await waitFor(() => expect(api.reactivate).toHaveBeenCalledWith(dev.id));
     await waitFor(() =>
-      expect(onChangeRole).toHaveBeenCalledWith(meera.id, {
-        role: "organizer",
-      }),
-    );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("tells the admin when the change takes effect", async () => {
-    renderPage();
-    const dialog = await openRole("Meera Joshi");
-
-    expect(dialog).toHaveTextContent(
-      "Changes apply the next time Meera opens EventSphere.",
+      expect(api.list.mock.calls.length).toBeGreaterThan(callsBefore),
     );
   });
-});
 
-describe("AdminUsers: invite", () => {
-  async function openInvite() {
-    await userEvent.click(screen.getByRole("button", { name: "Invite user" }));
-    return screen.getByRole("dialog", { name: "Invite a user" });
-  }
-
-  it("says the link works for 24 hours", async () => {
+  it("shows why it failed, without a dialog", async () => {
+    api.reactivate.mockRejectedValueOnce(
+      new ApiError(
+        409,
+        "USER_NOT_SUSPENDED",
+        "Only a suspended user can be reactivated",
+      ),
+    );
     renderPage();
-    const dialog = await openInvite();
-
-    expect(dialog).toHaveTextContent("valid for 24 hours");
-  });
-
-  it("offers speaker, organizer and administrator, with speaker chosen", async () => {
-    renderPage();
-    const dialog = await openInvite();
-
-    const role = within(dialog).getByRole("combobox", { name: "Role" });
-    expect(role).toHaveValue("speaker");
-    expect(
-      within(role)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Speaker", "Organizer", "Administrator"]);
-  });
-
-  it("shows what is missing, and sends nothing", async () => {
-    const { onInvite } = renderPage();
-    const dialog = await openInvite();
+    await openMenu("Dev Verma");
 
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Send invitation" }),
+      screen.getByRole("menuitem", { name: "Reactivate user" }),
     );
 
-    expect(
-      await within(dialog).findByText("First name is required"),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText("Last name is required"),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Email address")).toBeInvalid();
-    expect(onInvite).not.toHaveBeenCalled();
-  });
-
-  it("sends the invitation with a trimmed, lowercased email, then closes", async () => {
-    const { onInvite } = renderPage();
-    const dialog = await openInvite();
-
-    await userEvent.type(within(dialog).getByLabelText("First name"), "Nisha");
-    await userEvent.type(within(dialog).getByLabelText("Last name"), "Patel");
-    await userEvent.type(
-      within(dialog).getByLabelText("Email address"),
-      "  Nisha@Example.com ",
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Only a suspended user can be reactivated",
     );
-    await userEvent.selectOptions(
-      within(dialog).getByRole("combobox", { name: "Role" }),
-      "organizer",
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Send invitation" }),
-    );
-
-    await waitFor(() =>
-      expect(onInvite).toHaveBeenCalledWith({
-        firstName: "Nisha",
-        lastName: "Patel",
-        email: "nisha@example.com",
-        role: "organizer",
-      }),
-    );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("opens empty again after a cancelled attempt", async () => {
-    renderPage();
-    let dialog = await openInvite();
-    await userEvent.type(within(dialog).getByLabelText("First name"), "Nisha");
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Cancel" }),
-    );
-
-    dialog = await openInvite();
-
-    expect(within(dialog).getByLabelText("First name")).toHaveValue("");
   });
 });
 
 // Next.js (cacheComponents) hides a page we leave with <Activity> instead of unmounting it.
 describe("AdminUsers: hidden and shown again", () => {
   it("comes back with no dialog open", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const view = (mode: "visible" | "hidden") => (
-      <Activity mode={mode}>
-        <AdminUsers data={ADMIN_USERS_SAMPLE} />
-      </Activity>
+      <QueryClientProvider client={client}>
+        <Activity mode={mode}>
+          <AdminUsers />
+        </Activity>
+      </QueryClientProvider>
     );
     const { rerender } = render(view("visible"));
-    await userEvent.click(screen.getByRole("button", { name: "Invite user" }));
+    await openMenu("Rahul Sharma");
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Suspend user" }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     rerender(view("hidden"));

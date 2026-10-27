@@ -1,41 +1,75 @@
-import type { AdminUser } from "../../types/admin-users";
-import { ADMIN_USERS_SAMPLE } from "../admin-users.sample";
 import {
-  formatLastActive,
-  matchesTab,
-  matchesUserSearch,
+  adminActionsFor,
+  ROLE_DESCRIPTIONS,
   roleBadge,
-  sortUsers,
   statusBadge,
+  tabFilter,
+  USER_TABS,
   userFullName,
 } from "../user-display";
 
-const ASOF = "2026-10-26T12:00:00Z";
-const [ananya, kavya, rahul, admin, meera, fatima, dev, vikram] =
-  ADMIN_USERS_SAMPLE.users;
+describe("ROLE_DESCRIPTIONS", () => {
+  it("describes every role", () => {
+    for (const role of ["user", "speaker", "organizer", "admin"] as const) {
+      expect(ROLE_DESCRIPTIONS[role].length).toBeGreaterThan(10);
+    }
+  });
+});
+
+describe("adminActionsFor", () => {
+  it("an active attendee can be suspended and sent a reset link, not reactivated", () => {
+    expect(adminActionsFor({ status: "active", role: "user" })).toEqual({
+      canSuspend: true,
+      canReactivate: false,
+      canSendResetLink: true,
+      resetLinkUnavailable: null,
+    });
+  });
+
+  it("an administrator is never suspended or sent a reset link (the server refuses both)", () => {
+    const actions = adminActionsFor({ status: "active", role: "admin" });
+
+    expect(actions.canSuspend).toBe(false);
+    expect(actions.canSendResetLink).toBe(false);
+  });
+
+  it("a suspended user can be reactivated, but not sent a reset link, and the page says why", () => {
+    const actions = adminActionsFor({ status: "suspended", role: "speaker" });
+
+    expect(actions.canReactivate).toBe(true);
+    expect(actions.canSuspend).toBe(false);
+    expect(actions.canSendResetLink).toBe(false);
+    expect(actions.resetLinkUnavailable).toMatch(/suspended/);
+  });
+
+  it("a pending user has no password yet: no reset link, and the page points to the set-password invite", () => {
+    const actions = adminActionsFor({ status: "pending", role: "organizer" });
+
+    expect(actions.canSuspend).toBe(false);
+    expect(actions.canReactivate).toBe(false);
+    expect(actions.canSendResetLink).toBe(false);
+    expect(actions.resetLinkUnavailable).toMatch(/set-password invite/);
+  });
+
+  it("an account with no role is treated like any other active account", () => {
+    expect(adminActionsFor({ status: "active", role: null }).canSuspend).toBe(
+      true,
+    );
+  });
+});
 
 describe("roleBadge", () => {
   it.each([
-    [{ role: "user", organizerStatus: null }, "Attendee", "brand"],
-    [{ role: "speaker", organizerStatus: null }, "Speaker", "success"],
-    [{ role: "admin", organizerStatus: null }, "Administrator", "surface"],
-    [
-      { role: "organizer", organizerStatus: "verified" },
-      "Organizer",
-      "neutral",
-    ],
-    [
-      { role: "organizer", organizerStatus: "pending" },
-      "Organizer pending",
-      "warning",
-    ],
-    [
-      { role: "organizer", organizerStatus: "rejected" },
-      "Organizer rejected",
-      "danger",
-    ],
-  ] as const)("%j → %s", (user, label, tone) => {
-    expect(roleBadge(user)).toEqual({ label, tone });
+    ["user", "Attendee", "brand"],
+    ["speaker", "Speaker", "success"],
+    ["organizer", "Organizer", "neutral"],
+    ["admin", "Administrator", "surface"],
+  ] as const)("%s → %s", (role, label, tone) => {
+    expect(roleBadge(role)).toEqual({ label, tone });
+  });
+
+  it("says so for an account with no role", () => {
+    expect(roleBadge(null)).toEqual({ label: "No role", tone: "neutral" });
   });
 });
 
@@ -50,101 +84,40 @@ describe("statusBadge", () => {
   });
 });
 
-describe("formatLastActive", () => {
-  it.each([
-    [null, "Never"],
-    ["2026-10-26T11:30:00Z", "Just now"],
-    ["2026-10-26T11:00:00Z", "1 hour ago"],
-    ["2026-10-26T09:00:00Z", "3 hours ago"],
-    ["2026-10-25T23:00:00Z", "Yesterday"],
-    ["2026-10-25T01:00:00Z", "Yesterday"],
-    ["2026-10-20T09:00:00Z", "20 Oct 2026"],
-  ])("%s → %s", (lastActiveAt, text) => {
-    expect(formatLastActive(lastActiveAt, ASOF)).toBe(text);
-  });
-
-  it("calls a time after the reference 'Just now' rather than printing a negative", () => {
-    expect(formatLastActive("2026-10-26T12:05:00Z", ASOF)).toBe("Just now");
-  });
-});
-
 describe("userFullName", () => {
   it("joins first and last name", () => {
-    expect(userFullName(ananya)).toBe("Ananya Rao");
-  });
-});
-
-describe("matchesTab", () => {
-  it("'all' matches everyone", () => {
-    expect(
-      ADMIN_USERS_SAMPLE.users.every((user) => matchesTab(user, "all")),
-    ).toBe(true);
-  });
-
-  it("role tabs match the user's single role", () => {
-    expect(matchesTab(rahul, "user")).toBe(true);
-    expect(matchesTab(rahul, "speaker")).toBe(false);
-    expect(matchesTab(kavya, "organizer")).toBe(true);
-    expect(matchesTab(admin, "admin")).toBe(true);
-  });
-
-  it("'unverified' matches accounts whose email is not confirmed", () => {
-    expect(matchesTab(fatima, "unverified")).toBe(true);
-    expect(matchesTab(vikram, "unverified")).toBe(true);
-    expect(matchesTab(rahul, "unverified")).toBe(false);
-  });
-
-  it("'suspended' matches suspended accounts only", () => {
-    expect(matchesTab(dev, "suspended")).toBe(true);
-    expect(matchesTab(rahul, "suspended")).toBe(false);
-  });
-});
-
-describe("matchesUserSearch", () => {
-  it("matches name or email, ignoring case and surrounding spaces", () => {
-    expect(matchesUserSearch(meera, "  MEERA j ")).toBe(true);
-    expect(matchesUserSearch(meera, "joshi@example")).toBe(true);
-  });
-
-  it("an empty search matches everyone; an unknown one matches no one", () => {
-    expect(matchesUserSearch(meera, "   ")).toBe(true);
-    expect(matchesUserSearch(meera, "nobody")).toBe(false);
-  });
-});
-
-describe("sortUsers", () => {
-  const names = (users: AdminUser[]) => users.map(userFullName);
-
-  it("newest joined first", () => {
-    expect(
-      names(sortUsers(ADMIN_USERS_SAMPLE.users, "newest")).slice(0, 2),
-    ).toEqual(["Vikram Mehta", "Ananya Rao"]);
-  });
-
-  it("name A–Z", () => {
-    expect(names(sortUsers(ADMIN_USERS_SAMPLE.users, "name"))[0]).toBe(
-      "Admin User",
-    );
-    expect(names(sortUsers(ADMIN_USERS_SAMPLE.users, "name")).at(-1)).toBe(
-      "Vikram Mehta",
+    expect(userFullName({ firstName: "Ananya", lastName: "Rao" })).toBe(
+      "Ananya Rao",
     );
   });
+});
 
-  it("most recently active first, and people who never logged in last", () => {
-    const sorted = sortUsers(ADMIN_USERS_SAMPLE.users, "seen");
-
-    expect(userFullName(sorted[0])).toBe("Admin User");
-    expect(sorted.slice(-2).map((user) => user.lastActiveAt)).toEqual([
-      null,
-      null,
+describe("USER_TABS", () => {
+  it("has no tab whose numbers or filter the API cannot give yet (unverified email)", () => {
+    expect(USER_TABS.map((tab) => tab.key)).toEqual([
+      "all",
+      "user",
+      "speaker",
+      "organizer",
+      "admin",
+      "suspended",
     ]);
   });
+});
 
-  it("does not change the array it is given", () => {
-    const before = [...ADMIN_USERS_SAMPLE.users];
+describe("tabFilter", () => {
+  it("'all' asks for no filter", () => {
+    expect(tabFilter("all")).toEqual({});
+  });
 
-    sortUsers(ADMIN_USERS_SAMPLE.users, "name");
+  it.each(["user", "speaker", "organizer", "admin"] as const)(
+    "the %s tab asks for that role",
+    (role) => {
+      expect(tabFilter(role)).toEqual({ role });
+    },
+  );
 
-    expect(ADMIN_USERS_SAMPLE.users).toEqual(before);
+  it("the suspended tab asks for the suspended status, not a role", () => {
+    expect(tabFilter("suspended")).toEqual({ status: "suspended" });
   });
 });

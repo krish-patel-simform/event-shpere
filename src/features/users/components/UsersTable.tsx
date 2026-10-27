@@ -1,42 +1,35 @@
 import Link from "next/link";
+import { formatDate } from "@/src/core/format/format-date";
 import {
   ActionMenu,
   Avatar,
   Badge,
+  ClickableRow,
   cn,
+  TablePagination,
   type ActionMenuItem,
 } from "@/src/core/ui";
-import { adminUserHref } from "../../nav-items";
-import type { AdminUser } from "../../types/admin-users";
-import { formatDate } from "../../utils/format-date";
-import {
-  formatLastActive,
-  roleBadge,
-  statusBadge,
-  userFullName,
-} from "../../utils/user-display";
-import { TablePagination } from "./TablePagination";
+import type { UserListItemDto } from "../schemas/users.schema";
+import { adminUserHref } from "../routes";
+import { roleBadge, statusBadge, userFullName } from "../utils/user-display";
 
 const TH = "px-4 py-2.5 font-semibold";
 
 type UsersTableProps = {
-  users: readonly AdminUser[];
-  /** ISO date-time "last active" counts up to. */
-  asOf: string;
-  /** Users matching the selected tab on the whole platform. */
+  users: readonly UserListItemDto[];
+  /** Users matching the filters on the whole platform. */
   total: number;
   page: number;
   pageSize: number;
   onPageChange: (page: number) => void;
   /** A search or filter is active, so an empty list means "no match". */
   isFiltered: boolean;
-  menuItems: (user: AdminUser) => ActionMenuItem[];
+  menuItems: (user: UserListItemDto) => ActionMenuItem[];
 };
 
 /** The users list: one row per account, with a row menu of actions and paging. */
 export function UsersTable({
   users,
-  asOf,
   total,
   page,
   pageSize,
@@ -74,9 +67,6 @@ export function UsersTable({
                 Joined
               </th>
               <th scope="col" className={TH}>
-                Last active
-              </th>
-              <th scope="col" className={TH}>
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -84,16 +74,20 @@ export function UsersTable({
           <tbody>
             {users.map((user) => {
               const name = userFullName(user);
-              const role = roleBadge(user);
+              const role = roleBadge(user.role);
               const status = statusBadge(user.status);
               return (
-                <tr key={user.id} className="border-t border-line align-middle">
+                <ClickableRow
+                  key={user.id}
+                  className="border-t border-line align-middle"
+                >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <Avatar name={name} />
                       <div className="min-w-0">
                         <Link
                           href={adminUserHref(user.id)}
+                          data-row-link
                           className={cn(
                             "font-semibold hover:underline",
                             user.status === "suspended" && "text-muted",
@@ -125,10 +119,7 @@ export function UsersTable({
                     </Badge>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    {formatDate(user.joinedAt)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted">
-                    {formatLastActive(user.lastActiveAt, asOf)}
+                    {formatDate(user.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <ActionMenu
@@ -136,7 +127,7 @@ export function UsersTable({
                       items={menuItems(user)}
                     />
                   </td>
-                </tr>
+                </ClickableRow>
               );
             })}
           </tbody>
