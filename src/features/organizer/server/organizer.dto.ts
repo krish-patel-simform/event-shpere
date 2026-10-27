@@ -1,7 +1,8 @@
 import "server-only";
-import type { OrganizerProfile, User } from "../../../db/schemas";
+import type { OrganizerProfile, RoleName, User } from "../../../db/schemas";
 import type {
   CreateOrganizerResponseDto,
+  OrganizerDetailDto,
   OrganizerListItemDto,
   OrganizerReviewStatus,
   OwnOrganizerApplicationDto,
@@ -75,6 +76,52 @@ export function toOrganizerListItemDto(
     verifiedBy: row.verifiedBy,
     rejectedAt: row.rejectedAt?.toISOString() ?? null,
     rejectionReason: row.rejectionReason,
+  };
+}
+
+type OrganizerDetailRow = {
+  id: string;
+  organizationName: string;
+  organizationWebsite: string | null;
+  appliedAt: Date;
+  verifiedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
+  hasDuplicate: boolean;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  emailVerifiedAt: Date | null;
+  accountStatus: User["status"];
+  role: RoleName | null;
+  userCreatedAt: Date;
+};
+
+// Picks fields one by one: passwordHash, the verifier's id and other internals never leave.
+export function toOrganizerDetailDto(
+  row: OrganizerDetailRow,
+): OrganizerDetailDto {
+  return {
+    id: row.id,
+    organizationName: row.organizationName,
+    organizationWebsite: row.organizationWebsite,
+    appliedAt: row.appliedAt.toISOString(),
+    status: toOrganizerReviewStatus(row),
+    approvedAt: row.verifiedAt?.toISOString() ?? null,
+    rejectedAt: row.rejectedAt?.toISOString() ?? null,
+    rejectionReason: row.rejectionReason,
+    hasDuplicate: row.hasDuplicate,
+    applicant: {
+      userId: row.userId,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      email: row.email,
+      emailVerifiedAt: row.emailVerifiedAt?.toISOString() ?? null,
+      accountStatus: row.accountStatus,
+      role: row.role,
+      createdAt: row.userCreatedAt.toISOString(),
+    },
   };
 }
 

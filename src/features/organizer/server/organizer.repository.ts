@@ -1,6 +1,7 @@
 import "server-only";
 import {
   and,
+  asc,
   count,
   desc,
   DrizzleQueryError,
@@ -8,6 +9,8 @@ import {
   ilike,
   isNotNull,
   isNull,
+  ne,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -22,7 +25,7 @@ import {
   usersTable,
 } from "../../../db/schemas";
 import type {
-  OrganizerSearchField,
+  OrganizerSort,
   OrganizerVerificationFilter,
 } from "../schemas/organizer.schemas";
 
@@ -49,17 +52,36 @@ export type NewOrganizerAccount = {
 const verifierTable = alias(usersTable, "verifier");
 const rejecterTable = alias(usersTable, "rejecter");
 
-// Search field (DB column name) → how to search it. Typed as a Record over the schema's
-// whitelist, so adding a field there without a condition here is a compile error.
-const searchConditions: Record<OrganizerSearchField, (pattern: string) => SQL> =
-  {
-    organization_name: (pattern) =>
-      ilike(organizerProfilesTable.organizationName, pattern),
-  };
+// What the search box matches: the organisation, the applicant (first, last or "first last") or
+// the email. `pattern` is already escaped and wrapped in % by the caller.
+function searchCondition(pattern: string): SQL | undefined {
+  return or(
+    ilike(organizerProfilesTable.organizationName, pattern),
+    ilike(usersTable.firstName, pattern),
+    ilike(usersTable.lastName, pattern),
+    ilike(
+      sql`(${usersTable.firstName} || ' ' || ${usersTable.lastName})`,
+      pattern,
+    ),
+    ilike(usersTable.email, pattern),
+  );
+}
 
-export type OrganizerSearch = { field: OrganizerSearchField; value: string };
+// Each list is ordered by the date that matters in it: when the application came in (waiting
+// list, or no list chosen), when it was approved, when it was rejected. Typed as a Record over
+// the schema's filter list, so a new list without a date is a compile error.
+const sortColumns: Record<
+  OrganizerVerificationFilter,
+  | typeof organizerProfilesTable.createdAt
+  | typeof organizerProfilesTable.verifiedAt
+  | typeof organizerProfilesTable.rejectedAt
+> = {
+  pending: organizerProfilesTable.createdAt,
+  verified: organizerProfilesTable.verifiedAt,
+  rejected: organizerProfilesTable.rejectedAt,
+};
 
-// Typed as a Record over the schema's filter list, like searchConditions.
+// Typed as a Record over the schema's filter list, like sortColumns.
 // Pending = neither decision yet: a rejected applicant is not in the approval queue.
 const verificationConditions: Record<
   OrganizerVerificationFilter,
@@ -151,23 +173,33 @@ export const organizerRepository = {
    * verification, plus the matching total.
    */
   async listOrganizers(params: {
-    search?: OrganizerSearch;
+    search?: string;
     verification?: OrganizerVerificationFilter;
+    /** true = only applicants who confirmed their email, false = only those who did not. */
+    emailVerified?: boolean;
+    sort: OrganizerSort;
     limit: number;
     offset: number;
   }) {
     // Contains-match, case-insensitive. undefined = no filter → all organizers.
     // The value is sent as a bound parameter (never pasted into SQL): no injection.
-    const searchCondition = params.search
-      ? searchConditions[params.search.field](
-          `%${escapeLike(params.search.value)}%`,
-        )
+    const searchFilter = params.search
+      ? searchCondition(`%${escapeLike(params.search)}%`)
       : undefined;
     const verificationCondition = params.verification
       ? verificationConditions[params.verification]
       : undefined;
-    // and() skips undefined parts; with neither it is undefined = no WHERE.
-    const where = and(searchCondition, verificationCondition);
+    const emailCondition =
+      params.emailVerified === undefined
+        ? undefined
+        : params.emailVerified
+          ? isNotNull(usersTable.emailVerifiedAt)
+          : isNull(usersTable.emailVerifiedAt);
+    // and() skips undefined parts; with none it is undefined = no WHERE.
+    const where = and(searchFilter, verificationCondition, emailCondition);
+
+    const dateColumn = sortColumns[params.verification ?? "pending"];
+    const direction = params.sort === "oldest" ? asc : desc;
 
     const [rows, [{ total }]] = await Promise.all([
       db
@@ -199,14 +231,11 @@ export const organizerRepository = {
         )
         .where(where)
         // id breaks ties, so paging never shows a row twice or skips one.
-        .orderBy(
-          desc(organizerProfilesTable.createdAt),
-          desc(organizerProfilesTable.id),
-        )
+        .orderBy(direction(dateColumn), direction(organizerProfilesTable.id))
         .limit(params.limit)
         .offset(params.offset),
       // Same join + same where as the page, so `total` counts exactly the matches
-      // (the users join is there for future search fields on users, e.g. email).
+      // (the users join is needed: search and the email filter use users columns).
       db
         .select({ total: count() })
         .from(organizerProfilesTable)
@@ -419,6 +448,59 @@ export const organizerRepository = {
       .limit(1);
     // at(0) is typed as possibly undefined, so callers must handle "no profile".
     return rows.at(0) ?? null;
+  },
+
+  /**
+   * One application for the admin's review page: the profile, the applicant's account and role,
+   * and whether another organizer already uses this organisation name or website (compared
+   * without regard to case). null = no such application. Named columns only: never the
+   * password hash.
+   */
+  async findDetail(organizerId: string) {
+    const [row] = await db
+      .select({
+        id: organizerProfilesTable.id,
+        organizationName: organizerProfilesTable.organizationName,
+        organizationWebsite: organizerProfilesTable.organizationWebsite,
+        appliedAt: organizerProfilesTable.createdAt,
+        verifiedAt: organizerProfilesTable.verifiedAt,
+        rejectedAt: organizerProfilesTable.rejectedAt,
+        rejectionReason: organizerProfilesTable.rejectionReason,
+        userId: usersTable.id,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        email: usersTable.email,
+        emailVerifiedAt: usersTable.emailVerifiedAt,
+        accountStatus: usersTable.status,
+        userCreatedAt: usersTable.createdAt,
+        role: rolesTable.role,
+      })
+      .from(organizerProfilesTable)
+      .innerJoin(usersTable, eq(usersTable.id, organizerProfilesTable.userId))
+      // leftJoin: an account with no role row must still be found (role = null).
+      .leftJoin(userRolesTable, eq(userRolesTable.userId, usersTable.id))
+      .leftJoin(rolesTable, eq(rolesTable.id, userRolesTable.roleId))
+      .where(eq(organizerProfilesTable.id, organizerId))
+      .limit(1);
+    if (!row) return null;
+
+    // The values are bound parameters (never pasted into SQL). No website = nothing to compare.
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(organizerProfilesTable)
+      .where(
+        and(
+          ne(organizerProfilesTable.id, organizerId),
+          or(
+            sql`lower(${organizerProfilesTable.organizationName}) = lower(${row.organizationName})`,
+            row.organizationWebsite
+              ? sql`lower(${organizerProfilesTable.organizationWebsite}) = lower(${row.organizationWebsite})`
+              : undefined,
+          ),
+        ),
+      );
+
+    return { ...row, hasDuplicate: total > 0 };
   },
 
   /** The account behind an organizer profile, for re-sending the invite. */

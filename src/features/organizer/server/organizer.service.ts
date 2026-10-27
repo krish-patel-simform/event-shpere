@@ -31,6 +31,7 @@ import type {
   CreateOrganizerBody,
   CreateOrganizerResponseDto,
   ListOrganizersQuery,
+  OrganizerDetailDto,
   OrganizerListItemDto,
   OwnOrganizerApplicationDto,
   RejectOrganizerResponseDto,
@@ -38,6 +39,7 @@ import type {
   VerifyOrganizerResponseDto,
 } from "../schemas/organizer.schemas";
 import {
+  toOrganizerDetailDto,
   toOrganizerDto,
   toOrganizerListItemDto,
   toOwnOrganizerApplicationDto,
@@ -63,6 +65,7 @@ export type OrganizerServiceDeps = {
     | "reopenRejectedOrganizer"
     | "findVerificationByUserId"
     | "findApplicationByUserId"
+    | "findDetail"
   >;
   createAccountSetupToken: typeof createAccountSetupToken;
   enqueueAccountSetupEmail: typeof enqueueAccountSetupEmail;
@@ -327,21 +330,31 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
     },
 
     /**
+     * The admin's review page: one application with its applicant. 404 if there is none.
+     * Read-only: what to do about it (approve, reject, reopen) has its own methods.
+     */
+    async getOrganizerDetail(organizerId: string): Promise<OrganizerDetailDto> {
+      const row = await deps.organizerRepository.findDetail(organizerId);
+      if (!row) throw new NotFoundError("Organizer not found");
+      return toOrganizerDetailDto(row);
+    },
+
+    /**
      * ADM-2: one page of organizers for the admin, optionally searched and filtered by
      * verification (`pending` = the approval queue).
      */
     async getOrganizerListItem(
       query: ListOrganizersQuery,
     ): Promise<{ items: OrganizerListItemDto[]; meta: PageMeta }> {
-      const { page, pageSize, searchField, searchValue, verification } = query;
+      const { page, pageSize, search, verification, emailVerified, sort } =
+        query;
 
       const { rows, total } = await deps.organizerRepository.listOrganizers({
-        // Search only when both are given (an empty value after trim counts as not given).
-        search:
-          searchField && searchValue
-            ? { field: searchField, value: searchValue }
-            : undefined,
-        verification: verification ?? undefined,
+        // An empty search (after trim) counts as no search.
+        search: search || undefined,
+        verification,
+        emailVerified,
+        sort,
         // page/pageSize (what the admin asks) → limit/offset (what SQL needs).
         limit: pageSize,
         offset: (page - 1) * pageSize,

@@ -103,6 +103,26 @@ const applicationRow = {
   rejectionReason: null as string | null,
 };
 
+// What findDetail returns for a waiting application (Date objects, the applicant's role).
+const detailRow = {
+  id: "6f1d2a40-1c1e-4b8e-9d55-2a8f0c3b7e15",
+  organizationName: "Acme Events",
+  organizationWebsite: "https://acme.test" as string | null,
+  appliedAt: createdAt,
+  verifiedAt: null as Date | null,
+  rejectedAt: null as Date | null,
+  rejectionReason: null as string | null,
+  hasDuplicate: false,
+  userId: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
+  firstName: "Olga",
+  lastName: "Organizer",
+  email: "olga@acme.test",
+  emailVerifiedAt: new Date("2026-10-17T10:05:00.000Z") as Date | null,
+  accountStatus: "active" as "active" | "pending" | "suspended",
+  role: "user" as "user" | "organizer" | null,
+  userCreatedAt: new Date("2026-10-17T09:55:00.000Z"),
+};
+
 const input = {
   firstName: "Olga",
   lastName: "Organizer",
@@ -129,6 +149,7 @@ function setup(overrides: Partial<OrganizerServiceDeps> = {}) {
       rejectPendingOrganizer: jest.fn().mockResolvedValue(rejectedRow),
       reopenRejectedOrganizer: jest.fn().mockResolvedValue(reopenedRow),
       findApplicationByUserId: jest.fn().mockResolvedValue(applicationRow),
+      findDetail: jest.fn().mockResolvedValue(detailRow),
     },
     createAccountSetupToken: jest.fn().mockReturnValue(setupToken),
     enqueueAccountSetupEmail: jest.fn().mockResolvedValue(undefined),
@@ -218,6 +239,7 @@ describe("organizerService.createOrganizer", () => {
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
+        findDetail: jest.fn(),
       },
     });
 
@@ -313,6 +335,7 @@ describe("organizerService.verifyOrganizer", () => {
       rejectPendingOrganizer: jest.fn(),
       reopenRejectedOrganizer: jest.fn(),
       findApplicationByUserId: jest.fn(),
+      findDetail: jest.fn(),
       ...overrides,
     };
   }
@@ -568,6 +591,7 @@ describe("organizerService.resendInvite", () => {
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
+        findDetail: jest.fn(),
       },
     });
 
@@ -620,6 +644,7 @@ describe("organizerService.getOrganizerListItem", () => {
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
+        findDetail: jest.fn(),
       },
     });
   }
@@ -630,6 +655,7 @@ describe("organizerService.getOrganizerListItem", () => {
     const { items } = await service.getOrganizerListItem({
       page: 1,
       pageSize: 10,
+      sort: "newest",
     });
 
     expect(items).toEqual([
@@ -657,23 +683,29 @@ describe("organizerService.getOrganizerListItem", () => {
     const { items } = await service.getOrganizerListItem({
       page: 1,
       pageSize: 10,
+      sort: "newest",
     });
 
     expect(items[0].emailVerified).toBe(false);
   });
 
-  it("passes the verification filter on and turns page/pageSize into limit/offset", async () => {
+  it("passes the filters on and turns page/pageSize into limit/offset", async () => {
     const { deps, service } = setupList([listRow], 23);
 
     const { meta } = await service.getOrganizerListItem({
       page: 3,
       pageSize: 10,
       verification: "pending",
+      search: "acme",
+      emailVerified: false,
+      sort: "oldest",
     });
 
     expect(deps.organizerRepository.listOrganizers).toHaveBeenCalledWith({
-      search: undefined,
+      search: "acme",
       verification: "pending",
+      emailVerified: false,
+      sort: "oldest",
       limit: 10,
       offset: 20,
     });
@@ -686,12 +718,164 @@ describe("organizerService.getOrganizerListItem", () => {
     await service.getOrganizerListItem({
       page: 1,
       pageSize: 10,
-      verification: null,
+      sort: "newest",
     });
 
     expect(deps.organizerRepository.listOrganizers).toHaveBeenCalledWith(
-      expect.objectContaining({ verification: undefined }),
+      expect.objectContaining({
+        search: undefined,
+        verification: undefined,
+        emailVerified: undefined,
+      }),
     );
+  });
+
+  it("an empty search is not a search", async () => {
+    const { deps, service } = setupList();
+
+    await service.getOrganizerListItem({
+      page: 1,
+      pageSize: 10,
+      search: "",
+      sort: "newest",
+    });
+
+    expect(deps.organizerRepository.listOrganizers).toHaveBeenCalledWith(
+      expect.objectContaining({ search: undefined }),
+    );
+  });
+});
+
+describe("organizerService.getOrganizerDetail", () => {
+  const organizerId = detailRow.id;
+
+  it("looks the application up by the id it was given", async () => {
+    const { deps, service } = setup();
+
+    await service.getOrganizerDetail(organizerId);
+
+    expect(deps.organizerRepository.findDetail).toHaveBeenCalledWith(
+      organizerId,
+    );
+  });
+
+  it("404 when there is no such application", async () => {
+    const { service } = setup({
+      organizerRepository: {
+        ...setup().deps.organizerRepository,
+        findDetail: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    await expect(
+      service.getOrganizerDetail(organizerId),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("returns a waiting application as a DTO: ISO dates, status pending, nothing decided yet", async () => {
+    const { service } = setup();
+
+    const detail = await service.getOrganizerDetail(organizerId);
+
+    expect(detail).toEqual({
+      id: organizerId,
+      organizationName: "Acme Events",
+      organizationWebsite: "https://acme.test",
+      appliedAt: "2026-10-17T10:00:00.000Z",
+      status: "pending",
+      approvedAt: null,
+      rejectedAt: null,
+      rejectionReason: null,
+      hasDuplicate: false,
+      applicant: {
+        userId: detailRow.userId,
+        firstName: "Olga",
+        lastName: "Organizer",
+        email: "olga@acme.test",
+        emailVerifiedAt: "2026-10-17T10:05:00.000Z",
+        accountStatus: "active",
+        role: "user",
+        createdAt: "2026-10-17T09:55:00.000Z",
+      },
+    });
+  });
+
+  it("an approved application is verified, with the time of the approval", async () => {
+    const verifiedAt = new Date("2026-10-20T12:00:00.000Z");
+    const { service } = setup({
+      organizerRepository: {
+        ...setup().deps.organizerRepository,
+        findDetail: jest.fn().mockResolvedValue({ ...detailRow, verifiedAt }),
+      },
+    });
+
+    const detail = await service.getOrganizerDetail(organizerId);
+
+    expect(detail.status).toBe("verified");
+    expect(detail.approvedAt).toBe("2026-10-20T12:00:00.000Z");
+    expect(detail.rejectedAt).toBeNull();
+    expect(detail.rejectionReason).toBeNull();
+  });
+
+  it("a rejected application is rejected, with the time and the reason the applicant was given", async () => {
+    const rejectedAt = new Date("2026-10-21T08:30:00.000Z");
+    const { service } = setup({
+      organizerRepository: {
+        ...setup().deps.organizerRepository,
+        findDetail: jest.fn().mockResolvedValue({
+          ...detailRow,
+          rejectedAt,
+          rejectionReason: "Duplicate application",
+        }),
+      },
+    });
+
+    const detail = await service.getOrganizerDetail(organizerId);
+
+    expect(detail.status).toBe("rejected");
+    expect(detail.rejectedAt).toBe("2026-10-21T08:30:00.000Z");
+    expect(detail.approvedAt).toBeNull();
+    expect(detail.rejectionReason).toBe("Duplicate application");
+  });
+
+  it("passes on whether another organizer uses the same name or website, and a missing role or verification", async () => {
+    const { service } = setup({
+      organizerRepository: {
+        ...setup().deps.organizerRepository,
+        findDetail: jest.fn().mockResolvedValue({
+          ...detailRow,
+          hasDuplicate: true,
+          role: null,
+          emailVerifiedAt: null,
+          organizationWebsite: null,
+        }),
+      },
+    });
+
+    const detail = await service.getOrganizerDetail(organizerId);
+
+    expect(detail.hasDuplicate).toBe(true);
+    expect(detail.applicant.role).toBeNull();
+    expect(detail.applicant.emailVerifiedAt).toBeNull();
+    expect(detail.organizationWebsite).toBeNull();
+  });
+
+  it("never lets anything but the listed fields out (no password hash, no verifier id)", async () => {
+    const { service } = setup({
+      organizerRepository: {
+        ...setup().deps.organizerRepository,
+        findDetail: jest.fn().mockResolvedValue({
+          ...detailRow,
+          passwordHash: "secret-hash",
+          verifiedBy: "admin-id",
+        }),
+      },
+    });
+
+    const detail = await service.getOrganizerDetail(organizerId);
+
+    expect(JSON.stringify(detail)).not.toContain("secret-hash");
+    expect(JSON.stringify(detail)).not.toContain("admin-id");
   });
 });
 
@@ -709,6 +893,7 @@ describe("organizerService.deleteOrganizer", () => {
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
+        findDetail: jest.fn(),
       },
     });
   }
@@ -1005,6 +1190,7 @@ describe("organizerService.assertVerifiedOrganizer", () => {
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
+        findDetail: jest.fn(),
       },
     });
   }

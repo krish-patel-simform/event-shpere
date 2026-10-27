@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { userStatusEnum } from "../../../db/schemas";
+import { roleNameEnum, userStatusEnum } from "../../../db/schemas";
 
 //* POST /api/admin/organizers: what the admin fills in.
 export const createOrganizerBodySchema = z.object({
@@ -24,6 +24,24 @@ export const createOrganizerBodySchema = z.object({
 });
 export type CreateOrganizerBody = z.infer<typeof createOrganizerBodySchema>;
 
+// The form's own schema. An empty website box is "" (= no website), which the API schema would
+// reject as a bad URL, so here "" is allowed and the form turns it into "left out" on submit.
+export const createOrganizerFormSchema = createOrganizerBodySchema.extend({
+  organizationWebsite: z
+    .string()
+    .trim()
+    .refine(
+      (value) =>
+        value === "" ||
+        createOrganizerBodySchema.shape.organizationWebsite.safeParse(value)
+          .success,
+      "Use a full http(s) URL, for example https://acme.com",
+    ),
+});
+export type CreateOrganizerFormValues = z.input<
+  typeof createOrganizerFormSchema
+>;
+
 export const createOrganizerResponseSchema = z.object({
   /** organizer_profiles.id */
   id: z.uuid(),
@@ -47,12 +65,6 @@ export type CreateOrganizerResponseDto = z.infer<
 
 //* GET /api/admin/organizers: list of organizers
 
-// The ONLY columns the list can be searched by (DB column names). Never pass a column
-// name from the URL straight into SQL: this whitelist stops e.g. searchField=password_hash.
-// To add one: add it here AND to `searchConditions` in organizer.repository.ts.
-export const organizerSearchFields = ["organization_name"] as const;
-export type OrganizerSearchField = (typeof organizerSearchFields)[number];
-
 /**
  * Where an organizer application stands. Not a column: derived from the timestamps
  * (verified_at set = verified, rejected_at set = rejected, neither = pending).
@@ -69,13 +81,30 @@ export const organizerVerificationFilters = organizerReviewStatuses;
 export type OrganizerVerificationFilter =
   (typeof organizerVerificationFilters)[number];
 
-// Search and the verification filter are optional: without them the list is not filtered.
+// The ONLY ways the list can be sorted. Never build ORDER BY from a string in the URL: this
+// whitelist stops it. The date used depends on the list (see `sortColumns` in
+// organizer.repository.ts): applied for the waiting list, approved for `verified`, rejected for
+// `rejected`. To add a sort: add it here AND to `sortOrders` in the repository.
+export const organizerSorts = ["newest", "oldest"] as const;
+export type OrganizerSort = (typeof organizerSorts)[number];
+
+// Every filter is optional: without them the list is not filtered. Missing keys arrive as
+// undefined (parseQuery reads the URL into an object), so .optional() is enough.
 export const organizerQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50),
-  searchField: z.enum(organizerSearchFields).nullish(),
-  searchValue: z.string().trim().max(100).nullish(),
-  verification: z.enum(organizerVerificationFilters).nullish(),
+  /** Matches organisation name, applicant name (first, last or full) or email. */
+  search: z.string().trim().max(100).optional(),
+  verification: z.enum(organizerVerificationFilters).optional(),
+  /**
+   * The applicant has (true) or has not (false) confirmed their email. Sent as the text
+   * "true" / "false": z.coerce.boolean() would turn "false" into true.
+   */
+  emailVerified: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  sort: z.enum(organizerSorts).default("newest"),
 });
 
 export type ListOrganizersQuery = z.infer<typeof organizerQuerySchema>;
@@ -109,6 +138,44 @@ export type OrganizerListItemDto = z.infer<typeof organizerListItemSchema>;
 
 // `data` of the list response (pagination `meta` is sent next to it).
 export const getOrganizersResponseSchema = z.array(organizerListItemSchema);
+
+//* GET /api/admin/organizers/[organizerId]: one application, for the review page
+export const getOrganizerParamsSchema = z.object({
+  /** organizer_profiles.id of the application to read. */
+  organizerId: z.uuid(),
+});
+
+export const organizerDetailResponseSchema = z.object({
+  /** organizer_profiles.id */
+  id: z.uuid(),
+  organizationName: z.string(),
+  organizationWebsite: z.string().nullable(),
+  /** When the application came in. */
+  appliedAt: z.iso.datetime(),
+  status: z.enum(organizerReviewStatuses),
+  /** When it was approved; null unless approved. */
+  approvedAt: z.iso.datetime().nullable(),
+  /** When it was rejected; null unless rejected. */
+  rejectedAt: z.iso.datetime().nullable(),
+  /** What the applicant was told; null unless rejected. */
+  rejectionReason: z.string().nullable(),
+  /** Another organizer already uses this organisation name or website. */
+  hasDuplicate: z.boolean(),
+  /** The person who applied. Admin-only route: the admin needs these to decide. */
+  applicant: z.object({
+    userId: z.uuid(),
+    firstName: z.string(),
+    lastName: z.string(),
+    email: z.email(),
+    /** When they confirmed their email; null = not yet (approving needs it). */
+    emailVerifiedAt: z.iso.datetime().nullable(),
+    accountStatus: z.enum(userStatusEnum.enumValues),
+    /** One role per user; null for an account that has none. */
+    role: z.enum(roleNameEnum.enumValues).nullable(),
+    createdAt: z.iso.datetime(),
+  }),
+});
+export type OrganizerDetailDto = z.infer<typeof organizerDetailResponseSchema>;
 
 //* POST /api/admin/organizers/[organizerId]: verify the organizer
 export const verifyOrganizerParamsSchema = z.object({
