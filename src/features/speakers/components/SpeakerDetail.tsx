@@ -1,8 +1,8 @@
 "use client";
 
-import { Globe, Link as LinkIcon } from "lucide-react";
+import { Globe, Link as LinkIcon, Mail } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import {
   Alert,
@@ -12,7 +12,9 @@ import {
   Card,
   cn,
 } from "@/src/core/ui";
+import { useHasPermission } from "@/src/features/auth";
 import { useGetSpeakerDetail } from "../hooks/useGetSpeakerDetail";
+import { useResendSpeakerInvite } from "../hooks/useResendSpeakerInvite";
 import { SPEAKER_ROUTES } from "../routes";
 import type { SpeakerProfileDto } from "../schemas/speaker.schemas";
 import {
@@ -20,6 +22,7 @@ import {
   roleLine,
   speakerFullName,
 } from "../utils/speaker-display";
+import { InviteNotice, type InviteResult } from "./InviteNotice";
 import { SpeakerDetailSkeleton } from "./SpeakerDetailSkeleton";
 import { SpeakerPhoto } from "./SpeakerPhoto";
 
@@ -80,6 +83,11 @@ function PageFrame({ name, children }: { name: string; children: ReactNode }) {
 
 function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
   const name = speakerFullName(speaker);
+  // Only the admin resends invites. Without the permission there is no button at all. The API
+  // checks it again, and answers 409 if the speaker already set a password.
+  const canResendInvite = useHasPermission("SPEAKER_MANAGE_ALL");
+  const resendInvite = useResendSpeakerInvite();
+  const [invited, setInvited] = useState<InviteResult | null>(null);
   const { profile } = speaker;
   const role = profile ? roleLine(profile) : null;
   const paragraphs = profile ? bioParagraphs(profile.bio) : [];
@@ -93,6 +101,7 @@ function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
 
   return (
     <PageFrame name={name}>
+      <InviteNotice result={invited} error={resendInvite.error} />
       <Card>
         <div className="flex flex-wrap items-center gap-6">
           <SpeakerPhoto
@@ -132,6 +141,26 @@ function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
               </div>
             )}
           </div>
+          {canResendInvite && (
+            <Button
+              variant="secondary"
+              isPending={resendInvite.isPending}
+              onClick={() => {
+                setInvited(null);
+                resendInvite.reset();
+                resendInvite.mutate(speaker.slug, {
+                  onSuccess: (result) =>
+                    setInvited({
+                      name,
+                      setupEmailQueued: result.setupEmailQueued,
+                    }),
+                });
+              }}
+            >
+              <Mail aria-hidden="true" className="size-4" />
+              {resendInvite.isPending ? "Sending…" : "Resend invite"}
+            </Button>
+          )}
         </div>
       </Card>
 

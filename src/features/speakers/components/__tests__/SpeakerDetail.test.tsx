@@ -4,15 +4,26 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { useHasPermission } from "@/src/features/auth";
 import { ananyaProfile } from "../../__fixtures__/speakers";
 import { speakersApiService } from "../../api/speakers-api.service";
 import type { SpeakerProfileDto } from "../../schemas/speaker.schemas";
 import { SpeakerDetail } from "../SpeakerDetail";
 
 jest.mock("../../api/speakers-api.service", () => ({
-  speakersApiService: { list: jest.fn(), get: jest.fn(), create: jest.fn() },
+  speakersApiService: {
+    list: jest.fn(),
+    get: jest.fn(),
+    create: jest.fn(),
+    resendInvite: jest.fn(),
+  },
+}));
+jest.mock("@/src/features/auth", () => ({
+  ...jest.requireActual("@/src/features/auth"),
+  useHasPermission: jest.fn(),
 }));
 const api = jest.mocked(speakersApiService);
+const hasPermission = jest.mocked(useHasPermission);
 
 function renderPage(slug = ananyaProfile.slug) {
   const client = new QueryClient({
@@ -28,6 +39,59 @@ function renderPage(slug = ananyaProfile.slug) {
 beforeEach(() => {
   jest.resetAllMocks();
   api.get.mockResolvedValue(ananyaProfile);
+  hasPermission.mockReturnValue(false);
+});
+
+describe("SpeakerDetail: Resend invite", () => {
+  beforeEach(() => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+  });
+
+  it("is not shown without the SPEAKER_MANAGE_ALL permission", async () => {
+    hasPermission.mockReturnValue(false);
+    renderPage();
+    await screen.findByRole("heading", { name: "Ananya Rao" });
+
+    expect(hasPermission).toHaveBeenCalledWith("SPEAKER_MANAGE_ALL");
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is shown to the admin, and sends the invite for this speaker", async () => {
+    hasPermission.mockImplementation((code) => code === "SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ananya Rao" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resend invite" }),
+    );
+
+    expect(api.resendInvite).toHaveBeenCalledWith("ananya-rao-3f9a1c");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Invite sent to Ananya Rao",
+    );
+  });
+
+  it("shows why it failed", async () => {
+    api.resendInvite.mockRejectedValue(
+      new ApiError(429, "RATE_LIMITED", "An invite was sent moments ago."),
+    );
+    hasPermission.mockReturnValue(true);
+    renderPage();
+    await screen.findByRole("heading", { name: "Ananya Rao" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resend invite" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "An invite was sent moments ago.",
+    );
+  });
 });
 
 describe("SpeakerDetail", () => {

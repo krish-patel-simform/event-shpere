@@ -1,4 +1,6 @@
+import { Mail } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/src/core/ui";
 import type { SpeakerListItemDto } from "../schemas/speaker.schemas";
 import { speakerHref } from "../routes";
 import { roleLine, speakerFullName } from "../utils/speaker-display";
@@ -7,8 +9,20 @@ import { SpeakerPhoto } from "./SpeakerPhoto";
 /** Topics shown on a card; the rest are on the profile. */
 const MAX_TOPICS = 3;
 
-/** One speaker in the grid: photo, name, role and topics. The whole card opens the profile. */
-export function SpeakerCard({ speaker }: { speaker: SpeakerListItemDto }) {
+/**
+ * One speaker in the grid: photo, name, role and topics. The whole card opens the profile.
+ * `onResendInvite` is given only to an admin: it adds a Resend invite button at the bottom.
+ */
+export function SpeakerCard({
+  speaker,
+  onResendInvite,
+  isResendingInvite = false,
+}: {
+  speaker: SpeakerListItemDto;
+  onResendInvite?: () => void;
+  /** The invite is being sent: the button shows it and cannot be pressed twice. */
+  isResendingInvite?: boolean;
+}) {
   const { profile } = speaker;
   const role = profile ? roleLine(profile) : null;
   const topics = profile?.expertise.slice(0, MAX_TOPICS) ?? [];
@@ -54,6 +68,19 @@ export function SpeakerCard({ speaker }: { speaker: SpeakerListItemDto }) {
         </>
       ) : (
         <p className="text-sm text-muted">Profile coming soon</p>
+      )}
+      {onResendInvite && (
+        // relative z-10: above the link that covers the card, so this click is not a link click.
+        <Button
+          variant="secondary"
+          onClick={onResendInvite}
+          isPending={isResendingInvite}
+          aria-label={`Resend invite to ${speakerFullName(speaker)}`}
+          className="relative z-10 mt-3"
+        >
+          <Mail aria-hidden="true" className="size-4" />
+          {isResendingInvite ? "Sending…" : "Resend invite"}
+        </Button>
       )}
     </li>
   );

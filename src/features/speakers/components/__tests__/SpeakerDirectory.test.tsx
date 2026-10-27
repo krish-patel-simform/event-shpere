@@ -19,7 +19,12 @@ import { SpeakerDirectory } from "../SpeakerDirectory";
 // Only the API layer and the permission check are replaced: the hooks, the cache and the screens
 // are the real ones.
 jest.mock("../../api/speakers-api.service", () => ({
-  speakersApiService: { list: jest.fn(), get: jest.fn(), create: jest.fn() },
+  speakersApiService: {
+    list: jest.fn(),
+    get: jest.fn(),
+    create: jest.fn(),
+    resendInvite: jest.fn(),
+  },
 }));
 jest.mock("@/src/features/auth", () => ({
   ...jest.requireActual("@/src/features/auth"),
@@ -255,6 +260,47 @@ describe("SpeakerDirectory: search by name", () => {
       await screen.findByRole("link", { name: "Ananya Rao" }),
     ).toBeInTheDocument();
     expect(lastListCall()).toEqual(expect.objectContaining({ search: "" }));
+  });
+
+  it("offers Clear only once there is something to clear, and Clear shows everyone again", async () => {
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+    expect(
+      screen.queryByRole("button", { name: "Clear" }),
+    ).not.toBeInTheDocument();
+
+    await searchFor("meera");
+    await screen.findByRole("heading", { name: "1 speaker matches “meera”" });
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(searchBox()).toHaveValue("");
+    expect(
+      await screen.findByRole("link", { name: "Ananya Rao" }),
+    ).toBeInTheDocument();
+    expect(lastListCall()).toEqual(
+      expect.objectContaining({ search: "", page: 1 }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Clear" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says what to do when nothing matches, with a button to clear the search", async () => {
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    await searchFor("zzzz");
+
+    expect(
+      await screen.findByText("No speakers match your search."),
+    ).toBeVisible();
+    expect(screen.getByText(/Nobody has “zzzz” in their name/)).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(
+      await screen.findByRole("link", { name: "Ananya Rao" }),
+    ).toBeInTheDocument();
   });
 
   it("only searches the name: the box says so", async () => {
@@ -526,6 +572,104 @@ describe("SpeakerDirectory: Add speaker", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(api.create).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("SpeakerDirectory: Resend invite", () => {
+  const grant = (...codes: string[]) =>
+    hasPermission.mockImplementation((code) => codes.includes(code));
+  const resendButtons = () =>
+    screen.queryAllByRole("button", { name: /^Resend invite to / });
+
+  beforeEach(() => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: true,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+  });
+
+  it("is checked with the SPEAKER_MANAGE_ALL permission, which only the admin has", async () => {
+    grant();
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(hasPermission).toHaveBeenCalledWith("SPEAKER_MANAGE_ALL");
+  });
+
+  it("is not shown at all without the permission", async () => {
+    grant("SPEAKER_CREATE"); // can add speakers (an organizer), but is not the admin
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(resendButtons()).toHaveLength(0);
+    expect(screen.queryByText("Resend invite")).not.toBeInTheDocument();
+  });
+
+  it("is shown on every card for the admin", async () => {
+    grant("SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(resendButtons()).toHaveLength(speakerRows.length);
+    expect(
+      within(card(/Ananya Rao/)).getByRole("button", {
+        name: "Resend invite to Ananya Rao",
+      }),
+    ).toBeVisible();
+  });
+
+  it("sends the invite for that speaker's slug and says who got it, without opening the profile", async () => {
+    grant("SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resend invite to Meera Joshi" }),
+    );
+
+    expect(api.resendInvite).toHaveBeenCalledWith("meera-joshi-7b2e4d");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Invite sent to Meera Joshi",
+    );
+  });
+
+  it("warns when the invite was saved but the email could not be queued", async () => {
+    api.resendInvite.mockResolvedValue({
+      setupEmailQueued: false,
+      expiresAt: "2026-10-30T09:00:00.000Z",
+    });
+    grant("SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resend invite to Ananya Rao" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The new invite was saved, but the email was not sent",
+    );
+  });
+
+  it("shows why it failed, e.g. the speaker already set up their account", async () => {
+    api.resendInvite.mockRejectedValue(
+      new ApiError(
+        409,
+        "ACCOUNT_ALREADY_ACTIVE",
+        "This person has already set up their account.",
+      ),
+    );
+    grant("SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Resend invite to Ananya Rao" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "already set up their account",
+    );
   });
 });
 

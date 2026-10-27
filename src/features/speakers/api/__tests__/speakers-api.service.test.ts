@@ -2,6 +2,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
+import { resendInviteResponseSchema } from "../../../auth";
 import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
@@ -52,6 +53,17 @@ describe("speakersApiService.get", () => {
     expect(apiRequest).toHaveBeenCalledWith(
       { method: "GET", url: "/speakers/ananya-rao-3f9a1c" },
       speakerProfileResponseSchema,
+    );
+  });
+});
+
+describe("speakersApiService.resendInvite", () => {
+  it("posts to the speaker's resend-invite URL with no body, and parses the answer", () => {
+    speakersApiService.resendInvite("ananya-rao-3f9a1c");
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: "/speakers/ananya-rao-3f9a1c/resend-invite" },
+      resendInviteResponseSchema,
     );
   });
 });

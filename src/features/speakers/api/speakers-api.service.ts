@@ -5,6 +5,10 @@ import {
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
 import {
+  resendInviteResponseSchema,
+  type ResendInviteResponseDto,
+} from "../../auth";
+import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
   speakerProfileResponseSchema,
@@ -36,6 +40,18 @@ export const speakersApiService = {
     return apiRequest(
       { method: "GET", url: `/speakers/${slug}` },
       speakerProfileResponseSchema,
+    );
+  },
+
+  /**
+   * Emails the speaker a NEW set-password invite (the old link stops working). Only for a speaker
+   * who has not set a password yet: 409 if they already have, 429 within a minute of the last
+   * invite. The answer is only when the link expires: never the link.
+   */
+  resendInvite(slug: string): Promise<ResendInviteResponseDto> {
+    return apiRequest(
+      { method: "POST", url: `/speakers/${slug}/resend-invite` },
+      resendInviteResponseSchema,
     );
   },
 
