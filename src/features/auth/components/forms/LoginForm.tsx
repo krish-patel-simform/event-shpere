@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { Button, PasswordField, TextField } from "@/src/core/ui";
 import { useLogin } from "../../hooks/useLogin";
@@ -18,10 +18,12 @@ import { AuthAlert } from "../states/AuthAlert";
 export function LoginForm() {
   const router = useRouter();
   const login = useLogin();
+  const { isSuccess: loggedIn, reset: resetLogin } = login;
   const alertRef = useRef<HTMLDivElement>(null);
   const {
     register,
     handleSubmit,
+    reset,
     resetField,
     formState: { errors },
   } = useForm<LoginBody>({
@@ -33,6 +35,18 @@ export function LoginForm() {
   useEffect(() => {
     if (login.error) alertRef.current?.focus();
   }, [login.error]);
+
+  // With cacheComponents, leaving this page hides it (React <Activity>) instead of unmounting it,
+  // so its state survives. After a successful login, empty the form and the mutation once hidden:
+  // coming back (log out, browser back) must show a fresh form, not "Logging in…" with the
+  // previous user's email and password. A draft typed without logging in is kept.
+  useLayoutEffect(() => {
+    if (!loggedIn) return;
+    return () => {
+      reset();
+      resetLogin();
+    };
+  }, [loggedIn, reset, resetLogin]);
 
   const onSubmit = handleSubmit((values) => {
     login.mutate(values, {

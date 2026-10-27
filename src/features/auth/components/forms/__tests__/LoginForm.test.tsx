@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Activity } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { authApiService } from "../../../api/auth-api.service";
 import { authQueryKeys } from "../../../hooks/useMe";
@@ -158,6 +159,53 @@ describe("LoginForm", () => {
     expect(login).toHaveBeenLastCalledWith(
       { email: "ananya@example.com", password: "Secret123!" },
       expect.anything(),
+    );
+  });
+});
+
+// Next.js (cacheComponents) hides a page we leave with <Activity> instead of unmounting it.
+describe("LoginForm: hidden and shown again", () => {
+  function renderInActivity() {
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const view = (mode: "visible" | "hidden") => (
+      <QueryClientProvider client={client}>
+        <Activity mode={mode}>
+          <LoginForm />
+        </Activity>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view("visible"));
+    return {
+      hideThenShow: () => (rerender(view("hidden")), rerender(view("visible"))),
+    };
+  }
+
+  it("after a successful login it comes back empty, not 'Logging in…' with the old details", async () => {
+    login.mockResolvedValue(signedIn);
+    const { hideThenShow } = renderInActivity();
+    await fillAndSubmit();
+    await screen.findByRole("button", { name: "Logging in…" });
+
+    hideThenShow();
+
+    expect(await screen.findByRole("button", { name: "Log in" })).toBeEnabled();
+    expect(screen.getByLabelText("Email address")).toHaveValue("");
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+  });
+
+  it("without a login it keeps what the user typed", async () => {
+    const { hideThenShow } = renderInActivity();
+    await userEvent.type(
+      screen.getByLabelText("Email address"),
+      "ananya@example.com",
+    );
+
+    hideThenShow();
+
+    expect(screen.getByLabelText("Email address")).toHaveValue(
+      "ananya@example.com",
     );
   });
 });
