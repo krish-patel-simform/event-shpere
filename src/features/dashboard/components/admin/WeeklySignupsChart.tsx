@@ -91,26 +91,32 @@ export function WeeklySignupsChart({
               ariaLabel={describe(weeks)}
               className={CHART_HEIGHT}
             />
-            {/* The exact numbers for screen readers; the chart above is for the eye. */}
-            <table className="sr-only">
-              <caption>New sign-ups per week</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Week of</th>
-                  <th scope="col">Attendees</th>
-                  <th scope="col">Organizer applications</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weeks.map((week) => (
-                  <tr key={week.weekStart}>
-                    <th scope="row">{formatWeekLabel(week.weekStart)}</th>
-                    <td>{formatCount(week.attendees)}</td>
-                    <td>{formatCount(week.organizerApplications)}</td>
+            {/*
+              The exact numbers for screen readers; the chart above is for the eye. `sr-only` is on
+              a <div>, not on the <table>: a table ignores the overflow clipping sr-only relies on,
+              so its rows spilled out of the 1px box and stretched the page below the layout.
+            */}
+            <div className="sr-only">
+              <table>
+                <caption>New sign-ups per week</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Week of</th>
+                    <th scope="col">Attendees</th>
+                    <th scope="col">Organizer applications</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {weeks.map((week) => (
+                    <tr key={week.weekStart}>
+                      <th scope="row">{formatWeekLabel(week.weekStart)}</th>
+                      <td>{formatCount(week.attendees)}</td>
+                      <td>{formatCount(week.organizerApplications)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>
