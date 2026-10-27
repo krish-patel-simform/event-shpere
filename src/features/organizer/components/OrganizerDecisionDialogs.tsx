@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import {
+  Alert,
   Button,
   Dialog,
   DialogBody,
@@ -13,13 +14,17 @@ import {
   REJECTION_REASON_MAX,
   rejectOrganizerBodySchema,
   type RejectOrganizerBody,
-} from "@/src/features/organizer";
-import type { PendingOrganizer } from "../../types/admin-overview";
+} from "../schemas/organizer.schemas";
+import type { PendingOrganizer } from "../types/admin-organizers";
 
 type DecisionDialogProps = {
   /** The applicant the dialog is about; null = closed. */
   organizer: PendingOrganizer | null;
   onClose: () => void;
+  /** The request is running: the confirm button shows it and cannot be pressed twice. */
+  isPending: boolean;
+  /** Why the last attempt failed (e.g. the CMS is down); the dialog stays open to try again. */
+  error: string | undefined;
 };
 
 /** Approve: a plain confirmation that says what the applicant gets. */
@@ -27,6 +32,8 @@ export function ApproveOrganizerDialog({
   organizer,
   onClose,
   onConfirm,
+  isPending,
+  error,
 }: DecisionDialogProps & { onConfirm: () => void }) {
   return (
     <Dialog
@@ -37,6 +44,11 @@ export function ApproveOrganizerDialog({
       {organizer && (
         <>
           <DialogBody>
+            {error && (
+              <Alert tone="error" title="We couldn't approve this organizer">
+                {error}
+              </Alert>
+            )}
             <p>
               {organizer.organizerFirstName} {organizer.organizerLastName} will
               get the organizer role, and an email to set up their content
@@ -51,7 +63,9 @@ export function ApproveOrganizerDialog({
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={onConfirm}>Approve organizer</Button>
+            <Button onClick={onConfirm} isPending={isPending}>
+              {isPending ? "Approving…" : "Approve organizer"}
+            </Button>
           </DialogFooter>
         </>
       )}
@@ -64,6 +78,8 @@ export function RejectOrganizerDialog({
   organizer,
   onClose,
   onConfirm,
+  isPending,
+  error,
 }: DecisionDialogProps & { onConfirm: (reason: string) => void }) {
   return (
     <Dialog
@@ -77,6 +93,8 @@ export function RejectOrganizerDialog({
           organizer={organizer}
           onClose={onClose}
           onConfirm={onConfirm}
+          isPending={isPending}
+          error={error}
         />
       )}
     </Dialog>
@@ -87,10 +105,14 @@ function RejectForm({
   organizer,
   onClose,
   onConfirm,
+  isPending,
+  error,
 }: {
   organizer: PendingOrganizer;
   onClose: () => void;
   onConfirm: (reason: string) => void;
+  isPending: boolean;
+  error: string | undefined;
 }) {
   const {
     register,
@@ -104,11 +126,17 @@ function RejectForm({
   return (
     <form noValidate onSubmit={handleSubmit(({ reason }) => onConfirm(reason))}>
       <DialogBody>
+        {error && (
+          <Alert tone="error" title="We couldn't reject this application">
+            {error}
+          </Alert>
+        )}
         <TextAreaField
           label="Reason shared with the applicant"
           placeholder="Explain what is missing or why the application cannot be approved."
           hint={`Up to ${REJECTION_REASON_MAX} characters.`}
           error={errors.reason?.message}
+          readOnly={isPending}
           {...register("reason")}
         />
         <p className="text-sm text-muted">
@@ -121,8 +149,8 @@ function RejectForm({
         <Button variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" variant="danger">
-          Reject application
+        <Button type="submit" variant="danger" isPending={isPending}>
+          {isPending ? "Rejecting…" : "Reject application"}
         </Button>
       </DialogFooter>
     </form>

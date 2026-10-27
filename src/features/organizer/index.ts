@@ -1,12 +1,19 @@
 // Client-safe public API of the organizer feature. Never export anything from ./server here.
+export { AdminOrganizerReview } from "./components/AdminOrganizerReview";
+export { AdminOrganizers } from "./components/AdminOrganizers";
+export { adminOrganizerHref, ORGANIZER_ROUTES } from "./routes";
+export type { PendingOrganizer } from "./types/admin-organizers";
 export {
   createOrganizerBodySchema,
+  createOrganizerFormSchema,
   createOrganizerResponseSchema,
   deleteOrganizerParamsSchema,
+  getOrganizerParamsSchema,
   getOrganizersResponseSchema,
+  organizerDetailResponseSchema,
   organizerQuerySchema,
   organizerReviewStatuses,
-  organizerSearchFields,
+  organizerSorts,
   organizerVerificationFilters,
   ownOrganizerApplicationResponseSchema,
   REJECTION_REASON_MAX,
@@ -19,11 +26,13 @@ export {
   verifyOrganizerParamsSchema,
   verifyOrganizerResponseSchema,
   type CreateOrganizerBody,
+  type CreateOrganizerFormValues,
   type CreateOrganizerResponseDto,
   type ListOrganizersQuery,
+  type OrganizerDetailDto,
   type OrganizerListItemDto,
   type OrganizerReviewStatus,
-  type OrganizerSearchField,
+  type OrganizerSort,
   type OrganizerVerificationFilter,
   type OwnOrganizerApplicationDto,
   type RejectOrganizerBody,

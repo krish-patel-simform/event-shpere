@@ -1,9 +1,16 @@
 import {
   daysWaiting,
-  formatEventCounts,
+  defaultSort,
+  ORGANIZER_TABS,
+  organizerStatus,
   OVERDUE_AFTER_DAYS,
+  SORT_OPTIONS,
+  STATUS_BADGES,
+  TAB_DESCRIPTIONS,
+  tabVerification,
   waitingLabel,
 } from "../organizer-display";
+import { organizerVerificationFilters } from "../../schemas/organizer.schemas";
 
 describe("daysWaiting", () => {
   it("counts whole days between the application and the reference time", () => {
@@ -31,30 +38,89 @@ describe("waitingLabel", () => {
   });
 });
 
+describe("ORGANIZER_TABS", () => {
+  it("has 'all' first, then one tab per list the API can give, waiting list first", () => {
+    expect(ORGANIZER_TABS.map((tab) => tab.key)).toEqual([
+      "all",
+      ...organizerVerificationFilters,
+    ]);
+  });
+
+  it("describes every tab", () => {
+    for (const { key } of ORGANIZER_TABS) {
+      expect(TAB_DESCRIPTIONS[key]).not.toBe("");
+    }
+  });
+});
+
+describe("tabVerification", () => {
+  it.each(["pending", "verified", "rejected"] as const)(
+    "the %s tab asks for that list",
+    (tab) => {
+      expect(tabVerification(tab)).toBe(tab);
+    },
+  );
+
+  it("the 'all' tab asks for no verification filter", () => {
+    expect(tabVerification("all")).toBeUndefined();
+  });
+});
+
+describe("organizerStatus", () => {
+  it("is approved when verified, rejected when rejected, otherwise awaiting a decision", () => {
+    expect(
+      organizerStatus({ verifiedAt: "2026-03-02T10:00:00Z", rejectedAt: null }),
+    ).toBe("verified");
+    expect(
+      organizerStatus({ verifiedAt: null, rejectedAt: "2026-08-22T10:00:00Z" }),
+    ).toBe("rejected");
+    expect(organizerStatus({ verifiedAt: null, rejectedAt: null })).toBe(
+      "pending",
+    );
+  });
+
+  it("has a badge for every status", () => {
+    expect(STATUS_BADGES.pending.label).toBe("Awaiting approval");
+    expect(STATUS_BADGES.verified.tone).toBe("success");
+    expect(STATUS_BADGES.rejected.tone).toBe("danger");
+  });
+});
+
+describe("defaultSort", () => {
+  it("shows the waiting list oldest first (a queue) and the others newest first", () => {
+    expect(defaultSort("pending")).toBe("oldest");
+    expect(defaultSort("verified")).toBe("newest");
+    expect(defaultSort("rejected")).toBe("newest");
+    expect(defaultSort("all")).toBe("newest");
+  });
+
+  it("is always one of the choices the tab offers", () => {
+    for (const { key } of ORGANIZER_TABS) {
+      expect(SORT_OPTIONS[key].map((option) => option.value)).toContain(
+        defaultSort(key),
+      );
+    }
+  });
+});
+
+describe("SORT_OPTIONS", () => {
+  it("offers both directions on every tab, named after that list's date", () => {
+    expect(SORT_OPTIONS.verified.map((option) => option.label)).toEqual([
+      "Recently approved",
+      "Earliest approved",
+    ]);
+    for (const { key } of ORGANIZER_TABS) {
+      expect(SORT_OPTIONS[key].map((option) => option.value).sort()).toEqual([
+        "newest",
+        "oldest",
+      ]);
+    }
+  });
+});
+
 describe("OVERDUE_AFTER_DAYS", () => {
   it("is the point from which the design shows the wait in red (9 days, not 8)", () => {
     expect(8 > OVERDUE_AFTER_DAYS).toBe(false);
     expect(9 > OVERDUE_AFTER_DAYS).toBe(true);
-  });
-});
-
-describe("formatEventCounts", () => {
-  it.each([
-    [{ published: 6, drafts: 2, completed: 0 }, "6 published · 2 drafts"],
-    [{ published: 3, drafts: 0, completed: 0 }, "3 published"],
-    [{ published: 4, drafts: 1, completed: 0 }, "4 published · 1 draft"],
-    [{ published: 0, drafts: 0, completed: 2 }, "2 completed"],
-    [
-      { published: 1, drafts: 1, completed: 5 },
-      "1 published · 1 draft · 5 completed",
-    ],
-  ])("%j → %s", (events, text) => {
-    expect(formatEventCounts(events)).toBe(text);
-  });
-
-  it("says so when an organizer has no events", () => {
-    expect(formatEventCounts({ published: 0, drafts: 0, completed: 0 })).toBe(
-      "No events yet",
-    );
   });
 });
