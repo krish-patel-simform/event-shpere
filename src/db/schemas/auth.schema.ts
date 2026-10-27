@@ -147,6 +147,14 @@ export const organizerProfilesTable = pgTable(
     verifiedBy: uuid("verified_by").references(() => usersTable.id, {
       onDelete: "set null",
     }),
+    // A rejected applicant is kept (not deleted) so they can log in and see the reason.
+    // Status: approved = verified_at set, rejected = rejected_at set, pending = neither.
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    // set null: keep the rejection if the rejecting admin is deleted.
+    rejectedBy: uuid("rejected_by").references(() => usersTable.id, {
+      onDelete: "set null",
+    }),
+    rejectionReason: text("rejection_reason"),
     // Strapi admin-panel user id (Strapi ids are integers). Null until the background job
     // has created the organizer's CMS account after verification.
     cmsOrganizerId: integer("cms_organizer_id").unique(),
@@ -157,6 +165,20 @@ export const organizerProfilesTable = pgTable(
     check(
       "organizer_profiles_verified_by_needs_at",
       sql`${t.verifiedBy} IS NULL OR ${t.verifiedAt} IS NOT NULL`,
+    ),
+    // Approved and rejected never at the same time.
+    check(
+      "organizer_profiles_not_verified_and_rejected",
+      sql`${t.verifiedAt} IS NULL OR ${t.rejectedAt} IS NULL`,
+    ),
+    // A rejection always says why. rejected_by may be null later (admin deleted), like verified_by.
+    check(
+      "organizer_profiles_rejected_needs_reason",
+      sql`${t.rejectedAt} IS NULL OR ${t.rejectionReason} IS NOT NULL`,
+    ),
+    check(
+      "organizer_profiles_rejected_by_needs_at",
+      sql`${t.rejectedBy} IS NULL OR ${t.rejectedAt} IS NOT NULL`,
     ),
   ],
 );
