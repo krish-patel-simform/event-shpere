@@ -8,14 +8,20 @@ import {
   resendInviteResponseSchema,
   type ResendInviteResponseDto,
 } from "../../auth";
+import { SPEAKER_PHOTO_FORM_FIELD } from "../constants";
 import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
+  ownSpeakerProfileResponseSchema,
+  speakerPhotoResponseSchema,
   speakerProfileResponseSchema,
   type CreateSpeakerBody,
   type CreateSpeakerResponseDto,
   type ListSpeakersQuery,
+  type OwnSpeakerProfileDto,
+  type SpeakerPhotoResponseDto,
   type SpeakerProfileDto,
+  type UpdateOwnSpeakerProfileBody,
 } from "../schemas/speaker.schemas";
 
 export type ListSpeakersParams = Pick<ListSpeakersQuery, "pageSize"> &
@@ -60,6 +66,43 @@ export const speakersApiService = {
     return apiRequest(
       { method: "POST", url: "/speakers", data: body },
       createSpeakerResponseSchema,
+    );
+  },
+
+  /** The logged-in speaker's own profile, as the edit form's values (needs SPEAKER_MANAGE_OWN). */
+  getOwnProfile(): Promise<OwnSpeakerProfileDto> {
+    return apiRequest(
+      { method: "GET", url: "/me/speaker-profile" },
+      ownSpeakerProfileResponseSchema,
+    );
+  },
+
+  /** Saves the fields in the body (a partial update) and answers with the whole saved profile. */
+  updateOwnProfile(
+    body: UpdateOwnSpeakerProfileBody,
+  ): Promise<OwnSpeakerProfileDto> {
+    return apiRequest(
+      { method: "PATCH", url: "/me/speaker-profile", data: body },
+      ownSpeakerProfileResponseSchema,
+    );
+  },
+
+  /**
+   * Replaces the speaker's photo. The file goes as multipart/form-data in the field the server
+   * streams on to the CMS. The JSON content type of the shared client is cleared, so the browser
+   * sets `multipart/form-data` with its boundary itself.
+   */
+  uploadOwnPhoto(file: File): Promise<SpeakerPhotoResponseDto> {
+    const data = new FormData();
+    data.append(SPEAKER_PHOTO_FORM_FIELD, file);
+    return apiRequest(
+      {
+        method: "POST",
+        url: "/me/speaker-profile/photo",
+        data,
+        headers: { "Content-Type": undefined },
+      },
+      speakerPhotoResponseSchema,
     );
   },
 };

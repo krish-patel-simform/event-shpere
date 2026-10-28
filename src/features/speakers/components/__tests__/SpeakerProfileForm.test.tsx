@@ -331,12 +331,176 @@ describe("SpeakerProfileForm: submitting", () => {
       () => new Promise<void>((resolve) => (finish = resolve)),
     );
     render(<SpeakerProfileForm initialValues={profile} onSubmit={onSubmit} />);
+    await replace(/Company/, "Acme");
     await userEvent.click(save());
 
     const busy = await screen.findByRole("button", { name: "Saving…" });
     expect(busy).toBeDisabled();
     finish();
     expect(await screen.findByText("Profile saved")).toBeInTheDocument();
+  });
+});
+
+describe("SpeakerProfileForm: photo and the two requests", () => {
+  const imageFile = (name = "me.png", type = "image/png") =>
+    new File(["x"], name, { type });
+  const pickPhoto = (file: File) =>
+    fireEvent.change(screen.getByLabelText("Photo file"), {
+      target: { files: [file] },
+    });
+  const renderWired = (
+    handlers: {
+      onSubmit?: jest.Mock;
+      onUploadPhoto?: jest.Mock;
+    } = {},
+  ) => {
+    const onSubmit = handlers.onSubmit ?? jest.fn();
+    const onUploadPhoto = handlers.onUploadPhoto ?? jest.fn();
+    render(
+      <SpeakerProfileForm
+        initialValues={profile}
+        onSubmit={onSubmit}
+        onUploadPhoto={onUploadPhoto}
+      />,
+    );
+    return { onSubmit, onUploadPhoto };
+  };
+
+  beforeEach(() => {
+    URL.createObjectURL = jest.fn(() => "blob:preview");
+    URL.revokeObjectURL = jest.fn();
+  });
+
+  it("enables the photo button when uploads are wired, with the rules as its hint", () => {
+    renderWired();
+    expect(
+      screen.getByRole("button", { name: "Upload new photo" }),
+    ).toBeEnabled();
+    expect(screen.getByText("JPG, PNG, WebP, up to 2 MB.")).toBeInTheDocument();
+  });
+
+  it("previews a chosen photo without uploading it yet", () => {
+    const { onUploadPhoto } = renderWired();
+    pickPhoto(imageFile("headshot.png"));
+
+    expect(screen.getByRole("img")).toHaveAttribute("src", "blob:preview");
+    expect(
+      screen.getByText("headshot.png will replace your photo when you save."),
+    ).toBeInTheDocument();
+    expect(onUploadPhoto).not.toHaveBeenCalled();
+  });
+
+  it("refuses a file that is not a JPG, PNG or WebP image", () => {
+    renderWired();
+    pickPhoto(imageFile("cv.pdf", "application/pdf"));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Choose a JPG, PNG or WebP image",
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("refuses a photo over 2 MB", () => {
+    renderWired();
+    const big = imageFile();
+    Object.defineProperty(big, "size", { value: 2 * 1024 * 1024 + 1 });
+    pickPhoto(big);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The photo must be 2 MB or smaller",
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("drops the chosen photo on Discard", async () => {
+    renderWired();
+    pickPhoto(imageFile());
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard changes" }),
+    );
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Discard changes" }),
+    ).toBeDisabled();
+  });
+
+  it("uploads only the photo when no detail changed", async () => {
+    const { onSubmit, onUploadPhoto } = renderWired();
+    const file = imageFile();
+    pickPhoto(file);
+    await userEvent.click(save());
+
+    expect(await screen.findByText("Profile saved")).toBeInTheDocument();
+    expect(onUploadPhoto).toHaveBeenCalledWith(file);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("uploads the photo first, then saves the details, and then has nothing left to save", async () => {
+    const calls: string[] = [];
+    const { onSubmit, onUploadPhoto } = renderWired({
+      onUploadPhoto: jest.fn(async () => void calls.push("photo")),
+      onSubmit: jest.fn(async () => void calls.push("details")),
+    });
+    pickPhoto(imageFile());
+    await replace(/Company/, "Acme");
+    await userEvent.click(save());
+
+    expect(await screen.findByText("Profile saved")).toBeInTheDocument();
+    expect(calls).toEqual(["photo", "details"]);
+    expect(onUploadPhoto).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Discard changes" }),
+    ).toBeDisabled();
+  });
+
+  it("does not save the details when the photo fails, and keeps the choice", async () => {
+    const { onSubmit } = renderWired({
+      onUploadPhoto: jest.fn().mockRejectedValue(new Error("Too big for us")),
+    });
+    pickPhoto(imageFile());
+    await replace(/Company/, "Acme");
+    await userEvent.click(save());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("We couldn't upload your photo");
+    expect(alert).toHaveTextContent("Too big for us");
+    expect(alert).toHaveTextContent(
+      "Your other changes were not saved either.",
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(field(/Company/)).toHaveValue("Acme");
+    expect(screen.getByRole("img")).toHaveAttribute("src", "blob:preview");
+  });
+
+  it("says the photo was updated when only the details fail, and does not upload it again", async () => {
+    const { onUploadPhoto } = renderWired({
+      onSubmit: jest.fn().mockRejectedValue(new Error("Strapi is down")),
+    });
+    pickPhoto(imageFile());
+    await replace(/Company/, "Acme");
+    await userEvent.click(save());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Photo updated, but your details were not saved",
+    );
+    expect(alert).toHaveTextContent("Strapi is down");
+
+    // Trying again only sends the details.
+    await userEvent.click(save());
+    await screen.findByRole("alert");
+    expect(onUploadPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing and says so when there is nothing to save", async () => {
+    const { onSubmit, onUploadPhoto } = renderWired();
+    await userEvent.click(save());
+
+    expect(await screen.findByText("No changes to save")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onUploadPhoto).not.toHaveBeenCalled();
   });
 });
 

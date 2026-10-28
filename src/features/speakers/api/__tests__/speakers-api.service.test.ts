@@ -6,6 +6,8 @@ import { resendInviteResponseSchema } from "../../../auth";
 import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
+  ownSpeakerProfileResponseSchema,
+  speakerPhotoResponseSchema,
   speakerProfileResponseSchema,
 } from "../../schemas/speaker.schemas";
 import { speakersApiService } from "../speakers-api.service";
@@ -82,5 +84,46 @@ describe("speakersApiService.create", () => {
       { method: "POST", url: "/speakers", data: body },
       createSpeakerResponseSchema,
     );
+  });
+});
+
+describe("speakersApiService own profile", () => {
+  it("reads the own profile and parses it with the form's schema", () => {
+    speakersApiService.getOwnProfile();
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "GET", url: "/me/speaker-profile" },
+      ownSpeakerProfileResponseSchema,
+    );
+  });
+
+  it("patches the body and parses the saved profile", () => {
+    const body = { company: "Acme", websiteUrl: null };
+
+    speakersApiService.updateOwnProfile(body);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "PATCH", url: "/me/speaker-profile", data: body },
+      ownSpeakerProfileResponseSchema,
+    );
+  });
+
+  it("posts the photo as multipart form data in the field the server reads", () => {
+    const file = new File(["x"], "me.png", { type: "image/png" });
+
+    speakersApiService.uploadOwnPhoto(file);
+
+    // No JSON content type: the browser adds multipart/form-data with its boundary.
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "POST",
+        url: "/me/speaker-profile/photo",
+        data: expect.any(FormData),
+        headers: { "Content-Type": undefined },
+      },
+      speakerPhotoResponseSchema,
+    );
+    const [config] = jest.mocked(apiRequest).mock.calls[0];
+    expect((config.data as FormData).get("files")).toBe(file);
   });
 });

@@ -4,9 +4,34 @@ import {
   friendlyError,
   LINK_ERROR,
   linkError,
+  photoFileError,
   profileCompleteness,
   toFormValues,
 } from "../own-profile-form";
+
+describe("photoFileError", () => {
+  const MB = 1024 * 1024;
+
+  it.each(["image/jpeg", "image/png", "image/webp"])("accepts %s", (type) => {
+    expect(photoFileError({ type, size: 1000 })).toBeUndefined();
+  });
+
+  it.each(["image/gif", "image/svg+xml", "application/pdf", ""])(
+    "refuses the type %p",
+    (type) => {
+      expect(photoFileError({ type, size: 1000 })).toBe(
+        "Choose a JPG, PNG or WebP image",
+      );
+    },
+  );
+
+  it("accepts exactly 2 MB and refuses one byte more", () => {
+    expect(photoFileError({ type: "image/png", size: 2 * MB })).toBeUndefined();
+    expect(photoFileError({ type: "image/png", size: 2 * MB + 1 })).toBe(
+      "The photo must be 2 MB or smaller",
+    );
+  });
+});
 
 describe("toFormValues", () => {
   it("turns a missing text into an empty string and keeps the rest", () => {

@@ -1,3 +1,4 @@
+import { SPEAKER_PHOTO_MAX_BYTES, SPEAKER_PHOTO_TYPES } from "../constants";
 import type {
   OwnSpeakerProfileDto,
   UpdateOwnSpeakerProfileInput,
@@ -71,6 +72,22 @@ export const LINK_ERROR =
 export function linkError(message: string | undefined): string | undefined {
   if (!message) return undefined;
   return /^too big/i.test(message) ? friendlyError(message, 255) : LINK_ERROR;
+}
+
+/**
+ * Why a chosen file cannot be the photo, or undefined when it can. The server checks the same
+ * rules (and the real bytes) again: this only saves the speaker a round trip.
+ */
+export function photoFileError(
+  file: Pick<File, "type" | "size">,
+): string | undefined {
+  if (!(SPEAKER_PHOTO_TYPES as readonly string[]).includes(file.type)) {
+    return "Choose a JPG, PNG or WebP image";
+  }
+  if (file.size > SPEAKER_PHOTO_MAX_BYTES) {
+    return `The photo must be ${SPEAKER_PHOTO_MAX_BYTES / (1024 * 1024)} MB or smaller`;
+  }
+  return undefined;
 }
 
 export type Completeness = {

@@ -36,7 +36,9 @@ export {
   type SpeakerPhotoType,
 } from "./constants";
 export { blocksToText, textToBlocks } from "./utils/bio-blocks";
-// "Edit my profile" (UI only for now: sample data, no API call).
+// "Edit my profile": the page content loads and saves the real profile; the form alone still
+// works on sample data (no props).
+export { OwnSpeakerProfile } from "./components/OwnSpeakerProfile";
 export { SpeakerProfileForm } from "./components/SpeakerProfileForm";
 export {
   SpeakerProfileError,
