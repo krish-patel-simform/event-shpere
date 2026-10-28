@@ -36,3 +36,11 @@ export {
   type SpeakerPhotoType,
 } from "./constants";
 export { blocksToText, textToBlocks } from "./utils/bio-blocks";
+// "Edit my profile" (UI only for now: sample data, no API call).
+export { SpeakerProfileForm } from "./components/SpeakerProfileForm";
+export {
+  SpeakerProfileError,
+  SpeakerProfileSkeleton,
+} from "./components/SpeakerProfileStates";
+export { SPEAKER_PROFILE_ROUTE } from "./routes";
+export { OWN_SPEAKER_PROFILE_SAMPLE } from "./utils/own-profile.sample";

@@ -8,3 +8,6 @@ export const SPEAKER_ROUTES = {
 export function speakerHref(slug: string): string {
   return `${SPEAKER_ROUTES.list}/${slug}`;
 }
+
+/** The page where a speaker edits their own public profile ("Edit my profile"). */
+export const SPEAKER_PROFILE_ROUTE = "/speaker/profile";
