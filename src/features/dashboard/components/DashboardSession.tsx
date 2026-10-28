@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import { Alert, Button } from "@/src/core/ui";
 import {
   AUTH_ROUTES,
@@ -46,6 +46,12 @@ export function DashboardSession({ children }: { children: ReactNode }) {
     isRefetching,
   } = useMe({ enabled: !logout.isSuccess });
   const isGuest = error?.status === 401;
+
+  // Leaving this layout hides it (React <Activity>) instead of unmounting it, so a finished logout
+  // would stay "done" here, and the layout would show "Signing out" for ever the next time it is
+  // opened (e.g. after logging in as someone else). Forget the logout as the layout is hidden.
+  const { reset: resetLogout } = logout;
+  useLayoutEffect(() => () => resetLogout(), [resetLogout]);
 
   const handleLogout = () =>
     logout.mutate(undefined, {

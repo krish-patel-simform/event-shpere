@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Activity } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { authApiService } from "@/src/features/auth/api/auth-api.service";
 import {
@@ -263,5 +264,42 @@ describe("DashboardSession: log out", () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/login"));
     expect(logout).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+// Next.js (cacheComponents) hides a layout we leave with <Activity> instead of unmounting it, so
+// its state (here: a finished logout) survives until the layout is opened again.
+describe("DashboardSession: hidden and shown again after a logout", () => {
+  it("shows the page again, not 'Signing out' for ever, when the layout is opened later (e.g. after logging in as someone else)", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = (mode: "visible" | "hidden") => (
+      <QueryClientProvider client={client}>
+        <Activity mode={mode}>
+          <DashboardSession>
+            <p>Page content</p>
+          </DashboardSession>
+        </Activity>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view("visible"));
+    await userEvent.click(await logOutButton());
+    await screen.findByRole("status", { name: "Signing out" });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/login"));
+
+    // The redirect to the log-in page hides this layout; a new person logs in; the layout is
+    // opened again (the cache was cleared by the logout, so the user is loaded again).
+    rerender(view("hidden"));
+    getMe.mockResolvedValue({ ...me, firstName: "Rohan", lastName: "Gupta" });
+    rerender(view("visible"));
+
+    expect(await screen.findByText("Page content")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "Signing out" }),
+    ).not.toBeInTheDocument();
+    expect((await screen.findAllByText("Rohan Gupta")).length).toBeGreaterThan(
+      0,
+    );
   });
 });
