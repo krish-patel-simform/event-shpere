@@ -1,0 +1,125 @@
+import type { AttendeeHomeData } from "../types/attendee-home";
+
+// TODO(API): sample data for the attendee home until the registrations, agenda and notification
+// endpoints exist. The one place these numbers live: replace this object with the API data, not
+// the components. Written for HOME_SAMPLE_NOW (20 Oct 2026). Times are UTC; the screen shows IST.
+export const ATTENDEE_HOME_SAMPLE: AttendeeHomeData = {
+  firstName: "Rahul",
+  nextEvent: {
+    slug: "product-engineering-summit-2026",
+    title: "Product Engineering Summit",
+    startsAt: "2026-12-03T03:30:00Z",
+    endsAt: "2026-12-05T12:30:00Z",
+    venue: "Convention Centre",
+    city: "Pune",
+    sessionsBooked: 3,
+  },
+  stats: {
+    upcomingEvents: 2,
+    sessionsBooked: 5,
+    sessionsToRate: 1,
+    pollsVoted: 4,
+  },
+  events: [
+    {
+      id: "5d1b8a3e-0f4c-4c53-8a0a-2f0f6b1c7a01",
+      slug: "product-engineering-summit-2026",
+      title: "Product Engineering Summit 2026",
+      startsAt: "2026-12-03T03:30:00Z",
+      endsAt: "2026-12-05T12:30:00Z",
+      city: "Pune",
+      priceInr: 0,
+      sessionsBooked: 3,
+      status: "registered",
+      cancelledAt: null,
+    },
+    {
+      id: "5d1b8a3e-0f4c-4c53-8a0a-2f0f6b1c7a02",
+      slug: "design-systems-engineering-day",
+      title: "Design Systems Engineering Day",
+      startsAt: "2026-11-14T04:00:00Z",
+      endsAt: "2026-11-14T12:00:00Z",
+      city: "Pune",
+      priceInr: 1500,
+      sessionsBooked: 2,
+      status: "registered",
+      cancelledAt: null,
+    },
+    {
+      id: "5d1b8a3e-0f4c-4c53-8a0a-2f0f6b1c7a03",
+      slug: "frontend-meetup-november-edition",
+      title: "Frontend Meetup: November Edition",
+      startsAt: "2026-11-28T12:30:00Z",
+      endsAt: "2026-11-28T15:30:00Z",
+      city: "Pune",
+      priceInr: 0,
+      sessionsBooked: 0,
+      status: "cancelled",
+      cancelledAt: "2026-10-18T07:00:00Z",
+    },
+  ],
+  schedule: {
+    eventSlug: "product-engineering-summit-2026",
+    eventTitle: "Product Engineering Summit",
+    day: "2026-12-04T04:30:00Z",
+    entries: [
+      {
+        id: "a7c1f3d2-52f4-4f7e-9a63-6d8f01b2c301",
+        kind: "session",
+        title: "Scaling Next.js Applications",
+        startsAt: "2026-12-04T04:30:00Z",
+        endsAt: "2026-12-04T05:15:00Z",
+        location: "Hall B, Level 2",
+        speakers: [
+          { name: "Ananya Rao", slug: "ananya-rao" },
+          { name: "Vikram Mehta", slug: "vikram-mehta" },
+        ],
+      },
+      {
+        id: "a7c1f3d2-52f4-4f7e-9a63-6d8f01b2c302",
+        kind: "break",
+        title: "Free time · coffee in the foyer",
+        startsAt: "2026-12-04T05:15:00Z",
+        endsAt: "2026-12-04T06:00:00Z",
+        location: null,
+        speakers: [],
+      },
+      {
+        id: "a7c1f3d2-52f4-4f7e-9a63-6d8f01b2c303",
+        kind: "session",
+        title: "Designing Accessible Data Tables",
+        startsAt: "2026-12-04T06:00:00Z",
+        endsAt: "2026-12-04T06:45:00Z",
+        location: "Hall A",
+        speakers: [{ name: "Meera Joshi", slug: "meera-joshi" }],
+      },
+    ],
+  },
+  ratingPrompt: {
+    sessionTitle: "Accessibility Basics",
+    eventTitle: "Web Meetup",
+    eventDate: "2026-09-26T04:30:00Z",
+  },
+  notifications: [
+    {
+      id: "c2e0b6a4-3f7d-4d11-95c8-0a4d7e5f1b01",
+      lead: "Session updated:",
+      message: "“Scaling Next.js” moved to Hall B.",
+      createdAt: "2026-10-20T08:00:00Z",
+      read: false,
+    },
+    {
+      id: "c2e0b6a4-3f7d-4d11-95c8-0a4d7e5f1b02",
+      lead: "Event cancelled:",
+      message: "Frontend Meetup: November Edition.",
+      createdAt: "2026-10-18T07:00:00Z",
+      read: false,
+    },
+    {
+      id: "c2e0b6a4-3f7d-4d11-95c8-0a4d7e5f1b03",
+      message: "Registration confirmed for Design Systems Engineering Day.",
+      createdAt: "2026-10-15T10:00:00Z",
+      read: true,
+    },
+  ],
+};

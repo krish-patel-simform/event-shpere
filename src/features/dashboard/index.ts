@@ -10,3 +10,7 @@ export {
   OrganizerReviewStatus,
   type OrganizerApplication,
 } from "./components/OrganizerReviewStatus";
+// Role home screens (static sample data for now; each takes its data as an optional prop).
+export { AttendeeHome } from "./components/attendee/AttendeeHome";
+export { SpeakerHome } from "./components/speaker/SpeakerHome";
+export { OrganizerHome } from "./components/organizer/OrganizerHome";

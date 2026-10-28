@@ -3,15 +3,24 @@ import {
   CalendarDays,
   Clock,
   LayoutDashboard,
+  Mic,
   ShieldCheck,
   SlidersHorizontal,
   Ticket,
   User,
+  UserCog,
   Users,
+  Vote,
   type LucideIcon,
 } from "lucide-react";
 import type { PermissionCode } from "@/src/core/auth/permission-catalog";
+import { NOTIFICATION_ROUTES } from "@/src/features/notifications";
 import { ORGANIZER_ROUTES } from "@/src/features/organizer";
+import { POLL_ROUTES } from "@/src/features/polls";
+import { PROFILE_ROUTES } from "@/src/features/profile";
+import { SCHEDULE_ROUTES } from "@/src/features/schedule";
+import { SESSION_ROUTES } from "@/src/features/sessions";
+import { SPEAKER_PROFILE_ROUTE } from "@/src/features/speakers";
 import { USER_ROUTES } from "@/src/features/users";
 
 /**
@@ -77,9 +86,33 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       },
       {
         label: "My schedule",
-        href: "/my-schedule",
+        href: SCHEDULE_ROUTES.mine,
         icon: Clock,
         access: "SCHEDULE_MANAGE",
+      },
+    ],
+  },
+  {
+    // Speaker workspace: each link needs a permission only the speaker role has.
+    heading: "Speaking",
+    items: [
+      {
+        label: "My sessions",
+        href: SESSION_ROUTES.list,
+        icon: Mic,
+        access: "SPEAKER_MANAGE_OWN",
+      },
+      {
+        label: "Live polls & Q&A",
+        href: POLL_ROUTES.list,
+        icon: Vote,
+        access: "POLL_CREATE_ASSIGNED",
+      },
+      {
+        label: "Edit my profile",
+        href: SPEAKER_PROFILE_ROUTE,
+        icon: UserCog,
+        access: "SPEAKER_MANAGE_OWN",
       },
     ],
   },
@@ -105,13 +138,13 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       {
         label: "Notifications",
-        href: "/notifications",
+        href: NOTIFICATION_ROUTES.list,
         icon: Bell,
         access: "NOTIFICATION_VIEW",
       },
       {
         label: "Profile & settings",
-        href: "/profile",
+        href: PROFILE_ROUTES.settings,
         icon: SlidersHorizontal,
         access: "PROFILE_VIEW",
       },

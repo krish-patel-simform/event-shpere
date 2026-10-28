@@ -123,6 +123,35 @@ Tick an item when its API, UI and tests are done; then update its status in
       active" (needs `users.last_login_at`), and **Change role** (no API yet, `USER_ROLE_MANAGE`;
       one role per user, so it is a radio picker, not checkboxes).
 
+### Screens built as UI only on sample data (2026-10-27), still to wire to the API
+
+Each takes its data as a prop with the sample as default, so wiring replaces the default, not the
+screen. Event pages (browse, detail, admin events) are not built yet.
+
+- [ ] **Profile & settings** `/profile` (`features/profile`): name form, change password, theme.
+      Needs AUTH-3 (`GET` + `PATCH /api/me/profile`), AUTH-5 (`PATCH /api/me/password`), a
+      notification-preferences API. Shown as "not available yet": photo upload (AUTH-4), time zone,
+      two-step verification, device list, delete account.
+- [ ] **Notifications** `/notifications` (`features/notifications`): day groups, unread, All / Unread
+      / topic tabs, mark read, preferences card (disabled). Needs the notifications table + SSE
+      (NOTIF-*), the unread badge in the shell and the bell in the top bar.
+- [ ] **Role dashboards** on `/dashboard` (`features/dashboard/components/{attendee,speaker,organizer}`),
+      picked in `DashboardHome` by permission: `ANALYTICS_VIEW_ALL` → admin, `ANALYTICS_VIEW_EVENT` →
+      organizer, `SPEAKER_MANAGE_OWN` → speaker, `REGISTRATION_VIEW_OWN` → attendee. Anyone else sees
+      the organizer review screen. **Known gap:** an attendee with a pending or rejected organizer
+      application now sees the attendee home, not the review screen, until
+      `GET /api/me/organizer-application` decides which one to show.
+- [ ] **Speaker sessions** `/speaker/sessions`, `/speaker/sessions/[id]`, `/speaker/sessions/new`
+      (`features/sessions`), **live polls** `/speaker/polls` (`features/polls`), **My schedule**
+      `/my-schedule` (`features/schedule`, real `.ics` export). Need the events / sessions / polls
+      tables. Dates are shown in UTC.
+- [ ] **Edit my profile** `/speaker/profile` (`SpeakerProfileForm` in `features/speakers`): validates
+      with the server's `updateOwnSpeakerProfileBodySchema`. The API already exists
+      (`GET` + `PATCH /api/me/speaker-profile`, `POST .../photo`): wire the form to it and enable the
+      photo button.
+- [ ] **Not built (no board, or events):** `/my-events`, event pages, `AuthStates` / `EmailVerified`
+      boards (check against the auth screens).
+
 ## 4. Housekeeping
 
 - [ ] Commit the current uncommitted work (dashboard, organizer delete, seed) with requirement IDs.

@@ -76,8 +76,42 @@ describe("DashboardHome", () => {
     ).toBeInTheDocument();
   });
 
-  it("without that permission: not the admin overview", () => {
+  it("analytics of own events: the organizer's home, not the admin overview", async () => {
     renderHome("organizer", ["EVENT_CREATE", "ANALYTICS_VIEW_EVENT"]);
+
+    expect(
+      await screen.findByRole("heading", { name: "Organizer dashboard" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Platform overview" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("managing one's own speaker profile: the speaker's home", async () => {
+    renderHome("speaker", ["SPEAKER_MANAGE_OWN", "REGISTRATION_VIEW_OWN"]);
+
+    // The speaker home is picked before the attendee home, although they also have registrations.
+    expect(
+      await screen.findByRole("region", { name: "Your sessions" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Organizer dashboard" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("viewing one's own registrations: the attendee's home", async () => {
+    renderHome("user", ["REGISTRATION_VIEW_OWN", "PROFILE_VIEW"]);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: /^Hi / }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Organizer dashboard" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("none of those permissions: the organizer review screen", () => {
+    renderHome("user", ["PROFILE_VIEW"]);
 
     expect(
       screen.queryByRole("heading", { name: "Platform overview" }),
