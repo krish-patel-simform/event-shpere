@@ -31,10 +31,12 @@ const hasPermission = jest.mocked(useHasPermission);
 
 const gift = LIST_VENUES[0];
 
-function renderPage() {
-  const client = new QueryClient({
+/** `client` lets a test keep one cache across two visits, like the app's QueryProvider does. */
+function renderPage(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <VenueDirectory />
@@ -87,23 +89,32 @@ describe("VenueDirectory", () => {
     expect(card).toHaveTextContent("3 halls");
   });
 
-  it("searches by city when the visitor presses Enter", async () => {
+  it("searches by city as the visitor types, with no Search button to press", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "5 venues" });
 
-    await userEvent.type(searchBox(), "pune{Enter}");
+    expect(
+      screen.queryByRole("button", { name: "Search" }),
+    ).not.toBeInTheDocument();
+    await userEvent.type(searchBox(), "pune");
 
     expect(
       await screen.findByRole("heading", { name: "1 venue matches “pune”" }),
     ).toBeInTheDocument();
     expect(cards()[0]).toHaveTextContent("Lakeside Conference Centre");
+    // Debounced: the API is asked for the word once typing stops, not for every letter.
+    for (const partial of ["p", "pu", "pun"]) {
+      expect(api.list).not.toHaveBeenCalledWith(
+        expect.objectContaining({ search: partial }),
+      );
+    }
   });
 
   it("says when nothing matches, and clears the search", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "5 venues" });
 
-    await userEvent.type(searchBox(), "zzz{Enter}");
+    await userEvent.type(searchBox(), "zzz");
 
     expect(
       await screen.findByText("No venues match your search."),
@@ -153,6 +164,33 @@ describe("VenueDirectory", () => {
     expect(
       await screen.findByRole("heading", { name: "5 venues" }),
     ).toBeInTheDocument();
+  });
+
+  it("asks the server again on every visit, so a venue deactivated in the meantime is gone", async () => {
+    // The app keeps answers for 60 s: Discover must not use that.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+    });
+    const first = renderPage(client);
+    await screen.findByRole("heading", { name: "5 venues" });
+    first.unmount();
+
+    // Meanwhile an admin deactivates GIFT City in another browser.
+    api.list.mockImplementation(async (params) => {
+      const page = fakeListVenues(params);
+      const items = page.items.filter((venue) => venue.id !== gift.id);
+      return { items, meta: { ...page.meta, total: items.length } };
+    });
+    renderPage(client);
+
+    // No cached copy: the skeleton, then the server's new answer without that venue.
+    expect(
+      screen.getByRole("status", { name: "Loading venues" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "4 venues" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(gift.name)).not.toBeInTheDocument();
   });
 
   it("links to the admin page only for someone who manages venues", async () => {

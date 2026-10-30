@@ -4,6 +4,7 @@ import { Building2, Search, SearchX, Settings2, X } from "lucide-react";
 import Link from "next/link";
 import { useId, useState } from "react";
 import { formatCount } from "@/src/core/format/format-number";
+import { useDebouncedValue } from "@/src/core/hooks/use-debounced-value";
 import { Alert, Button, buttonStyles, TablePagination } from "@/src/core/ui";
 import { useHasPermission } from "@/src/features/auth";
 import { useGetVenueList } from "../hooks/useGetVenueList";
@@ -13,6 +14,7 @@ import { SORT_OPTIONS } from "../utils/venue-display";
 import { VenueCard } from "./VenueCard";
 
 const PAGE_SIZE = 12;
+const SEARCH_DELAY_MS = 300;
 
 /**
  * Discover: the venues everyone can browse (GET /api/venues). Always asks for active venues
@@ -23,23 +25,22 @@ export function VenueDirectory() {
   const canManage = useHasPermission("VENUE_MANAGE");
   const searchId = useId();
 
-  // What is typed in the box, and what was last searched for (the one the list is loaded with).
   const [search, setSearch] = useState("");
-  const [term, setTerm] = useState("");
   const [sort, setSort] = useState<VenueSort>("name");
   const [page, setPage] = useState(1);
 
-  const venues = useGetVenueList({
-    status: "active",
-    search: term,
-    sort,
-    page,
-    pageSize: PAGE_SIZE,
-  });
+  // The box updates at once; the API is asked once the visitor stops typing.
+  const term = useDebouncedValue(search.trim(), SEARCH_DELAY_MS);
+
+  // Always fresh: a venue deactivated in the meantime (by an admin elsewhere) is never shown
+  // from an old cached copy.
+  const venues = useGetVenueList(
+    { status: "active", search: term, sort, page, pageSize: PAGE_SIZE },
+    { alwaysFresh: true },
+  );
 
   const clearSearch = () => {
     setSearch("");
-    setTerm("");
     setPage(1);
   };
 
@@ -67,15 +68,10 @@ export function VenueDirectory() {
         )}
       </header>
 
-      {/* Searches when the visitor presses Search or Enter, not on every key. */}
+      {/* Searches as the visitor types (after a short pause); Enter does nothing extra. */}
       <form
         role="search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setTerm(search.trim());
-          // A new search starts again from the first page.
-          setPage(1);
-        }}
+        onSubmit={(event) => event.preventDefault()}
         className="rounded-lg border border-line bg-surface p-4 sm:p-5"
       >
         <label htmlFor={searchId} className="text-sm font-semibold">
@@ -93,14 +89,15 @@ export function VenueDirectory() {
               aria-label="Search venues"
               placeholder="Search by venue name or city"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                // A new search starts again from the first page.
+                setPage(1);
+              }}
               className="w-full rounded-md border border-field bg-surface py-2.5 pl-11 pr-3 placeholder:text-muted/70"
             />
           </div>
-          <Button type="submit" className="px-6">
-            Search
-          </Button>
-          {(term !== "" || search !== "") && (
+          {search !== "" && (
             <Button variant="secondary" onClick={clearSearch}>
               <X aria-hidden="true" className="size-4" />
               Clear
@@ -123,11 +120,12 @@ export function VenueDirectory() {
           </select>
         </div>
         <p className="mt-2 text-sm text-muted">
-          Searches venue names and cities. Press Enter or Search.
+          Searches venue names and cities as you type.
         </p>
       </form>
 
-      {venues.isPending ? (
+      {/* Until this visit's own request answers: never rows from before (see ALWAYS_FRESH). */}
+      {venues.isPending || !venues.isFetchedAfterMount ? (
         <div
           role="status"
           aria-label="Loading venues"

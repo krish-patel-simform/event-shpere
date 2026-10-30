@@ -1,5 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { VenueDetailDto } from "../schemas/venue.schemas";
+import type { PageMeta } from "../../../core/api-client/base-api.service";
+import type {
+  VenueDetailDto,
+  VenueListItemDto,
+} from "../schemas/venue.schemas";
 import type { ListVenuesParams } from "../api/venue-api.service";
 
 /** One place for the keys: a change to a venue refreshes `detail(id)` and every list. */
@@ -8,7 +12,25 @@ export const venueQueryKeys = {
   list: (params: ListVenuesParams) => ["venues", "list", params] as const,
   lists: ["venues", "list"] as const,
   detail: (venueId: string) => ["venues", "detail", venueId] as const,
+  // Discover's own entries: never shared with the admin pages' cache (see ALWAYS_FRESH).
+  browseList: (params: ListVenuesParams) =>
+    ["venues", "browse", "list", params] as const,
+  browseDetail: (venueId: string) =>
+    ["venues", "browse", "detail", venueId] as const,
 };
+
+/**
+ * Discover never shows a cached answer: each visit (and each search, sort or page) asks the
+ * server again and shows the skeleton until it answers, so a venue an admin deactivated in
+ * another browser is gone the next time the page loads. gcTime 0 drops the entry as soon as the
+ * page stops using it, so nothing is kept to show next time. A page left open still refetches
+ * when the visitor comes back to the tab (React Query's refetchOnWindowFocus).
+ */
+export const ALWAYS_FRESH = {
+  staleTime: 0,
+  gcTime: 0,
+  refetchOnMount: "always",
+} as const;
 
 /**
  * After a change the server answers with the venue as it is now (halls included), so the open
@@ -21,4 +43,24 @@ export function applyVenueUpdate(
 ) {
   queryClient.setQueryData(venueQueryKeys.detail(venue.id), venue);
   return queryClient.invalidateQueries({ queryKey: venueQueryKeys.lists });
+}
+
+/**
+ * The venue's row in a list that is already loaded (the page the visitor came from), or
+ * undefined. Reads the cache only, never requests: it lets a detail page show the venue's name
+ * and address at once while its own request (with the halls) is still running.
+ */
+export function findListedVenue(
+  queryClient: QueryClient,
+  venueId: string,
+): VenueListItemDto | undefined {
+  const lists = queryClient.getQueriesData<{
+    items: VenueListItemDto[];
+    meta: PageMeta;
+  }>({ queryKey: venueQueryKeys.lists });
+  for (const [, page] of lists) {
+    const venue = page?.items.find((item) => item.id === venueId);
+    if (venue) return venue;
+  }
+  return undefined;
 }

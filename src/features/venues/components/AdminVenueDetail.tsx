@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Power, PowerOff } from "lucide-react";
 import Link from "next/link";
 import { useLayoutEffect, useState, type ReactNode } from "react";
@@ -13,12 +14,14 @@ import {
   type BreadcrumbItem,
 } from "@/src/core/ui";
 import { useGetVenueDetail } from "../hooks/useGetVenueDetail";
+import { findListedVenue } from "../hooks/venue-cache";
 import { VENUE_ROUTES } from "../routes";
 import type { VenueDetailDto } from "../schemas/venue.schemas";
-import { statusLabel } from "../utils/venue-display";
+import { googleMapsUrl, statusLabel } from "../utils/venue-display";
 import { ActivateVenueDialog } from "./ActivateVenueDialog";
 import { DeactivateVenueDialog } from "./DeactivateVenueDialog";
 import { HallsCard } from "./HallsCard";
+import { MapLink } from "./MapLink";
 import { VenueDetailsCard } from "./VenueDetailsCard";
 
 const VENUES_CRUMB: BreadcrumbItem = {
@@ -33,16 +36,27 @@ const VENUES_CRUMB: BreadcrumbItem = {
  */
 export function AdminVenueDetail({ venueId }: { venueId: string }) {
   const detail = useGetVenueDetail(venueId);
+  // Coming from the Venues list, its row is already in the cache: the name and address show at
+  // once instead of a generic "Venue" while the halls load. Opened by URL, there is none yet.
+  const listed = findListedVenue(useQueryClient(), venueId);
+  const crumb = listed?.name ?? "Venue";
 
   if (detail.isPending) {
     return (
-      <PageFrame crumb="Venue">
+      <PageFrame crumb={crumb}>
+        {listed && (
+          <VenueHeading
+            name={listed.name}
+            isActive={listed.isActive}
+            address={`${listed.addressLine}, ${listed.city}`}
+          />
+        )}
         <div
           role="status"
           aria-label="Loading venue"
           className="animate-pulse space-y-4 motion-reduce:animate-none"
         >
-          <div className="h-16 rounded-lg bg-surface-subtle" />
+          {!listed && <div className="h-16 rounded-lg bg-surface-subtle" />}
           <div className="h-64 rounded-lg bg-surface-subtle" />
         </div>
       </PageFrame>
@@ -53,7 +67,7 @@ export function AdminVenueDetail({ venueId }: { venueId: string }) {
     const notFound =
       detail.error instanceof ApiError && detail.error.status === 404;
     return (
-      <PageFrame crumb="Venue">
+      <PageFrame crumb={crumb}>
         {notFound ? (
           <Alert tone="warning" title="Venue not found">
             This venue does not exist, or was removed.
@@ -98,6 +112,43 @@ function PageFrame({
   );
 }
 
+/**
+ * The venue's name, status and address, with an icon that opens the map pin. Shared by the
+ * loading view (from the list's row) and the loaded page; `children` are the header's buttons.
+ */
+function VenueHeading({
+  name,
+  isActive,
+  address,
+  mapUrl,
+  children,
+}: {
+  name: string;
+  isActive: boolean;
+  address: string;
+  /** Left out (or null) = no map pin, so no map icon. */
+  mapUrl?: string | null;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">{name}</h1>
+          <Badge tone={isActive ? "success" : "neutral"}>
+            {statusLabel(isActive)}
+          </Badge>
+        </div>
+        <p className="flex flex-wrap items-center gap-1.5 text-muted">
+          {address}
+          {mapUrl && <MapLink href={mapUrl} venueName={name} />}
+        </p>
+      </div>
+      {children}
+    </header>
+  );
+}
+
 function VenueView({ venue }: { venue: VenueDetailDto }) {
   const [dialog, setDialog] = useState<"deactivate" | "activate" | null>(null);
 
@@ -110,18 +161,12 @@ function VenueView({ venue }: { venue: VenueDetailDto }) {
     <div className="mx-auto max-w-6xl space-y-5">
       <Breadcrumb items={[VENUES_CRUMB, { label: venue.name }]} />
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold">{venue.name}</h1>
-            <Badge tone={venue.isActive ? "success" : "neutral"}>
-              {statusLabel(venue.isActive)}
-            </Badge>
-          </div>
-          <p className="text-muted">
-            {venue.addressLine}, {venue.city}
-          </p>
-        </div>
+      <VenueHeading
+        name={venue.name}
+        isActive={venue.isActive}
+        address={`${venue.addressLine}, ${venue.city}`}
+        mapUrl={googleMapsUrl(venue)}
+      >
         {venue.isActive ? (
           <Button
             variant="secondary"
@@ -137,7 +182,7 @@ function VenueView({ venue }: { venue: VenueDetailDto }) {
             Activate venue
           </Button>
         )}
-      </header>
+      </VenueHeading>
 
       {!venue.isActive && (
         <Alert tone="warning" title="This venue is inactive">

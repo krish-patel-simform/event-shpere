@@ -41,6 +41,15 @@ export function activeHallsLabel(hallsOn: number, hallCount: number): string {
   return `${hallsOn} active · ${hallCount - hallsOn} inactive`;
 }
 
+/** Google Maps at the venue's map pin, or null when the venue has none (both or neither are set). */
+export function googleMapsUrl(venue: {
+  latitude: number | null;
+  longitude: number | null;
+}): string | null {
+  if (venue.latitude === null || venue.longitude === null) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${venue.latitude},${venue.longitude}`;
+}
+
 /** The one word for a venue's or a hall's status, everywhere on the venue pages. */
 export function statusLabel(isActive: boolean): "Active" | "Inactive" {
   return isActive ? "Active" : "Inactive";

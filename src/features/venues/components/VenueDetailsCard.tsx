@@ -1,8 +1,11 @@
 import { Card, DescriptionList, type DescriptionItem } from "@/src/core/ui";
 import type { VenueDetailDto } from "../schemas/venue.schemas";
+import { googleMapsUrl } from "../utils/venue-display";
+import { MapLink } from "./MapLink";
 
-/** The venue's address, time zone and map pin. */
+/** The venue's address, time zone and map pin (with an icon that opens it in Google Maps). */
 export function VenueDetailsCard({ venue }: { venue: VenueDetailDto }) {
+  const mapUrl = googleMapsUrl(venue);
   const items: DescriptionItem[] = [
     { label: "Address", value: venue.addressLine },
     { label: "City", value: venue.city },
@@ -14,14 +17,16 @@ export function VenueDetailsCard({ venue }: { venue: VenueDetailDto }) {
     { label: "Time zone", value: venue.timezone },
     {
       label: "Map pin",
-      value:
-        venue.latitude !== null && venue.longitude !== null ? (
+      value: mapUrl ? (
+        <span className="flex items-center gap-2">
           <span className="font-mono text-xs">
             {venue.latitude}, {venue.longitude}
           </span>
-        ) : (
-          <span className="font-normal text-muted">Not set</span>
-        ),
+          <MapLink href={mapUrl} venueName={venue.name} />
+        </span>
+      ) : (
+        <span className="font-normal text-muted">Not set</span>
+      ),
     },
   ];
 

@@ -12,7 +12,9 @@ import {
   venueId,
   workshopRoom,
 } from "../../__fixtures__/venues";
+import { LIST_VENUES } from "../../__fixtures__/venue-list";
 import { venueApiService } from "../../api/venue-api.service";
+import { venueQueryKeys } from "../../hooks/venue-cache";
 import type { VenueDetailDto } from "../../schemas/venue.schemas";
 import { AdminVenueDetail } from "../AdminVenueDetail";
 
@@ -93,10 +95,12 @@ function serve(initial: VenueDetailDto = giftCity) {
   });
 }
 
-function renderPage() {
-  const client = new QueryClient({
+/** `client` lets a test start with a cache, e.g. the Venues list the admin came from. */
+function renderPage(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <AdminVenueDetail venueId={venueId} />
@@ -169,6 +173,78 @@ describe("AdminVenueDetail: loading the venue", () => {
     expect(
       await screen.findByRole("heading", { name: giftCity.name }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("AdminVenueDetail: name from the list and the map", () => {
+  it("shows the venue's name at once when the admin comes from the list, while the halls load", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // The Venues list page the admin came from is already in the cache.
+    client.setQueryData(
+      venueQueryKeys.list({ page: 1, pageSize: 10, sort: "name" }),
+      {
+        items: [{ ...LIST_VENUES[0], id: venueId }],
+        meta: { page: 1, pageSize: 10, total: 1 },
+      },
+    );
+    let release: (venue: VenueDetailDto) => void = () => undefined;
+    api.get.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    renderPage(client);
+
+    // Still loading the halls, but the name is in the heading and the breadcrumb already.
+    expect(
+      screen.getByRole("status", { name: "Loading venue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: giftCity.name }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText(
+        giftCity.name,
+      ),
+    ).toBeInTheDocument();
+
+    release(giftCity);
+    expect(await screen.findByText("Main Auditorium")).toBeInTheDocument();
+  });
+
+  it("shows a generic name while loading when opened by URL (nothing is known yet)", () => {
+    api.get.mockReturnValue(new Promise(() => undefined));
+    renderPage();
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText(
+        "Venue",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("opens the map pin in Google Maps from the header and from the details", async () => {
+    await renderLoaded();
+
+    const links = screen.getAllByRole("link", {
+      name: `Open ${giftCity.name} in Google Maps (new tab)`,
+    });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute(
+        "href",
+        "https://www.google.com/maps/search/?api=1&query=23.16,72.68",
+      );
+      expect(link).toHaveAttribute("target", "_blank");
+    }
+  });
+
+  it("has no map icon when the venue has no map pin", async () => {
+    await renderLoaded({ ...giftCity, latitude: null, longitude: null });
+
+    expect(
+      screen.queryByRole("link", { name: /in Google Maps/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Not set")).toBeInTheDocument();
   });
 });
 

@@ -7,6 +7,7 @@ import { ApiError } from "@/src/core/api-client/base-api.service";
 import { useHasPermission } from "@/src/features/auth";
 import { giftCity, venueId } from "../../__fixtures__/venues";
 import { venueApiService } from "../../api/venue-api.service";
+import { venueQueryKeys } from "../../hooks/venue-cache";
 import type { VenueDetailDto } from "../../schemas/venue.schemas";
 import { VenueProfile } from "../VenueProfile";
 
@@ -30,10 +31,12 @@ jest.mock("@/src/features/auth", () => ({
 const api = jest.mocked(venueApiService);
 const hasPermission = jest.mocked(useHasPermission);
 
-function renderPage() {
-  const client = new QueryClient({
+/** `client` lets a test keep one cache across two visits, like the app's QueryProvider does. */
+function renderPage(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <VenueProfile venueId={venueId} />
@@ -146,6 +149,48 @@ describe("VenueProfile", () => {
     expect(
       await screen.findByRole("heading", { name: giftCity.name }),
     ).toBeInTheDocument();
+  });
+
+  it("asks the server again on every visit, so a venue deactivated in the meantime is gone", async () => {
+    // The app keeps answers for 60 s: Discover must not use that.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+    });
+    api.get.mockResolvedValueOnce(giftCity);
+    const first = renderPage(client);
+    await screen.findByRole("heading", { name: giftCity.name });
+    first.unmount();
+
+    // Meanwhile an admin deactivates the venue in another browser: the API now answers 404.
+    api.get.mockRejectedValueOnce(
+      new ApiError(404, "NOT_FOUND", "Venue not found"),
+    );
+    renderPage(client);
+
+    // No cached copy: the skeleton, then the server's new answer.
+    expect(
+      screen.getByRole("status", { name: "Loading venue" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Venue not found")).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("never shows the admin page's cached copy of the venue", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+    });
+    // The admin opened this venue before: its detail (with an inactive hall) is in the cache.
+    client.setQueryData(venueQueryKeys.detail(venueId), giftCity);
+    api.get.mockReturnValue(new Promise(() => undefined));
+    renderPage(client);
+
+    expect(
+      screen.getByRole("status", { name: "Loading venue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: giftCity.name }),
+    ).not.toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith(venueId);
   });
 
   it("links to the admin page only for someone who manages venues", async () => {

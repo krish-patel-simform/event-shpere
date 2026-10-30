@@ -24,7 +24,7 @@ import { useHasPermission } from "@/src/features/auth";
 import { useGetVenueDetail } from "../hooks/useGetVenueDetail";
 import { adminVenueHref, VENUE_ROUTES } from "../routes";
 import type { VenueDetailDto } from "../schemas/venue.schemas";
-import { pluralHalls } from "../utils/venue-display";
+import { googleMapsUrl, pluralHalls } from "../utils/venue-display";
 
 const VENUES_CRUMB = { label: "Venues", href: VENUE_ROUTES.browse };
 
@@ -34,9 +34,15 @@ const VENUES_CRUMB = { label: "Venues", href: VENUE_ROUTES.browse };
  * does) sees them hidden here too, so Discover always shows what organizers can use.
  */
 export function VenueProfile({ venueId }: { venueId: string }) {
-  const detail = useGetVenueDetail(venueId);
+  // Always fresh: never a cached copy (not even the admin page's), so a deactivated venue or
+  // hall is gone as soon as the page loads.
+  const detail = useGetVenueDetail(venueId, { alwaysFresh: true });
 
-  if (detail.isPending) return <VenueProfileSkeleton />;
+  // Until this visit's own request answers: never draw an answer from before (even one still in
+  // the cache for a moment), so what is shown is always what the server says now.
+  if (detail.isPending || !detail.isFetchedAfterMount) {
+    return <VenueProfileSkeleton />;
+  }
 
   const notFound =
     (detail.isError &&
@@ -114,10 +120,7 @@ function VenueView({ venue }: { venue: VenueDetailDto }) {
   const place = [venue.city, venue.state, venue.postalCode]
     .filter(Boolean)
     .join(", ");
-  const mapUrl =
-    venue.latitude !== null && venue.longitude !== null
-      ? `https://www.google.com/maps/search/?api=1&query=${venue.latitude},${venue.longitude}`
-      : null;
+  const mapUrl = googleMapsUrl(venue);
 
   return (
     <PageFrame name={venue.name}>
