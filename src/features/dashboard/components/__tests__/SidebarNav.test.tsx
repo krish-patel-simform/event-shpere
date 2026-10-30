@@ -46,6 +46,7 @@ describe("SidebarNav", () => {
       "Dashboard",
       "Browse events",
       "Speakers",
+      "Browse venues",
       "My events",
       "My schedule",
       "Notifications",
@@ -69,16 +70,20 @@ describe("SidebarNav", () => {
     renderNavFor("admin", [
       "ORGANIZER_VERIFY",
       "USER_VIEW",
+      "VENUE_MANAGE",
       "NOTIFICATION_VIEW",
       "PROFILE_VIEW",
     ]);
 
+    // Browsing venues is under Discover (public); managing them is under Manage (VENUE_MANAGE).
     expect(links()).toEqual([
       "Dashboard",
       "Browse events",
       "Speakers",
+      "Browse venues",
       "Organizers",
       "Users",
+      "Venues",
       "Notifications",
       "Profile & settings",
     ]);

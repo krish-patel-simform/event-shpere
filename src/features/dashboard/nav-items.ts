@@ -1,8 +1,10 @@
 import {
   Bell,
+  Building2,
   CalendarDays,
   Clock,
   LayoutDashboard,
+  MapPin,
   Mic,
   ShieldCheck,
   SlidersHorizontal,
@@ -22,6 +24,7 @@ import { SCHEDULE_ROUTES } from "@/src/features/schedule";
 import { SESSION_ROUTES } from "@/src/features/sessions";
 import { SPEAKER_PROFILE_ROUTE } from "@/src/features/speakers";
 import { USER_ROUTES } from "@/src/features/users";
+import { VENUE_ROUTES } from "@/src/features/venues";
 
 /**
  * Who sees a menu link: "public" (guests too), "signed-in" (any account) or one permission code.
@@ -46,6 +49,7 @@ export type NavSection = { heading?: string; items: readonly NavItem[] };
 export const ADMIN_ROUTES = {
   organizers: ORGANIZER_ROUTES.list,
   users: USER_ROUTES.list,
+  venues: VENUE_ROUTES.list,
 } as const;
 
 /**
@@ -73,6 +77,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         access: "public",
       },
       { label: "Speakers", href: "/speakers", icon: User, access: "public" },
+      {
+        label: "Browse venues",
+        href: VENUE_ROUTES.browse,
+        icon: MapPin,
+        access: "public",
+      },
     ],
   },
   {
@@ -130,6 +140,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         href: ADMIN_ROUTES.users,
         icon: Users,
         access: "USER_VIEW",
+      },
+      {
+        label: "Venues",
+        href: ADMIN_ROUTES.venues,
+        icon: Building2,
+        access: "VENUE_MANAGE",
       },
     ],
   },
