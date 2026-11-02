@@ -50,6 +50,13 @@
       "when": 1793604219999,
       "tag": "0006_states_reference",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793611883530,
+      "tag": "0007_magical_justin_hammer",
+      "breakpoints": true
     }
   ]
 }
