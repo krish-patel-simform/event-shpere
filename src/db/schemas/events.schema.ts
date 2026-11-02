@@ -26,7 +26,7 @@ export const eventStatusEnum = pgEnum("event_status", [
 ]);
 
 // Decides whether a venue or an online link is needed (DISC-3 "event type").
-export const eventModeEnum = pgEnum("event_mode", [
+export const sessionModeEnum = pgEnum("session_mode", [
   "in_person",
   "online",
   "hybrid",
@@ -141,7 +141,6 @@ export const eventsTable = pgTable(
     title: varchar("title", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull().unique(),
     status: eventStatusEnum("status").notNull().default("draft"),
-    mode: eventModeEnum("mode").notNull().default("in_person"),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     // IANA zone; filled from the venue when one is picked (online events choose their own).
@@ -154,7 +153,6 @@ export const eventsTable = pgTable(
       onDelete: "restrict",
     }),
     // Shown only to registered users, never on the public page.
-    onlineUrl: text("online_url"),
     // Null = no limit.
     capacity: integer("capacity"),
     // Paise: 150000 = ₹1,500. 0 = free.
@@ -257,6 +255,12 @@ export const sessionsTable = pgTable(
     }),
     title: varchar("title", { length: 255 }).notNull(),
     // Strapi documentId of the Session Details entry; null until Strapi answers.
+
+    //session mode for the online hybrid and in person sesison
+    mode: sessionModeEnum("mode").notNull().default("in_person"),
+
+    onlineUrl: text("online_url"),
+
     cmsSessionId: text("cms_session_id").unique(),
     type: sessionTypeEnum("type").notNull(),
     status: sessionStatusEnum("status").notNull().default("draft"),
@@ -285,6 +289,11 @@ export const sessionsTable = pgTable(
     check(
       "sessions_scheduled_has_times",
       sql`${t.status} <> 'scheduled' OR ${t.startAt} IS NOT NULL`,
+    ),
+    // A join link must be https and contain no spaces (the full URL is validated by Zod).
+    check(
+      "sessions_online_url_https",
+      sql`${t.onlineUrl} IS NULL OR ${t.onlineUrl} ~ '^https://[^[:space:]]+$'`,
     ),
     check("sessions_price_non_negative", sql`${t.price} >= 0`),
     check(
@@ -528,7 +537,7 @@ export type NewVenue = typeof venuesTable.$inferInsert;
 export type EventRecord = typeof eventsTable.$inferSelect;
 export type NewEventRecord = typeof eventsTable.$inferInsert;
 export type EventStatus = (typeof eventStatusEnum.enumValues)[number];
-export type EventMode = (typeof eventModeEnum.enumValues)[number];
+export type EventMode = (typeof sessionModeEnum.enumValues)[number];
 export type Hall = typeof hallsTable.$inferSelect;
 export type EventSession = typeof sessionsTable.$inferSelect;
 export type SessionType = (typeof sessionTypeEnum.enumValues)[number];
