@@ -16,6 +16,7 @@ import {
   type CreateVenueFormValues,
 } from "../schemas/venue-form.schemas";
 import { digitsOnly } from "../utils/digits-only";
+import { StateField } from "./StateField";
 
 const MAX_HALLS = 50;
 
@@ -99,13 +100,10 @@ export function CreateVenueForm() {
               readOnly={create.isPending}
               {...register("city")}
             />
-            <TextField
-              label="State"
-              optional
-              autoComplete="off"
+            <StateField
+              registration={register("state")}
               error={errors.state?.message}
               readOnly={create.isPending}
-              {...register("state")}
             />
             <TextField
               label="Postal code"
@@ -117,22 +115,21 @@ export function CreateVenueForm() {
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            {/* Fixed while the app is India-only. Not registered on purpose: a disabled input is
+                not read by the form, so IN and Asia/Kolkata come from the form's defaults. */}
             <TextField
-              label="Country code"
-              maxLength={2}
-              autoComplete="off"
-              hint="Two letters, like IN or US."
-              error={errors.country?.message}
-              readOnly={create.isPending}
-              {...register("country")}
+              label="Country"
+              value={emptyVenueForm.country}
+              readOnly
+              disabled
+              hint="Venues can only be added in India for now."
             />
             <TextField
               label="Time zone"
-              autoComplete="off"
+              value={emptyVenueForm.timezone}
+              readOnly
+              disabled
               hint="Events held here use it for their start and end times."
-              error={errors.timezone?.message}
-              readOnly={create.isPending}
-              {...register("timezone")}
             />
           </div>
         </div>

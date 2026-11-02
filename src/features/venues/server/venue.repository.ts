@@ -17,6 +17,7 @@ import { escapeLike } from "../../../db/escape-like";
 import {
   hallsTable,
   sessionsTable,
+  statesTable,
   venuesTable,
   type Hall,
   type Venue,
@@ -49,25 +50,48 @@ function isForeignKeyViolation(error: unknown): boolean {
   return postgresError(error)?.code === "23503";
 }
 
+/** Name of the foreign key a "foreign_key_violation" (23503) hit, else null. */
+function violatedForeignKey(error: unknown): string | null {
+  const cause = postgresError(error);
+  return cause?.code === "23503" && typeof cause.constraint === "string"
+    ? cause.constraint
+    : null;
+}
+
+/** A venue row plus the name of its state (the table stores only the state's id). */
+export type VenueWithState = Venue & { stateName: string | null };
+
+/** One small lookup by primary key; a venue with no state (an old row) gets null. */
+async function withStateName(venue: Venue): Promise<VenueWithState> {
+  if (!venue.stateId) return { ...venue, stateName: null };
+  const [state] = await db
+    .select({ name: statesTable.name })
+    .from(statesTable)
+    .where(eq(statesTable.id, venue.stateId));
+  return { ...venue, stateName: state?.name ?? null };
+}
+
 export type NewVenue = CreateVenueBody & {
   /** users.id of the admin who creates the venue (from the access token). */
   createdBy: string;
 };
 
 export type CreateVenueResult =
-  | { ok: true; venue: Venue; halls: Hall[] }
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
   /** Same name in the same city already exists (case-insensitive). */
-  | { ok: false; reason: "VENUE_EXISTS" };
+  | { ok: false; reason: "VENUE_EXISTS" }
+  /** No state has the chosen name. */
+  | { ok: false; reason: "STATE_NOT_FOUND" };
 
 export type SetHallsActiveResult =
-  | { ok: true; venue: Venue; halls: Hall[] }
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
   | {
       ok: false;
       reason: "VENUE_NOT_FOUND" | "VENUE_INACTIVE" | "HALL_NOT_FOUND";
     };
 
 export type AddHallResult =
-  | { ok: true; venue: Venue; halls: Hall[] }
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
   | {
       ok: false;
       // HALL_EXISTS: the venue already has a hall with that name (case-insensitive).
@@ -75,7 +99,7 @@ export type AddHallResult =
     };
 
 export type DeleteHallResult =
-  | { ok: true; venue: Venue; halls: Hall[] }
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
   | {
       ok: false;
       // LAST_HALL: a venue must keep at least one hall.
@@ -87,6 +111,14 @@ export type DeleteHallResult =
 export const venueRepository = {
   /** Venue + all its halls in one transaction: either both are saved or nothing is. */
   async createVenue(input: NewVenue): Promise<CreateVenueResult> {
+    // The body carries the state's name; the table stores its id. States are static reference
+    // data, so this read can sit outside the transaction (the foreign key below still guards it).
+    const [state] = await db
+      .select({ id: statesTable.id })
+      .from(statesTable)
+      .where(sql`lower(${statesTable.name}) = ${input.state.toLowerCase()}`);
+    if (!state) return { ok: false, reason: "STATE_NOT_FOUND" };
+
     try {
       const row = await db.transaction(async (tx) => {
         const [venue] = await tx
@@ -95,7 +127,7 @@ export const venueRepository = {
             name: input.name,
             addressLine: input.addressLine,
             city: input.city,
-            state: input.state,
+            stateId: state.id,
             postalCode: input.postalCode,
             country: input.country,
             timezone: input.timezone,
@@ -122,12 +154,19 @@ export const venueRepository = {
 
         return { venue, halls };
       });
-      return { ok: true as const, ...row };
+      return {
+        ok: true as const,
+        halls: row.halls,
+        venue: await withStateName(row.venue),
+      };
     } catch (error) {
       // Two admins adding the same venue at once: the DB stops the second one.
       // Any other failure is not the caller's fault: let it be a 500.
       if (violatedUniqueConstraint(error) === "venues_name_city_unique")
         return { ok: false, reason: "VENUE_EXISTS" };
+      // The state was removed between the lookup above and the insert: the foreign key refuses it.
+      if (violatedForeignKey(error) === "venues_state_id_states_id_fk")
+        return { ok: false, reason: "STATE_NOT_FOUND" };
       throw error;
     }
   },
@@ -141,6 +180,8 @@ export const venueRepository = {
     /** Matches the venue name or the city. */
     search?: string;
     status?: VenueStatusFilter;
+    /** The state's name, compared ignoring case. */
+    state?: string;
     sort: VenueSort;
     /** Count only the halls that are on (what a guest can see), not every hall. */
     onlyActiveHalls?: boolean;
@@ -159,6 +200,11 @@ export const venueRepository = {
         : undefined,
       params.status
         ? eq(venuesTable.isActive, params.status === "active")
+        : undefined,
+      // Matched on the joined state's name (both queries below join `states`). A venue with no
+      // state never matches, and a name that is no state matches nothing.
+      params.state
+        ? sql`lower(${statesTable.name}) = ${params.state.toLowerCase()}`
         : undefined,
     );
 
@@ -199,7 +245,7 @@ export const venueRepository = {
           name: venuesTable.name,
           addressLine: venuesTable.addressLine,
           city: venuesTable.city,
-          state: venuesTable.state,
+          state: statesTable.name,
           country: venuesTable.country,
           timezone: venuesTable.timezone,
           isActive: venuesTable.isActive,
@@ -208,13 +254,19 @@ export const venueRepository = {
           totalSeats: sql<number>`coalesce(${hallStats.totalSeats}, 0)`,
         })
         .from(venuesTable)
+        .leftJoin(statesTable, eq(statesTable.id, venuesTable.stateId))
         .leftJoin(hallStats, eq(hallStats.venueId, venuesTable.id))
         .where(where)
         .orderBy(...orderBy)
         .limit(params.limit)
         .offset(params.offset),
-      // Same where as the page, so `total` counts exactly the matches (no hall join needed).
-      db.select({ total: count() }).from(venuesTable).where(where),
+      // Same where as the page, so `total` counts exactly the matches (no hall join needed;
+      // the states join is needed because the where may filter on the state's name).
+      db
+        .select({ total: count() })
+        .from(venuesTable)
+        .leftJoin(statesTable, eq(statesTable.id, venuesTable.stateId))
+        .where(where),
     ]);
     return { rows, total };
   },
@@ -225,12 +277,14 @@ export const venueRepository = {
    */
   async getVenueById(
     venueId: string,
-  ): Promise<{ venue: Venue; halls: Hall[] } | null> {
-    const [venue] = await db
-      .select()
+  ): Promise<{ venue: VenueWithState; halls: Hall[] } | null> {
+    const [row] = await db
+      .select({ venue: venuesTable, stateName: statesTable.name })
       .from(venuesTable)
+      .leftJoin(statesTable, eq(statesTable.id, venuesTable.stateId))
       .where(eq(venuesTable.id, venueId));
-    if (!venue) return null;
+    if (!row) return null;
+    const venue = { ...row.venue, stateName: row.stateName };
 
     // Same order as the schedule board columns; name breaks ties so the order is stable.
     const halls = await db
@@ -270,8 +324,8 @@ export const venueRepository = {
     venueId: string,
     isActive: boolean,
     activateHalls: "all" | "none",
-  ): Promise<{ venue: Venue; halls: Hall[] } | null> {
-    return db.transaction(async (tx) => {
+  ): Promise<{ venue: VenueWithState; halls: Hall[] } | null> {
+    const result = await db.transaction(async (tx) => {
       const [venue] = await tx
         .update(venuesTable)
         .set({ isActive })
@@ -294,6 +348,8 @@ export const venueRepository = {
 
       return { venue, halls };
     });
+    if (!result) return null;
+    return { halls: result.halls, venue: await withStateName(result.venue) };
   },
 
   /**
@@ -349,7 +405,7 @@ export const venueRepository = {
         .where(eq(hallsTable.venueId, venueId))
         .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
 
-      return { ok: true, venue, halls };
+      return { ok: true, venue: await withStateName(venue), halls };
     });
   },
 
@@ -391,7 +447,7 @@ export const venueRepository = {
           .where(eq(hallsTable.venueId, venueId))
           .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
 
-        return { ok: true, venue, halls };
+        return { ok: true, venue: await withStateName(venue), halls };
       });
     } catch (error) {
       // The unique index (venue, lower(name)) is the final guard against a duplicate name.
@@ -441,7 +497,7 @@ export const venueRepository = {
           .where(eq(hallsTable.venueId, venueId))
           .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
 
-        return { ok: true, venue, halls };
+        return { ok: true, venue: await withStateName(venue), halls };
       });
     } catch (error) {
       // A session was given this hall between the check above and the DELETE (session writes do

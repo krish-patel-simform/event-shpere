@@ -1,11 +1,12 @@
 import { ConflictError, NotFoundError } from "../../../../core/http/errors";
-import type { Hall, Venue } from "../../../../db/schemas";
+import type { Hall } from "../../../../db/schemas";
 import {
   createVenueBodySchema,
   createVenueResponseSchema,
   venueListQuerySchema,
   venueListResponseSchema,
 } from "../../schemas/venue.schemas";
+import type { VenueWithState } from "../venue.repository";
 import { createVenueService, type VenueServiceDeps } from "../venue.service";
 
 // Empty factory: the DB client and env are never loaded.
@@ -15,10 +16,13 @@ const createdAt = new Date("2026-10-30T10:00:00.000Z");
 const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
 const admin = { id: adminId };
 
+const gujaratId = "3b7c2d1e-6f5a-4e8d-9a0b-1c2d3e4f5a6b";
+
 const body = createVenueBodySchema.parse({
   name: "GIFT City Convention Centre",
   addressLine: "Block 12, Zone 1, GIFT City",
   city: "Gandhinagar",
+  state: "Gujarat",
   latitude: 23.16,
   longitude: 72.68,
   halls: [
@@ -27,12 +31,13 @@ const body = createVenueBodySchema.parse({
   ],
 });
 
-const venueRow: Venue = {
+const venueRow: VenueWithState = {
   id: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
   name: "GIFT City Convention Centre",
   addressLine: "Block 12, Zone 1, GIFT City",
   city: "Gandhinagar",
-  state: null,
+  stateId: gujaratId,
+  stateName: "Gujarat",
   postalCode: null,
   country: "IN",
   timezone: "Asia/Kolkata",
@@ -119,6 +124,35 @@ describe("venueService.createVenue", () => {
 
     expect(dto).not.toHaveProperty("createdBy");
     expect(dto).not.toHaveProperty("updatedAt");
+    expect(dto).not.toHaveProperty("stateId");
+  });
+
+  it("returns the state's name, and null for an old venue with no state", async () => {
+    const withState = jest
+      .fn()
+      .mockResolvedValue({ ok: true, venue: venueRow, halls: [] });
+    const withoutState = jest.fn().mockResolvedValue({
+      ok: true,
+      venue: { ...venueRow, stateId: null, stateName: null },
+      halls: [],
+    });
+
+    expect((await makeService(withState).createVenue(body, admin)).state).toBe(
+      "Gujarat",
+    );
+    expect(
+      (await makeService(withoutState).createVenue(body, admin)).state,
+    ).toBeNull();
+  });
+
+  it("answers 404 when the chosen state does not exist", async () => {
+    const createVenue = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "STATE_NOT_FOUND" });
+
+    await expect(
+      makeService(createVenue).createVenue(body, admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("returns null coordinates when the venue has no map pin", async () => {
@@ -327,7 +361,7 @@ describe("venueService.listVenues", () => {
     name: venueRow.name,
     addressLine: venueRow.addressLine,
     city: venueRow.city,
-    state: venueRow.state,
+    state: venueRow.stateName,
     country: venueRow.country,
     timezone: venueRow.timezone,
     isActive: true,
@@ -377,6 +411,36 @@ describe("venueService.listVenues", () => {
       limit: 10,
       offset: 0,
     });
+  });
+
+  it("passes the state name on to the repository, for guests too", async () => {
+    const listVenues = jest.fn().mockResolvedValue({ rows: [], total: 0 });
+    const service = makeService(undefined, { listVenues });
+
+    await service.listVenues({ ...query, state: "Gujarat" }, guest);
+    await service.listVenues({ ...query, state: "Gujarat" }, manager);
+
+    expect(listVenues).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ state: "Gujarat", status: "active" }),
+    );
+    expect(listVenues).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ state: "Gujarat" }),
+    );
+  });
+
+  it("treats a blank state as no state filter", async () => {
+    const listVenues = jest.fn().mockResolvedValue({ rows: [], total: 0 });
+
+    await makeService(undefined, { listVenues }).listVenues(
+      { ...query, state: "" },
+      manager,
+    );
+
+    expect(listVenues).toHaveBeenCalledWith(
+      expect.objectContaining({ state: undefined }),
+    );
   });
 
   it("treats a blank search as no search", async () => {

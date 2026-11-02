@@ -16,6 +16,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { speakersProfilesTable, usersTable } from "./auth.schema";
+import { statesTable } from "./locations.schema";
 
 // "Completed" is not a status: it is simply end_at < now().
 export const eventStatusEnum = pgEnum("event_status", [
@@ -83,7 +84,11 @@ export const venuesTable = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     addressLine: text("address_line").notNull(),
     city: varchar("city", { length: 100 }).notNull(),
-    state: varchar("state", { length: 100 }),
+    // Null only for a venue whose old free-text state matched no state; new venues pick one.
+    // restrict: a state in use cannot be deleted.
+    stateId: uuid("state_id").references(() => statesTable.id, {
+      onDelete: "restrict",
+    }),
     // Text, not a number: some countries use letters and some codes start with 0.
     postalCode: varchar("postal_code", { length: 20 }),
     // Two-letter ISO code.
@@ -110,6 +115,7 @@ export const venuesTable = pgTable(
       sql`lower(${t.city})`,
     ),
     index("venues_city_idx").on(t.city),
+    index("venues_state_id_idx").on(t.stateId),
     check("venues_country_two_letters", sql`${t.country} ~ '^[A-Z]{2}$'`),
     check("venues_timezone_shape", sql`${t.timezone} ~ ${TIMEZONE_SHAPE}`),
     check(

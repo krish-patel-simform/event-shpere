@@ -54,6 +54,9 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       });
 
       if (!result.ok) {
+        // A well-formed uuid that is not in `states`: the client picked something that is gone.
+        if (result.reason === "STATE_NOT_FOUND")
+          throw new NotFoundError("State not found");
         throw new ConflictError(
           "VENUE_EXISTS",
           `A venue named "${body.name}" already exists in ${body.city}`,
@@ -75,11 +78,12 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       items: VenueListItemDto[];
       meta: { page: number; pageSize: number; total: number };
     }> {
-      const { page, pageSize, search, status, sort } = query;
+      const { page, pageSize, search, status, state, sort } = query;
 
       const { rows, total } = await venueRepository.listVenues({
         // An empty search (after trim) counts as no search.
         search: search || undefined,
+        state: state || undefined,
         status: canManage ? status : "active",
         sort,
         onlyActiveHalls: !canManage,

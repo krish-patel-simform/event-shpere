@@ -23,6 +23,8 @@ export type ListVenuesParams = {
   status?: VenueStatusFilter;
   /** Matches the venue name or the city. An empty text means no search. */
   search?: string;
+  /** Only venues in the state with this name, e.g. "Gujarat". */
+  state?: string;
   /** The server defaults to name A–Z. */
   sort?: VenueSort;
   page?: number;
@@ -31,7 +33,7 @@ export type ListVenuesParams = {
 
 export const venueApiService = {
   /** One page of venues (with their hall counts) and how many match in total. */
-  list({ status, search, sort, page = 1, pageSize }: ListVenuesParams) {
+  list({ status, search, state, sort, page = 1, pageSize }: ListVenuesParams) {
     return apiRequestPage(
       {
         method: "GET",
@@ -42,6 +44,7 @@ export const venueApiService = {
           // Left out when not set, so the server does not filter or reorder by it.
           ...(status ? { status } : {}),
           ...(search ? { search } : {}),
+          ...(state ? { state } : {}),
           ...(sort ? { sort } : {}),
         },
       },

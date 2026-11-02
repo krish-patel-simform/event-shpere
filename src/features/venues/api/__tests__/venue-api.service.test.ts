@@ -93,6 +93,7 @@ describe("venueApiService", () => {
     venueApiService.list({
       status: "inactive",
       search: "pune",
+      state: "Maharashtra",
       sort: "halls",
       page: 3,
       pageSize: 25,
@@ -107,6 +108,7 @@ describe("venueApiService", () => {
           pageSize: 25,
           status: "inactive",
           search: "pune",
+          state: "Maharashtra",
           sort: "halls",
         },
       },
@@ -115,7 +117,7 @@ describe("venueApiService", () => {
   });
 
   it("list leaves out a blank search and an unset status, so the server does not filter by them", () => {
-    venueApiService.list({ search: "", pageSize: 10 });
+    venueApiService.list({ search: "", state: "", pageSize: 10 });
 
     const [config] = jest.mocked(apiRequestPage).mock.calls[0];
     expect(config.params).toEqual({ page: 1, pageSize: 10 });
