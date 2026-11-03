@@ -5,6 +5,11 @@ import {
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
 import {
+  hallAvailabilityResponseSchema,
+  type HallAvailabilityDto,
+  type HallAvailabilityRequest,
+} from "../schemas/hall-availability.schemas";
+import {
   createVenueResponseSchema,
   venueDetailResponseSchema,
   venueListResponseSchema,
@@ -95,6 +100,24 @@ export const venueApiService = {
     return apiRequest(
       { method: "POST", url: `/venues/${venueId}/halls`, data: body },
       venueDetailResponseSchema,
+    );
+  },
+
+  /**
+   * The venue's active halls and the times each is taken inside the range (ISO with an offset).
+   * Needs an approved organizer: 403 otherwise. 409 VENUE_INACTIVE, 404 for an unknown venue.
+   */
+  getHallAvailability(
+    venueId: string,
+    range: HallAvailabilityRequest,
+  ): Promise<HallAvailabilityDto[]> {
+    return apiRequest(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: { startAt: range.startAt, endAt: range.endAt },
+      },
+      hallAvailabilityResponseSchema,
     );
   },
 

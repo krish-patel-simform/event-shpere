@@ -2,6 +2,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
+import { hallAvailabilityResponseSchema } from "../../schemas/hall-availability.schemas";
 import {
   venueDetailResponseSchema,
   venueListResponseSchema,
@@ -17,6 +18,24 @@ jest.mock("../../../../core/api-client/base-api.service", () => ({
 beforeEach(() => jest.clearAllMocks());
 
 describe("venueApiService", () => {
+  it("getHallAvailability asks for the halls' free times of a range and parses the answer", () => {
+    const range = {
+      startAt: "2026-12-12T09:00:00+05:30",
+      endAt: "2026-12-12T17:00:00+05:30",
+    };
+
+    venueApiService.getHallAvailability(venueId, range);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: range,
+      },
+      hallAvailabilityResponseSchema,
+    );
+  });
+
   it("get reads one venue and parses the detail schema", () => {
     venueApiService.get(venueId);
 

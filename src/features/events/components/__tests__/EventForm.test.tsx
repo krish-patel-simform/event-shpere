@@ -19,7 +19,7 @@ jest.mock("@/src/features/locations/api/state-api.service", () => ({
   stateApiService: { list: jest.fn() },
 }));
 jest.mock("@/src/features/venues/api/venue-api.service", () => ({
-  venueApiService: { list: jest.fn() },
+  venueApiService: { list: jest.fn(), getHallAvailability: jest.fn() },
 }));
 const statesApi = jest.mocked(stateApiService);
 const venuesApi = jest.mocked(venueApiService);
@@ -171,6 +171,27 @@ describe("EventForm: creating", () => {
     ).toBeInTheDocument();
   });
 
+  it("makes capacity a number input that starts at 1 and counts in whole numbers", async () => {
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    const capacity = screen.getByLabelText(/Event capacity/);
+    expect(capacity).toHaveAttribute("type", "number");
+    expect(capacity).toHaveAttribute("min", "1");
+    expect(capacity).toHaveAttribute("step", "1");
+  });
+
+  it("does not let a decimal point, a sign or an exponent be typed into capacity", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    await user.type(screen.getByLabelText(/Event capacity/), "1e+-.5");
+
+    // Only the digits got in.
+    expect(screen.getByLabelText(/Event capacity/)).toHaveValue(15);
+  });
+
   it("rejects a bad capacity and price", async () => {
     const user = userEvent.setup();
     renderWithClient(<EventForm onSubmit={jest.fn()} />);
@@ -250,7 +271,7 @@ describe("EventForm: creating", () => {
     expect(
       screen.getByText(/Plot 12, Baner Road, Pune 411045/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/2 halls available/)).toBeInTheDocument();
+    expect(screen.getByText(/2 active halls/)).toBeInTheDocument();
   });
 
   it("waits while a save is running: the button says so and the fields cannot change", async () => {
@@ -524,7 +545,8 @@ describe("EventForm: editing", () => {
     expect(screen.getByLabelText("Start date")).toHaveValue("2026-12-12");
     expect(screen.getByLabelText("Start time")).toHaveValue("09:30");
     expect(screen.getByLabelText("End time")).toHaveValue("17:30");
-    expect(screen.getByLabelText(/Event capacity/)).toHaveValue("250");
+    // A number input reports its value as a number.
+    expect(screen.getByLabelText(/Event capacity/)).toHaveValue(250);
   });
 
   it("starts on the venue's state and venue, and asks for that state's venues", async () => {
@@ -538,7 +560,7 @@ describe("EventForm: editing", () => {
     expect(venuesApi.list).toHaveBeenCalledWith(
       expect.objectContaining({ state: "Maharashtra" }),
     );
-    expect(screen.getByText(/2 halls available/)).toBeInTheDocument();
+    expect(screen.getByText(/2 active halls/)).toBeInTheDocument();
     await user.click(venueSelect());
     expect(optionNames()).toContain("Convention CentrePune");
   });
@@ -686,5 +708,145 @@ describe("EventForm: editing", () => {
       ).toBeInTheDocument();
       expect(onSubmit).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("EventForm: which halls are free", () => {
+  const hallsOf = (...bookedHalls: string[]) =>
+    ["Hall A", "Hall B"].map((name, index) => {
+      const bookedSlots = bookedHalls.includes(name)
+        ? [
+            {
+              startAt: "2026-12-12T04:30:00.000Z",
+              endAt: "2026-12-12T06:30:00.000Z",
+            },
+          ]
+        : [];
+      return {
+        id: `aaaaaaaa-0000-4000-8000-00000000000${index + 1}`,
+        name,
+        capacity: 100,
+        busy: bookedSlots.length > 0,
+        bookedSlots,
+      };
+    });
+
+  async function chooseVenueAndDates(user: User, start: string, end = start) {
+    await pick(user, stateSelect(), "Maharashtra");
+    await pick(user, venueSelect(), "Hotel Orchid");
+    setValue("Start date", start);
+    setValue("End date", end);
+  }
+
+  it("asks for the dates first, and sends nothing until there is a range", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    await pick(user, stateSelect(), "Maharashtra");
+    await pick(user, venueSelect(), "Hotel Orchid");
+
+    expect(
+      screen.getByText("Choose the start and end dates to see which halls are free."),
+    ).toBeInTheDocument();
+    expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
+  });
+
+  it("shows the halls of the chosen venue once the dates are filled in", async () => {
+    const user = userEvent.setup();
+    const start = dayFromNow(30);
+    venuesApi.getHallAvailability.mockResolvedValue(hallsOf("Hall B"));
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    await chooseVenueAndDates(user, start);
+
+    expect(
+      await screen.findByText("1 of 2 halls are completely free on these dates."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Free")).toBeInTheDocument();
+    expect(screen.getByText("Booked")).toBeInTheDocument();
+    expect(screen.getByText("12 Dec, 10:00–12:00")).toBeInTheDocument();
+  });
+
+  it("asks about the venue that was picked, for the dates and times in the form (India time)", async () => {
+    const user = userEvent.setup();
+    const start = dayFromNow(30);
+    venuesApi.getHallAvailability.mockResolvedValue(hallsOf());
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    await chooseVenueAndDates(user, start);
+
+    await waitFor(() =>
+      expect(venuesApi.getHallAvailability).toHaveBeenCalledWith(
+        SAMPLE_VENUES[2].id,
+        {
+          startAt: `${start}T09:00:00+05:30`,
+          endAt: `${start}T17:00:00+05:30`,
+        },
+      ),
+    );
+  });
+
+  it("asks again when a date changes, and shows the loading state for the new range", async () => {
+    const user = userEvent.setup();
+    const start = dayFromNow(30);
+    venuesApi.getHallAvailability.mockResolvedValue(hallsOf());
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+    await chooseVenueAndDates(user, start);
+    await screen.findByText("2 of 2 halls are completely free on these dates.");
+
+    // The next range is answered later: the old halls must not stay on screen meanwhile.
+    venuesApi.getHallAvailability.mockReturnValue(new Promise(() => {}));
+    setValue("End date", dayFromNow(31));
+
+    expect(
+      await screen.findByRole("status", { name: "Checking which halls are free" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("2 of 2 halls are completely free on these dates."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("warns when no hall is completely free, and still lets the event be saved", async () => {
+    const user = userEvent.setup();
+    const onSubmit = jest.fn();
+    const start = dayFromNow(30);
+    venuesApi.getHallAvailability.mockResolvedValue(hallsOf("Hall A", "Hall B"));
+    renderWithClient(<EventForm onSubmit={onSubmit} />);
+    await statesLoaded();
+    await user.type(screen.getByLabelText("Event title"), "Tech Conf");
+    await chooseVenueAndDates(user, start);
+    await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
+
+    expect(
+      await screen.findByText(/No hall is completely free on these dates/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not check the halls for a range the server would refuse (end before start)", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<EventForm onSubmit={jest.fn()} />);
+    await statesLoaded();
+
+    await chooseVenueAndDates(user, dayFromNow(30), dayFromNow(20));
+
+    expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
+  });
+
+  it("is not shown when editing an event: its own sessions would look like bookings", async () => {
+    renderWithClient(<EventForm event={fintech} onSubmit={jest.fn()} />);
+    await statesLoaded();
+    await waitFor(() => expect(venueSelect()).toBeEnabled());
+
+    expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(/completely free on these dates/),
+    ).not.toBeInTheDocument();
   });
 });

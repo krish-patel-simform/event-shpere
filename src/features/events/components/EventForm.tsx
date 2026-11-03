@@ -14,6 +14,7 @@ import {
   type SelectOption,
 } from "@/src/core/ui";
 import { StateSelect, useGetStateList } from "@/src/features/locations";
+import { HallAvailability } from "@/src/features/venues";
 import { useGetVenueOptions } from "../hooks/useGetVenueOptions";
 import { eventHref, EVENT_ROUTES, publicEventHref } from "../routes";
 import {
@@ -24,6 +25,7 @@ import {
 } from "../schemas/event-form.schemas";
 import type { ManagedEvent } from "../types/event-manage.types";
 import { plural, zoneLabel } from "../utils/event-display";
+import { toHallAvailabilityRange } from "../utils/hall-range";
 import { EventStatusBadge } from "./EventStatusBadge";
 
 type EventFormProps = {
@@ -92,6 +94,16 @@ export function EventForm({
 
   // The hook runs once, here; the venue is looked up from its value.
   const chosenVenueId = useWatch({ control, name: "venueId" });
+  // The event's dates as typed so far: once they make a valid range, the halls of the chosen
+  // venue are checked against it. null until then, so nothing is requested.
+  const [startDate, startTime, endDate, endTime] = useWatch({
+    control,
+    name: ["startDate", "startTime", "endDate", "endTime"],
+  });
+  const hallRange = useMemo(
+    () => toHallAvailabilityRange({ startDate, startTime, endDate, endTime }),
+    [startDate, startTime, endDate, endTime],
+  );
   const chosenVenue = venues.options.find(
     (venue) => venue.id === chosenVenueId,
   );
@@ -253,9 +265,17 @@ export function EventForm({
             {chosenVenue && (
               <Alert tone="info">
                 <strong>{chosenVenue.name}</strong> · {chosenVenue.addressLine}{" "}
-                · {plural(chosenVenue.hallCount, "hall")} available ·{" "}
+                · {plural(chosenVenue.hallCount, "active hall")} ·{" "}
                 {zoneLabel(chosenVenue.timezone)}
               </Alert>
+            )}
+            {/* Only when creating: an existing event's own sessions would show up as bookings. */}
+            {chosenVenue && !isEdit && (
+              <HallAvailability
+                venueId={chosenVenue.id}
+                range={hallRange}
+                timezone={chosenVenue.timezone}
+              />
             )}
           </div>
         </Card>
@@ -265,7 +285,16 @@ export function EventForm({
             <TextField
               label="Event capacity"
               optional
+              type="number"
               inputMode="numeric"
+              min={1}
+              step={1}
+              // type="number" still lets "e", "+", "-" and "." through; a whole number has none.
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-", "."].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
               readOnly={isPending}
               error={errors.capacity?.message}
               hint="Maximum number of registrations. Leave empty for no limit."

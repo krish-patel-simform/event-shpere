@@ -38,7 +38,7 @@ jest.mock("@/src/features/locations/api/state-api.service", () => ({
   stateApiService: { list: jest.fn() },
 }));
 jest.mock("@/src/features/venues/api/venue-api.service", () => ({
-  venueApiService: { list: jest.fn() },
+  venueApiService: { list: jest.fn(), getHallAvailability: jest.fn() },
 }));
 const mockPush = jest.fn();
 const mockReplace = jest.fn();

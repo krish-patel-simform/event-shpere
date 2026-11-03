@@ -124,7 +124,7 @@ export function eventToFormValues(event: ManagedEvent): EventFormValues {
 //* From the form's text to what the API takes
 
 /** "2026-12-12" + "09:30" → "2026-12-12T09:30:00+05:30": ISO with the offset the API asks for. */
-const toIsoWithOffset = (date: string, time: string) =>
+export const toIsoWithOffset = (date: string, time: string) =>
   `${date}T${time}:00${IST_OFFSET}`;
 
 /** Rupees as typed ("499.50") → paise (49950). Rounded, because 0.07 * 100 is 7.000000000000001. */
