@@ -13,6 +13,11 @@ export { Dialog, DialogBody, DialogFooter } from "./Dialog";
 export { FormSection } from "./FormSection";
 export { Logo } from "./Logo";
 export { PasswordField } from "./PasswordField";
+export {
+  filterOptions,
+  SearchableSelect,
+  type SelectOption,
+} from "./SearchableSelect";
 export { Spinner } from "./Spinner";
 export { TablePagination } from "./TablePagination";
 export { Tabs, tabId, type Tab } from "./Tabs";
