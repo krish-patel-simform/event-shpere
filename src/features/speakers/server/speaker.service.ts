@@ -8,6 +8,7 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from "../../../core/http/errors";
+import { createByteLimit } from "../../../core/http/byte-limit";
 import type { PageMeta } from "../../../core/http/response";
 import {
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
@@ -20,7 +21,9 @@ import {
 } from "../../auth/server";
 import type { CmsSpeaker, StrapiSpeakerUpdate } from "../../cms";
 import {
+  strapiMediaClient,
   strapiSpeakerClient,
+  type StrapiMediaClient,
   type StrapiSpeakerClient,
 } from "../../cms/server";
 import { enqueueAccountSetupEmail } from "../../email/server";
@@ -53,7 +56,6 @@ import {
   type SpeakerRepository,
 } from "./speaker.repository";
 import {
-  createByteLimit,
   isAcceptablePhoto,
   SPEAKER_PHOTO_MAX_BODY_BYTES,
 } from "./speaker-photo";
@@ -81,9 +83,9 @@ export type SpeakerServiceDeps = {
     | "findSpeakersByIds"
     | "findSpeakerById"
     | "updateSpeaker"
-    | "uploadFiles"
-    | "deleteFile"
   >;
+  /** Strapi's media library: the photo upload and removing replaced files. */
+  mediaClient: Pick<StrapiMediaClient, "uploadFiles" | "deleteFile">;
   createSlug: typeof createSpeakerSlug;
   appUrl: string;
   /** Organizers may invite speakers only once an admin has approved them. */
@@ -266,7 +268,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
   /** Best effort: a file left behind only takes space in the media library. */
   async function removeUploadedFile(id: number) {
     try {
-      await deps.strapiClient.deleteFile(id);
+      await deps.mediaClient.deleteFile(id);
     } catch (error) {
       console.error(
         `[speakers] Strapi file ${id} not deleted:`,
@@ -477,9 +479,9 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
       const current = await loadOwnCms(speaker);
 
       const limit = createByteLimit(SPEAKER_PHOTO_MAX_BODY_BYTES);
-      let result: Awaited<ReturnType<StrapiSpeakerClient["uploadFiles"]>>;
+      let result: Awaited<ReturnType<StrapiMediaClient["uploadFiles"]>>;
       try {
-        result = await deps.strapiClient.uploadFiles(
+        result = await deps.mediaClient.uploadFiles(
           upload.body.pipeThrough(limit.stream),
           upload.contentType,
         );
@@ -559,6 +561,7 @@ export const speakerService = createSpeakerService({
   enqueueAccountSetupEmail,
   accountInviteService,
   strapiClient: strapiSpeakerClient,
+  mediaClient: strapiMediaClient,
   createSlug: createSpeakerSlug,
   appUrl: env.APP_URL,
   organizerVerification: organizerService,

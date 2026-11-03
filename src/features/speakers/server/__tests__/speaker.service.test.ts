@@ -79,15 +79,17 @@ const existingSpeakerAccount = {
 const otherRoleAccount = { speaker: null };
 
 type SetupOverrides = Partial<
-  Omit<SpeakerServiceDeps, "speakerRepository" | "strapiClient">
+  Omit<SpeakerServiceDeps, "speakerRepository" | "strapiClient" | "mediaClient">
 > & {
   /** Replace only these repository methods; the rest keep their defaults. */
   repo?: Partial<SpeakerServiceDeps["speakerRepository"]>;
   /** Replace only these Strapi client methods. */
   strapi?: Partial<SpeakerServiceDeps["strapiClient"]>;
+  /** Replace only these Strapi media client methods (upload, delete file). */
+  media?: Partial<SpeakerServiceDeps["mediaClient"]>;
 };
 
-function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
+function setup({ repo, strapi, media, ...overrides }: SetupOverrides = {}) {
   const deps = {
     speakerRepository: {
       findAccountByEmail: jest.fn().mockResolvedValue(null),
@@ -116,9 +118,12 @@ function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
       findSpeakersByIds: jest.fn().mockResolvedValue([]),
       findSpeakerById: jest.fn().mockResolvedValue(null),
       updateSpeaker: jest.fn().mockResolvedValue(null),
+      ...strapi,
+    },
+    mediaClient: {
       uploadFiles: jest.fn().mockResolvedValue({ ok: true, files: [] }),
       deleteFile: jest.fn().mockResolvedValue(undefined),
-      ...strapi,
+      ...media,
     },
     createSlug: jest.fn().mockReturnValue("ankit-sharma-3f9a1c"),
     appUrl: "http://localhost:3000",
@@ -952,18 +957,25 @@ describe("speakerService.replaceOwnPhoto", () => {
   };
 
   // A speaker whose current photo is file 9.
-  function photoSetup(
-    strapi: Partial<SpeakerServiceDeps["strapiClient"]> = {},
-  ) {
+  function photoSetup({
+    strapi,
+    media,
+  }: {
+    strapi?: Partial<SpeakerServiceDeps["strapiClient"]>;
+    media?: Partial<SpeakerServiceDeps["mediaClient"]>;
+  } = {}) {
     return setup({
       repo: { findOwnSpeaker: jest.fn().mockResolvedValue(ownRow) },
       strapi: {
         findSpeakerById: jest.fn().mockResolvedValue(ankitCms),
+        updateSpeaker: jest.fn().mockResolvedValue(cmsWithNewPhoto),
+        ...strapi,
+      },
+      media: {
         uploadFiles: jest
           .fn()
           .mockResolvedValue({ ok: true, files: [newFile] }),
-        updateSpeaker: jest.fn().mockResolvedValue(cmsWithNewPhoto),
-        ...strapi,
+        ...media,
       },
     });
   }
@@ -974,15 +986,15 @@ describe("speakerService.replaceOwnPhoto", () => {
 
     const result = await service.replaceOwnPhoto(userId, photoUpload);
 
-    expect(deps.strapiClient.uploadFiles).toHaveBeenCalledWith(
+    expect(deps.mediaClient.uploadFiles).toHaveBeenCalledWith(
       expect.any(ReadableStream),
       "multipart/form-data; boundary=abc",
     );
     expect(deps.strapiClient.updateSpeaker).toHaveBeenCalledWith("doc-ankit", {
       photo: 31,
     });
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(9);
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(9);
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalledWith(31);
     expect(result).toEqual({
       photo: {
         url: "http://cms.test/uploads/new.jpg",
@@ -995,12 +1007,14 @@ describe("speakerService.replaceOwnPhoto", () => {
 
   it("deletes the upload and returns 400 when it is not an image (e.g. a PDF)", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({
-        ok: true,
-        files: [
-          { ...newFile, mime: "application/pdf", width: null, height: null },
-        ],
-      }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({
+          ok: true,
+          files: [
+            { ...newFile, mime: "application/pdf", width: null, height: null },
+          ],
+        }),
+      },
     });
 
     const error = await service
@@ -1008,28 +1022,32 @@ describe("speakerService.replaceOwnPhoto", () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
     expect(deps.strapiClient.updateSpeaker).not.toHaveBeenCalled();
   });
 
   it("deletes every file and returns 400 when more than one was sent", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({
-        ok: true,
-        files: [newFile, { ...newFile, id: 32 }],
-      }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({
+          ok: true,
+          files: [newFile, { ...newFile, id: 32 }],
+        }),
+      },
     });
 
     await expect(
       service.replaceOwnPhoto(userId, upload()),
     ).rejects.toBeInstanceOf(ValidationError);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(32);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(32);
   });
 
   it("returns 400 when Strapi itself refuses the file", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({ ok: false, status: 415 }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({ ok: false, status: 415 }),
+      },
     });
 
     await expect(
@@ -1040,14 +1058,16 @@ describe("speakerService.replaceOwnPhoto", () => {
 
   it("cuts off a body over the size limit while streaming → 400", async () => {
     const { deps, service } = photoSetup({
-      // Like real fetch: reads the (size-limited) stream, which errors past the limit.
-      uploadFiles: jest.fn(async (body: ReadableStream<Uint8Array>) => {
-        const reader = body.getReader();
-        for (;;) {
-          const { done } = await reader.read();
-          if (done) return { ok: true as const, files: [newFile] };
-        }
-      }),
+      media: {
+        // Like real fetch: reads the (size-limited) stream, which errors past the limit.
+        uploadFiles: jest.fn(async (body: ReadableStream<Uint8Array>) => {
+          const reader = body.getReader();
+          for (;;) {
+            const { done } = await reader.read();
+            if (done) return { ok: true as const, files: [newFile] };
+          }
+        }),
+      },
     });
 
     const error = await service
@@ -1061,7 +1081,9 @@ describe("speakerService.replaceOwnPhoto", () => {
   it("returns 503 when the upload to Strapi fails", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const { service } = photoSetup({
-      uploadFiles: jest.fn().mockRejectedValue(new Error("connection reset")),
+      media: {
+        uploadFiles: jest.fn().mockRejectedValue(new Error("connection reset")),
+      },
     });
 
     await expect(
@@ -1075,7 +1097,9 @@ describe("speakerService.replaceOwnPhoto", () => {
   it("deletes the new file and keeps the old photo when setting it fails", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const { deps, service } = photoSetup({
-      updateSpeaker: jest.fn().mockRejectedValue(new Error("timeout")),
+      strapi: {
+        updateSpeaker: jest.fn().mockRejectedValue(new Error("timeout")),
+      },
     });
 
     await expect(
@@ -1083,21 +1107,23 @@ describe("speakerService.replaceOwnPhoto", () => {
     ).rejects.toMatchObject({
       status: 503,
     });
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalledWith(9);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalledWith(9);
     log.mockRestore();
   });
 
   it("deletes nothing old when the speaker had no photo", async () => {
     const { deps, service } = photoSetup({
-      findSpeakerById: jest
-        .fn()
-        .mockResolvedValue({ ...ankitCms, photo: null }),
+      strapi: {
+        findSpeakerById: jest
+          .fn()
+          .mockResolvedValue({ ...ankitCms, photo: null }),
+      },
     });
 
     await service.replaceOwnPhoto(userId, upload());
 
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalled();
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalled();
   });
 
   it("returns 404 for a non-speaker before sending anything to Strapi", async () => {
@@ -1106,7 +1132,7 @@ describe("speakerService.replaceOwnPhoto", () => {
     await expect(
       service.replaceOwnPhoto(userId, upload()),
     ).rejects.toBeInstanceOf(NotFoundError);
-    expect(deps.strapiClient.uploadFiles).not.toHaveBeenCalled();
+    expect(deps.mediaClient.uploadFiles).not.toHaveBeenCalled();
   });
 });
 
