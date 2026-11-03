@@ -13,6 +13,15 @@ export const eventQueryKeys = {
 };
 
 /**
+ * Keys that name a running mutation, so a screen can ask "is anything of this kind running?"
+ * (useIsMutating) without the components passing state to each other.
+ */
+export const eventMutationKeys = {
+  /** Uploading or removing the cover or a gallery image of one event. */
+  media: (eventId: string) => ["events", "media", eventId] as const,
+};
+
+/**
  * After an event was created or changed: the lists and the tab counts show it (title, dates,
  * status) and the overview shows its details, so all three are reloaded the next time they are
  * used. The open page shows the skeleton while they load, never the old rows.

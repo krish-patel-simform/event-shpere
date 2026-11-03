@@ -1,11 +1,13 @@
 "use client";
 
+import { useIsMutating } from "@tanstack/react-query";
 import { ImagePlus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ChangeEvent } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { Alert, Button, buttonStyles, Card } from "@/src/core/ui";
 import { EVENT_GALLERY_MAX_IMAGES } from "../constants";
+import { eventMutationKeys } from "../hooks/event-cache";
 import { useAddGalleryImage } from "../hooks/useAddGalleryImage";
 import { useDeleteEventCover } from "../hooks/useDeleteEventCover";
 import { useDeleteGalleryImage } from "../hooks/useDeleteGalleryImage";
@@ -25,6 +27,10 @@ import {
  */
 export function EventMediaStep({ eventId }: { eventId: string }) {
   const content = useGetEventContent(eventId);
+  // Any upload or removal of this event's images that is still running (the cover and the
+  // gallery are separate cards, so the parent asks React Query instead of being told).
+  const isUploading =
+    useIsMutating({ mutationKey: eventMutationKeys.media(eventId) }) > 0;
 
   if (content.isPending) {
     return (
@@ -73,9 +79,17 @@ export function EventMediaStep({ eventId }: { eventId: string }) {
         >
           Back
         </Link>
-        <Link href={eventHref(eventId)} className={buttonStyles()}>
-          Finish
-        </Link>
+        {isUploading ? (
+          // A link cannot be disabled, so a real disabled button takes its place while an image
+          // is on its way: leaving now would hide whether the upload worked.
+          <Button isPending title="Wait for the image to finish uploading">
+            Finish
+          </Button>
+        ) : (
+          <Link href={eventHref(eventId)} className={buttonStyles()}>
+            Finish
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -350,3 +350,119 @@ describe("EventMediaStep: the gallery", () => {
     expect(alert).toHaveTextContent("The gallery can hold 10 images");
   });
 });
+
+describe("EventMediaStep: Finish while an image is on its way", () => {
+  /** A promise the test settles by hand, so the request stays running as long as it needs. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  const finishLink = () => screen.queryByRole("link", { name: "Finish" });
+  const finishButton = () => screen.queryByRole("button", { name: "Finish" });
+
+  it("is a link to the overview when nothing is uploading", async () => {
+    await renderLoaded();
+
+    expect(finishLink()).toHaveAttribute("href", eventHref(eventId));
+    expect(finishButton()).not.toBeInTheDocument();
+  });
+
+  it("is disabled while the cover uploads, and a link again once it is saved", async () => {
+    const upload = deferred<{ coverImage: EventMediaDto }>();
+    api.uploadCover.mockReturnValue(upload.promise);
+    const user = await renderLoaded();
+
+    await choose(user, "Upload cover", png());
+
+    await waitFor(() => expect(finishButton()).toBeDisabled());
+    expect(finishLink()).not.toBeInTheDocument();
+
+    upload.resolve({ coverImage: image(5) });
+
+    expect(await screen.findByRole("link", { name: "Finish" })).toHaveAttribute(
+      "href",
+      eventHref(eventId),
+    );
+    expect(finishButton()).not.toBeInTheDocument();
+  });
+
+  it("is disabled while the cover is being removed", async () => {
+    const removal = deferred<undefined>();
+    api.deleteCover.mockReturnValue(removal.promise);
+    const user = await renderLoaded({ coverImage: image(1) });
+
+    await user.click(screen.getByRole("button", { name: "Remove cover" }));
+
+    await waitFor(() => expect(finishButton()).toBeDisabled());
+
+    removal.resolve(undefined);
+    expect(
+      await screen.findByRole("link", { name: "Finish" }),
+    ).toBeInTheDocument();
+  });
+
+  it("is disabled while a gallery image uploads", async () => {
+    const upload = deferred<{ gallery: EventMediaDto[] }>();
+    api.addGalleryImage.mockReturnValue(upload.promise);
+    const user = await renderLoaded();
+
+    await choose(user, "Add image", png());
+
+    await waitFor(() => expect(finishButton()).toBeDisabled());
+
+    upload.resolve({ gallery: [image(2)] });
+    expect(
+      await screen.findByRole("link", { name: "Finish" }),
+    ).toBeInTheDocument();
+  });
+
+  it("is disabled while a gallery image is being removed", async () => {
+    const removal = deferred<{ gallery: EventMediaDto[] }>();
+    api.deleteGalleryImage.mockReturnValue(removal.promise);
+    const user = await renderLoaded({ gallery: [image(2)] });
+
+    await user.click(
+      screen.getByRole("button", { name: "Remove gallery image 1" }),
+    );
+
+    await waitFor(() => expect(finishButton()).toBeDisabled());
+
+    removal.resolve({ gallery: [] });
+    expect(
+      await screen.findByRole("link", { name: "Finish" }),
+    ).toBeInTheDocument();
+  });
+
+  it("comes back as a link when the upload fails, so the organizer is not stuck", async () => {
+    api.uploadCover.mockRejectedValue(
+      new ApiError(400, "VALIDATION_ERROR", "That file is not an image"),
+    );
+    const user = await renderLoaded();
+
+    await choose(user, "Upload cover", png());
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Finish" }),
+    ).toBeInTheDocument();
+    expect(finishButton()).not.toBeInTheDocument();
+  });
+
+  it("does not wait for a file the early checks refused (nothing was sent)", async () => {
+    const user = await renderLoaded();
+
+    await choose(
+      user,
+      "Upload cover",
+      new File(["%PDF"], "plan.pdf", { type: "application/pdf" }),
+    );
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(finishLink()).toBeInTheDocument();
+    expect(api.uploadCover).not.toHaveBeenCalled();
+  });
+});
