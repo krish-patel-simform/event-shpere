@@ -5,6 +5,11 @@ import {
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
 import {
+  hallAvailabilityResponseSchema,
+  type HallAvailabilityDto,
+  type HallAvailabilityRequest,
+} from "../schemas/hall-availability.schemas";
+import {
   createVenueResponseSchema,
   venueDetailResponseSchema,
   venueListResponseSchema,
@@ -23,6 +28,8 @@ export type ListVenuesParams = {
   status?: VenueStatusFilter;
   /** Matches the venue name or the city. An empty text means no search. */
   search?: string;
+  /** Only venues in the state with this name, e.g. "Gujarat". */
+  state?: string;
   /** The server defaults to name A–Z. */
   sort?: VenueSort;
   page?: number;
@@ -31,7 +38,7 @@ export type ListVenuesParams = {
 
 export const venueApiService = {
   /** One page of venues (with their hall counts) and how many match in total. */
-  list({ status, search, sort, page = 1, pageSize }: ListVenuesParams) {
+  list({ status, search, state, sort, page = 1, pageSize }: ListVenuesParams) {
     return apiRequestPage(
       {
         method: "GET",
@@ -42,6 +49,7 @@ export const venueApiService = {
           // Left out when not set, so the server does not filter or reorder by it.
           ...(status ? { status } : {}),
           ...(search ? { search } : {}),
+          ...(state ? { state } : {}),
           ...(sort ? { sort } : {}),
         },
       },
@@ -92,6 +100,24 @@ export const venueApiService = {
     return apiRequest(
       { method: "POST", url: `/venues/${venueId}/halls`, data: body },
       venueDetailResponseSchema,
+    );
+  },
+
+  /**
+   * The venue's active halls and the times each is taken inside the range (ISO with an offset).
+   * Needs an approved organizer: 403 otherwise. 409 VENUE_INACTIVE, 404 for an unknown venue.
+   */
+  getHallAvailability(
+    venueId: string,
+    range: HallAvailabilityRequest,
+  ): Promise<HallAvailabilityDto[]> {
+    return apiRequest(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: { startAt: range.startAt, endAt: range.endAt },
+      },
+      hallAvailabilityResponseSchema,
     );
   },
 

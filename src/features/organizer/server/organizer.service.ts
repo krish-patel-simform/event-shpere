@@ -118,11 +118,15 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
      * anything is saved or sent. Their role holds those permissions from sign-up, so the
      * permission check alone does not stop an organizer who is still under review.
      * Only organizers are checked: an admin has no organizer profile and is never blocked.
+     *
+     * Returns the organizer's PROFILE id (organizer_profiles.id, what an event's organizer_id
+     * holds), or null for anyone who is not an organizer (an admin). Callers that do not need
+     * it can ignore it.
      */
     async assertVerifiedOrganizer(
       user: Pick<CurrentUser, "id" | "role">,
-    ): Promise<void> {
-      if (user.role !== "organizer") return;
+    ): Promise<string | null> {
+      if (user.role !== "organizer") return null;
 
       const profile = await deps.organizerRepository.findVerificationByUserId(
         user.id,
@@ -141,6 +145,7 @@ export function createOrganizerService(deps: OrganizerServiceDeps) {
           "ORGANIZER_NOT_VERIFIED",
         );
       }
+      return profile.id;
     },
 
     /** ADM-1: admin creates a pending organizer; the setup email is queued after commit. */

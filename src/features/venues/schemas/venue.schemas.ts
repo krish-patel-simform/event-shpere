@@ -56,7 +56,9 @@ export const createVenueBodySchema = z
     name: z.string().trim().min(1, "Venue name is required").max(255),
     addressLine: z.string().trim().min(1, "Address is required").max(500),
     city: z.string().trim().min(1, "City is required").max(100),
-    state: z.string().trim().max(100).optional(),
+    // The name of a row of GET /api/states (any case); the server finds its id and answers 404
+    // for a name that is no state.
+    state: z.string().trim().min(1, "Select a state").max(100),
     postalCode: z.string().trim().max(20).optional(),
     country: z
       .string()
@@ -212,6 +214,8 @@ export const venueListQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
   /** Only active or only inactive venues. Guests always get active ones, whatever they ask. */
   status: z.enum(venueStatusFilters).optional(),
+  /** Only venues in the state with this name (ignoring case). An unknown name matches nothing. */
+  state: z.string().trim().max(100).optional(),
   sort: z.enum(venueSorts).default("name"),
 });
 

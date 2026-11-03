@@ -7,6 +7,14 @@ export {
   type StrapiOrganizerClient,
 } from "./strapi-organizer.client";
 export {
+  strapiEventClient,
+  type StrapiEventClient,
+} from "./strapi-event.client";
+export {
+  strapiMediaClient,
+  type StrapiMediaClient,
+} from "./strapi-media.client";
+export {
   strapiSpeakerClient,
   type StrapiSpeakerClient,
 } from "./strapi-speaker.client";

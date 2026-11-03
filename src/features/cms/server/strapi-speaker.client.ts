@@ -5,32 +5,27 @@ import {
   strapiSpeakerEntrySchema,
   strapiSpeakerListResponseSchema,
   strapiSpeakerResponseSchema,
-  strapiUploadResponseSchema,
   type CmsSpeaker,
   type StrapiCreatedSpeaker,
   type StrapiCreateSpeakerRequest,
   type StrapiSpeakerEntry,
   type StrapiSpeakerUpdate,
-  type StrapiUploadedFile,
 } from "../schemas/strapi-speaker.schemas";
 import { StrapiRequestError } from "./strapi-organizer.client";
 
 export type StrapiSpeakerClientConfig = {
   /** e.g. http://localhost:1337 (no trailing slash). */
   baseUrl: string;
-  /** Strapi API token: find/findOne/create/update/delete on Speaker, upload/destroy on Upload. */
+  /** Strapi API token: find/findOne/create/update/delete on Speaker. Files: strapiMediaClient. */
   apiToken: string | undefined;
   /** Injected in tests. */
   fetch?: typeof fetch;
   timeoutMs?: number;
-  /** Uploads send a file, so they get longer than the JSON calls. */
-  uploadTimeoutMs?: number;
 };
 
 export function createStrapiSpeakerClient(config: StrapiSpeakerClientConfig) {
   const doFetch = config.fetch ?? fetch;
   const timeoutMs = config.timeoutMs ?? 10_000;
-  const uploadTimeoutMs = config.uploadTimeoutMs ?? 30_000;
 
   function authHeaders(): Record<string, string> {
     if (!config.apiToken) {
@@ -207,62 +202,6 @@ export function createStrapiSpeakerClient(config: StrapiSpeakerClientConfig) {
       return toCmsSpeaker(
         strapiSpeakerResponseSchema.parse(await response.json()).data,
       );
-    },
-
-    /**
-     * Streams a multipart body (as the browser sent it) straight to Strapi's media library:
-     * nothing is buffered or stored on our server. `contentType` must be the original
-     * "multipart/form-data; boundary=..." header, and the file field must be named "files".
-     * Strapi refusing the file (400/413/415: wrong type, too big) → `{ ok: false }`.
-     */
-    async uploadFiles(
-      body: ReadableStream<Uint8Array>,
-      contentType: string,
-    ): Promise<
-      { ok: true; files: StrapiUploadedFile[] } | { ok: false; status: number }
-    > {
-      // Node's fetch needs duplex "half" to send a stream as the request body.
-      const init: RequestInit & { duplex: "half" } = {
-        method: "POST",
-        headers: { ...authHeaders(), "content-type": contentType },
-        body,
-        duplex: "half",
-        signal: AbortSignal.timeout(uploadTimeoutMs),
-      };
-      // Fixed URL: never forward a client query (e.g. Strapi's ?id= would REPLACE a file).
-      const response = await doFetch(`${config.baseUrl}/api/upload`, init);
-
-      if ([400, 413, 415].includes(response.status)) {
-        return { ok: false, status: response.status };
-      }
-      if (!response.ok) {
-        throw new StrapiRequestError(
-          response.status,
-          `Strapi upload failed with HTTP ${response.status}`,
-        );
-      }
-      return {
-        ok: true,
-        files: strapiUploadResponseSchema.parse(await response.json()),
-      };
-    },
-
-    /** Removes a file from the media library. Already gone (404) counts as done. */
-    async deleteFile(id: number): Promise<void> {
-      const response = await doFetch(
-        `${config.baseUrl}/api/upload/files/${id}`,
-        {
-          method: "DELETE",
-          headers: authHeaders(),
-          signal: AbortSignal.timeout(timeoutMs),
-        },
-      );
-      if (!response.ok && response.status !== 404) {
-        throw new StrapiRequestError(
-          response.status,
-          `Strapi delete file failed with HTTP ${response.status}`,
-        );
-      }
     },
 
     /** Deletes the entry (draft and published versions). Already gone (404) counts as done. */

@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { PageMeta } from "../../../core/api-client/base-api.service";
+import type { HallAvailabilityRequest } from "../schemas/hall-availability.schemas";
 import type {
   VenueDetailDto,
   VenueListItemDto,
@@ -17,6 +18,9 @@ export const venueQueryKeys = {
     ["venues", "browse", "list", params] as const,
   browseDetail: (venueId: string) =>
     ["venues", "browse", "detail", venueId] as const,
+  // Which halls are free for a time range: one entry per venue and range.
+  hallAvailability: (venueId: string, range: HallAvailabilityRequest) =>
+    ["venues", "hall-availability", venueId, range] as const,
 };
 
 /**

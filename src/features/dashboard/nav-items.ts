@@ -1,6 +1,7 @@
 import {
   Bell,
   Building2,
+  CalendarCheck,
   CalendarDays,
   Clock,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { PermissionCode } from "@/src/core/auth/permission-catalog";
+import { EVENT_ROUTES } from "@/src/features/events";
 import { NOTIFICATION_ROUTES } from "@/src/features/notifications";
 import { ORGANIZER_ROUTES } from "@/src/features/organizer";
 import { POLL_ROUTES } from "@/src/features/polls";
@@ -99,6 +101,19 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         href: SCHEDULE_ROUTES.mine,
         icon: Clock,
         access: "SCHEDULE_MANAGE",
+      },
+    ],
+  },
+  {
+    // Organizer workspace. "My events" above is the attendee's registrations; this one lists the
+    // events the organizer runs, so it needs a permission only organizers (and admins) have.
+    heading: "Manage events",
+    items: [
+      {
+        label: "My Events",
+        href: EVENT_ROUTES.list,
+        icon: CalendarCheck,
+        access: "EVENT_MANAGE_OWN",
       },
     ],
   },

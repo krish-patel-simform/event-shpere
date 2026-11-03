@@ -9,6 +9,7 @@ const validBody = {
   name: "GIFT City Convention Centre",
   addressLine: "Block 12, Zone 1, GIFT City",
   city: "Gandhinagar",
+  state: "Gujarat",
   halls: [
     { name: "Hall A", capacity: 200 },
     { name: "Hall B", capacity: 80 },
@@ -16,6 +17,19 @@ const validBody = {
 };
 
 describe("createVenueBodySchema", () => {
+  it("needs a state name, trimmed, and refuses a blank one", () => {
+    const { state, ...withoutState } = validBody;
+
+    expect(state).toBe("Gujarat");
+    expect(createVenueBodySchema.safeParse(withoutState).success).toBe(false);
+    expect(
+      createVenueBodySchema.safeParse({ ...validBody, state: "  " }).success,
+    ).toBe(false);
+    expect(
+      createVenueBodySchema.parse({ ...validBody, state: " Gujarat " }).state,
+    ).toBe("Gujarat");
+  });
+
   it("accepts a valid body and fills the country and time zone defaults", () => {
     const result = createVenueBodySchema.parse(validBody);
 
@@ -193,6 +207,7 @@ describe("venueListQuerySchema", () => {
         pageSize: "25",
         search: "  pune ",
         status: "inactive",
+        state: " Gujarat ",
         sort: "halls",
       }),
     ).toEqual({
@@ -200,6 +215,7 @@ describe("venueListQuerySchema", () => {
       pageSize: 25,
       search: "pune",
       status: "inactive",
+      state: "Gujarat",
       sort: "halls",
     });
   });

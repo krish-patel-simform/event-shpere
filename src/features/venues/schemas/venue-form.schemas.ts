@@ -53,7 +53,8 @@ export const createVenueFormSchema = z
     name: z.string().trim().min(1, "Venue name is required").max(255),
     addressLine: z.string().trim().min(1, "Address is required").max(500),
     city: z.string().trim().min(1, "City is required").max(100),
-    state: z.string().trim().max(100),
+    // The name of the chosen state: the server turns it into the state's id.
+    state: z.string().trim().min(1, "Select a state").max(100),
     postalCode: z.string().trim().max(20),
     country: z
       .string()
@@ -107,7 +108,7 @@ export function toCreateVenueBody(
     name: values.name,
     addressLine: values.addressLine,
     city: values.city,
-    state: blankToUndefined(values.state),
+    state: values.state,
     postalCode: blankToUndefined(values.postalCode),
     country: values.country,
     timezone: values.timezone,
