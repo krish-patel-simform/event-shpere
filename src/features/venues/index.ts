@@ -4,6 +4,7 @@ export { AdminVenueNew } from "./components/AdminVenueNew";
 export { AdminVenues } from "./components/AdminVenues";
 export { VenueDirectory } from "./components/VenueDirectory";
 export { VenueProfile, VenueProfileSkeleton } from "./components/VenueProfile";
+export { useGetVenueList } from "./hooks/useGetVenueList";
 export { adminVenueHref, VENUE_ROUTES, venueHref } from "./routes";
 export {
   createVenueFormSchema,

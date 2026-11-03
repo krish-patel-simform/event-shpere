@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { stateApiService } from "@/src/features/locations/api/state-api.service";
@@ -65,10 +65,13 @@ async function fillMinimum() {
 const submit = () =>
   userEvent.click(screen.getByRole("button", { name: "Create venue" }));
 
-/** Picks a state by its name once the list has loaded. */
+/** Picks a state by its name once the list has loaded: open the list, then click the row. */
 async function pickState(name: string) {
-  await screen.findByRole("option", { name });
-  await userEvent.selectOptions(screen.getByLabelText("State"), name);
+  await waitFor(() => expect(screen.getByLabelText("State")).toBeEnabled());
+  await userEvent.click(screen.getByLabelText("State"));
+  await userEvent.click(
+    await screen.findByRole("option", { name: new RegExp(`^${name}`) }),
+  );
 }
 
 beforeEach(() => {
@@ -107,10 +110,41 @@ describe("CreateVenueForm", () => {
 
     // "Try again" asks again, and the names appear.
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByLabelText("State")).toBeEnabled());
+    await userEvent.click(screen.getByLabelText("State"));
     expect(
-      await screen.findByRole("option", { name: "Gujarat" }),
+      await screen.findByRole("option", { name: /^Gujarat/ }),
     ).toBeVisible();
-    expect(screen.getByLabelText("State")).toBeEnabled();
+  });
+
+  it("searches the states as you type, by name or by code", async () => {
+    renderForm();
+    // By role: while the list is open it is labelled "State" too, so the label text matches twice.
+    const field = () => screen.getByRole("combobox", { name: "State" });
+    await waitFor(() => expect(field()).toBeEnabled());
+    const rows = () =>
+      screen.getAllByRole("option").map((option) => option.textContent);
+
+    await userEvent.click(field());
+    await userEvent.type(field(), "guj");
+    expect(rows()).toEqual(["GujaratGJ"]);
+
+    await userEvent.clear(field());
+    // "gj" is only Gujarat's code; it is not in the name.
+    await userEvent.type(field(), "gj");
+    expect(rows()).toEqual(["GujaratGJ"]);
+
+    await userEvent.clear(field());
+    await userEvent.type(field(), "ga");
+    expect(rows()).toEqual(["GoaGA"]);
+  });
+
+  it("keeps the chosen state's name in the field", async () => {
+    renderForm();
+
+    await pickState("Gujarat");
+
+    expect(screen.getByLabelText("State")).toHaveValue("Gujarat");
   });
 
   it("asks for the required fields and sends nothing", async () => {

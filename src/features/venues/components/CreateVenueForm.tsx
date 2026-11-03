@@ -101,7 +101,7 @@ export function CreateVenueForm() {
               {...register("city")}
             />
             <StateField
-              registration={register("state")}
+              control={control}
               error={errors.state?.message}
               readOnly={create.isPending}
             />
