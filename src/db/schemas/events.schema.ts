@@ -15,7 +15,11 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import { speakersProfilesTable, usersTable } from "./auth.schema";
+import {
+  organizerProfilesTable,
+  speakersProfilesTable,
+  usersTable,
+} from "./auth.schema";
 import { statesTable } from "./locations.schema";
 
 // "Completed" is not a status: it is simply end_at < now().
@@ -134,10 +138,12 @@ export const eventsTable = pgTable(
   "events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // The owner: powers "only the owner can edit" and the organizer's "my events".
+    // The owner: an organizer PROFILE (organizer_profiles.id), not the user. Only an organizer
+    // has one, so an admin (who has none) cannot own an event. Powers "only the owner can
+    // edit" and the organizer's "my events". restrict: an organizer with events cannot be deleted.
     organizerId: uuid("organizer_id")
       .notNull()
-      .references(() => usersTable.id, { onDelete: "restrict" }),
+      .references(() => organizerProfilesTable.id, { onDelete: "restrict" }),
     title: varchar("title", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull().unique(),
     status: eventStatusEnum("status").notNull().default("draft"),
@@ -442,9 +448,9 @@ export const venuesRelations = relations(venuesTable, ({ one, many }) => ({
 }));
 
 export const eventsRelations = relations(eventsTable, ({ one, many }) => ({
-  organizer: one(usersTable, {
+  organizer: one(organizerProfilesTable, {
     fields: [eventsTable.organizerId],
-    references: [usersTable.id],
+    references: [organizerProfilesTable.id],
   }),
   venue: one(venuesTable, {
     fields: [eventsTable.venueId],

@@ -16,14 +16,18 @@ import type {
 // (../server/event.repository, ../../cms/server, ../../organizer/server) before importing this.
 
 export const eventId = "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10";
+/** The organizer PROFILE id (organizer_profiles.id): what events.organizer_id holds. */
 export const organizerId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
+/** The profile id of `otherOrganizer`. */
+export const otherOrganizerId = "6e2d4b5c-8f9a-4b2c-8d3e-4f5a6b7c8d9e";
 export const venueId = "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
 
 /** The "now" of every service test, so nothing depends on the real clock. */
 export const NOW = new Date("2026-11-02T10:00:00.000Z");
 
+// `id` is the USER id (the access token); the organizer profile ids are above.
 export const organizer = {
-  id: organizerId,
+  id: "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
   role: "organizer" as const,
   permissions: new Set<string>([PERMISSION.EVENT_MANAGE_OWN]),
 };
@@ -187,9 +191,19 @@ export function setupEventService() {
     uploadFiles: jest.fn().mockResolvedValue({ ok: true, files: [] }),
     deleteFile: jest.fn().mockResolvedValue(undefined),
   };
-  // An approved organizer by default; tests for the unapproved case make it throw.
+  // An approved organizer by default, answering with their profile id; an admin has none (null).
+  // Tests for the unapproved case make it throw.
+  const profileIds = new Map([
+    [organizer.id, organizerId],
+    [otherOrganizer.id, otherOrganizerId],
+  ]);
   const verification = {
-    assertVerifiedOrganizer: jest.fn().mockResolvedValue(undefined),
+    assertVerifiedOrganizer: jest
+      .fn()
+      .mockImplementation(
+        async (user: { id: string; role: string }): Promise<string | null> =>
+          user.role === "organizer" ? (profileIds.get(user.id) ?? null) : null,
+      ),
   };
   const deps: EventServiceDeps = {
     eventRepository: repo,

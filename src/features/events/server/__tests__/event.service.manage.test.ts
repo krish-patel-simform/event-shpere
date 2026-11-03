@@ -163,13 +163,31 @@ describe("eventService.listOwnEvents", () => {
     expect(items[0].status).toBe("draft");
   });
 
-  it("lets an admin list the events they created", async () => {
+  it("gives an admin an empty page: an admin owns no events, so nothing is queried", async () => {
     const { service, repo } = setup();
 
-    await service.listOwnEvents(query(), admin);
+    const result = await service.listOwnEvents(
+      query({ page: 2, pageSize: 20 }),
+      admin,
+    );
+
+    expect(result).toEqual({
+      items: [],
+      meta: { page: 2, pageSize: 20, total: 0 },
+    });
+    expect(repo.listOwnEvents).not.toHaveBeenCalled();
+  });
+
+  it("asks for the events of the caller's organizer PROFILE, not of their user id", async () => {
+    const { service, repo } = setup();
+
+    await service.listOwnEvents(query(), organizer);
 
     expect(repo.listOwnEvents).toHaveBeenCalledWith(
-      expect.objectContaining({ organizerId: admin.id }),
+      expect.objectContaining({ organizerId }),
+    );
+    expect(repo.listOwnEvents).not.toHaveBeenCalledWith(
+      expect.objectContaining({ organizerId: organizer.id }),
     );
   });
 
@@ -215,6 +233,22 @@ describe("eventService.countOwnEvents", () => {
     expect(repo.countOwnEventsByTab).toHaveBeenCalledWith(organizerId, NOW);
     expect(result).toEqual(counts);
     expect(() => eventTabCountsSchema.parse(result)).not.toThrow();
+  });
+
+  it("counts nothing for an admin, who owns no events, without a query", async () => {
+    const { service, repo } = setup();
+
+    const result = await service.countOwnEvents(admin);
+
+    expect(result).toEqual({
+      all: 0,
+      draft: 0,
+      published: 0,
+      completed: 0,
+      cancelled: 0,
+    });
+    expect(() => eventTabCountsSchema.parse(result)).not.toThrow();
+    expect(repo.countOwnEventsByTab).not.toHaveBeenCalled();
   });
 
   it("refuses a user with no event permission", async () => {
@@ -387,6 +421,20 @@ describe("eventService.getEventOverview", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(repo.findManagedEvent).not.toHaveBeenCalled();
     expect(repo.getOverviewExtras).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake a user id for the owner: an event is owned by a profile id", async () => {
+    const { service, repo } = setup();
+    // A row still holding the organizer's USER id (the old format) is not theirs.
+    repo.findEventById.mockResolvedValue({
+      ...eventRef,
+      organizerId: organizer.id,
+    });
+
+    await expect(
+      service.getEventOverview(eventId, organizer),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(repo.findManagedEvent).not.toHaveBeenCalled();
   });
 
   it("lets an admin open any event", async () => {

@@ -119,18 +119,33 @@ describe("eventService.createEvent", () => {
       expect(repo.createEvent).not.toHaveBeenCalled();
     });
 
-    it("asks the organizer service about the caller, and an admin is created as owner", async () => {
-      // Skipping admins is the organizer service's rule (tested there): here we only check
-      // that the caller is passed on and the event gets the caller as its owner.
+    it("stores the organizer's PROFILE id as the owner, never their user id", async () => {
       const { service, repo, verification } = setup();
 
-      await expect(service.createEvent(body, admin)).resolves.toMatchObject({
-        status: "draft",
-      });
-      expect(verification.assertVerifiedOrganizer).toHaveBeenCalledWith(admin);
-      expect(repo.createEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ organizerId: admin.id }),
+      await expect(service.createEvent(body, organizer)).resolves.toMatchObject(
+        { status: "draft" },
       );
+
+      expect(verification.assertVerifiedOrganizer).toHaveBeenCalledWith(
+        organizer,
+      );
+      expect(repo.createEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ organizerId }),
+      );
+      expect(organizerId).not.toBe(organizer.id);
+    });
+
+    it("refuses an admin (403): an admin has no organizer profile to own an event", async () => {
+      const { service, repo, strapi, verification } = setup();
+
+      const error = await service.createEvent(body, admin).catch((e) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenError);
+      expect(error.message).toBe("Only an organizer can create events");
+      expect(verification.assertVerifiedOrganizer).toHaveBeenCalledWith(admin);
+      // Nothing is created anywhere, not even the empty page in Strapi.
+      expect(strapi.createEventPage).not.toHaveBeenCalled();
+      expect(repo.createEvent).not.toHaveBeenCalled();
     });
   });
 

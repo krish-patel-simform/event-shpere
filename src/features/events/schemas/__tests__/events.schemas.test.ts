@@ -79,12 +79,11 @@ describe("createEventBodySchema", () => {
   });
 
   it("rejects an end that is not after the start", () => {
-    expect(issuePaths({ ...validBody(), endAt: hoursFromNow(48) })).toContain(
-      "endAt",
-    );
-    expect(issuePaths({ ...validBody(), endAt: hoursFromNow(40) })).toContain(
-      "endAt",
-    );
+    // The very same instant as the start: two separate hoursFromNow(48) calls could differ by a
+    // millisecond, which would make the end "after" the start and the test flaky.
+    const body = validBody();
+    expect(issuePaths({ ...body, endAt: body.startAt })).toContain("endAt");
+    expect(issuePaths({ ...body, endAt: hoursFromNow(40) })).toContain("endAt");
   });
 
   it("rejects registration that closes before it opens", () => {

@@ -57,6 +57,13 @@
       "when": 1793611883530,
       "tag": "0007_magical_justin_hammer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793684929155,
+      "tag": "0008_organizer_owns_events",
+      "breakpoints": true
     }
   ]
 }

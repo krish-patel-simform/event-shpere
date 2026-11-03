@@ -4,6 +4,7 @@ import { createByteLimit } from "../../../core/http/byte-limit";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ServiceUnavailableError,
   ValidationError,
@@ -343,9 +344,11 @@ export function createEventService(deps: EventServiceDeps) {
     //* The event itself
 
     /**
-     * An organizer (or an admin) creates an event. It is always a draft. The permission
-     * (EVENT_CREATE) is checked by the route wrapper; the owner comes from the access token,
-     * never from the body.
+     * A verified organizer creates an event. It is always a draft. The permission
+     * (EVENT_CREATE) is checked by the route wrapper; the owner is the caller's organizer
+     * profile, found from the access token, never from the body. An admin has no organizer
+     * profile, so an admin cannot create an event (the service refuses even if the permission
+     * were ever granted).
      *
      * Order: validate → empty Event Page in Strapi → events row (same id, linked to the page).
      * Strapi goes first so the row never exists without its link; if the insert then fails,
@@ -356,8 +359,13 @@ export function createEventService(deps: EventServiceDeps) {
       currentUser: Pick<EventActor, "id" | "role">,
     ): Promise<EventDto> {
       // A self-signed-up organizer already holds EVENT_CREATE, so the permission alone does
-      // not prove an admin has verified them. Admins are never blocked here.
-      await deps.organizerVerification.assertVerifiedOrganizer(currentUser);
+      // not prove an admin has verified them. The answer is their organizer profile's id.
+      const organizerId =
+        await deps.organizerVerification.assertVerifiedOrganizer(currentUser);
+      // No profile (an admin): there is no organizer to own the event, so deny.
+      if (!organizerId) {
+        throw new ForbiddenError("Only an organizer can create events");
+      }
 
       const venue = body.venueId ? await repo.findVenue(body.venueId) : null;
       if (body.venueId) {
@@ -380,7 +388,7 @@ export function createEventService(deps: EventServiceDeps) {
       try {
         const event = await repo.createEvent({
           id: eventId,
-          organizerId: currentUser.id,
+          organizerId,
           cmsEventId: page.documentId,
           title: body.title,
           startAt: body.startAt,
@@ -401,19 +409,24 @@ export function createEventService(deps: EventServiceDeps) {
     },
 
     /**
-     * One page of the caller's OWN events (an admin sees the ones they created too: every
-     * event of the platform is a separate admin page), by tab, search and sort.
+     * One page of the caller's OWN events (those of their organizer profile), by tab, search
+     * and sort. An admin has no organizer profile and owns no events, so their page is empty:
+     * every event of the platform is a separate admin page.
      */
     async listOwnEvents(
       query: MyEventListQuery,
       actor: EventActor,
     ): Promise<{ items: ManagedEvent[]; meta: PageMeta }> {
-      await access.requireManager(actor);
+      const organizerId = await access.requireManager(actor);
 
       const { page, pageSize, status, search, sort } = query;
+      if (!organizerId) {
+        return { items: [], meta: { page, pageSize, total: 0 } };
+      }
+
       const at = now();
       const { rows, total } = await repo.listOwnEvents({
-        organizerId: actor.id,
+        organizerId,
         tab: status,
         // An empty search (after trim) counts as no search.
         search: search || undefined,
@@ -430,10 +443,13 @@ export function createEventService(deps: EventServiceDeps) {
       };
     },
 
-    /** How many of the caller's events each tab holds. */
+    /** How many of the caller's events each tab holds (all zero for an admin, who owns none). */
     async countOwnEvents(actor: EventActor): Promise<EventTabCounts> {
-      await access.requireManager(actor);
-      return repo.countOwnEventsByTab(actor.id, now());
+      const organizerId = await access.requireManager(actor);
+      if (!organizerId) {
+        return { all: 0, draft: 0, published: 0, completed: 0, cancelled: 0 };
+      }
+      return repo.countOwnEventsByTab(organizerId, now());
     },
 
     /** One event with the figures its overview shows. Someone else's event is a 404. */

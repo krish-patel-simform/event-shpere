@@ -33,10 +33,13 @@ export function createEventAccess(deps: EventAccessDeps) {
     /**
      * May this user manage events at all? EVENT_MANAGE_OWN (organizer) or EVENT_MANAGE_ALL
      * (admin), and an organizer must be approved. For lists, where there is no one event yet.
+     *
+     * Returns the organizer's profile id (what events.organizer_id holds), or null for an admin:
+     * an admin has no organizer profile, so no event is "theirs".
      */
-    async requireManager(actor: EventActor): Promise<void> {
+    async requireManager(actor: EventActor): Promise<string | null> {
       if (!hasAll(actor) && !hasOwn(actor)) throw new ForbiddenError();
-      await deps.organizerVerification.assertVerifiedOrganizer(actor);
+      return deps.organizerVerification.assertVerifiedOrganizer(actor);
     },
 
     /**
@@ -51,10 +54,13 @@ export function createEventAccess(deps: EventAccessDeps) {
     ): Promise<EventRef> {
       if (!hasAll(actor) && !hasOwn(actor)) throw new ForbiddenError();
 
-      await deps.organizerVerification.assertVerifiedOrganizer(actor);
+      // The event's owner is an organizer PROFILE, so compare with the caller's profile id, not
+      // their user id.
+      const organizerId =
+        await deps.organizerVerification.assertVerifiedOrganizer(actor);
 
       const event = await deps.eventRepository.findEventById(eventId);
-      if (!event || (!hasAll(actor) && event.organizerId !== actor.id)) {
+      if (!event || (!hasAll(actor) && event.organizerId !== organizerId)) {
         throw new NotFoundError("Event not found");
       }
       if (write && event.status === "cancelled") {
