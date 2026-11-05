@@ -18,6 +18,7 @@ export {
   SearchableSelect,
   type SelectOption,
 } from "./SearchableSelect";
+export { SourceBadge, type DataSource } from "./SourceBadge";
 export { Spinner } from "./Spinner";
 export { TablePagination } from "./TablePagination";
 export { Tabs, tabId, type Tab } from "./Tabs";
