@@ -4,6 +4,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
+import { fileUploadRequest } from "../../../core/api-client/file-upload";
 import {
   resendInviteResponseSchema,
   type ResendInviteResponseDto,
@@ -89,19 +90,15 @@ export const speakersApiService = {
 
   /**
    * Replaces the speaker's photo. The file goes as multipart/form-data in the field the server
-   * streams on to the CMS. The JSON content type of the shared client is cleared, so the browser
-   * sets `multipart/form-data` with its boundary itself.
+   * streams on to the CMS.
    */
   uploadOwnPhoto(file: File): Promise<SpeakerPhotoResponseDto> {
-    const data = new FormData();
-    data.append(SPEAKER_PHOTO_FORM_FIELD, file);
     return apiRequest(
-      {
-        method: "POST",
-        url: "/me/speaker-profile/photo",
-        data,
-        headers: { "Content-Type": undefined },
-      },
+      fileUploadRequest(
+        "/me/speaker-profile/photo",
+        SPEAKER_PHOTO_FORM_FIELD,
+        file,
+      ),
       speakerPhotoResponseSchema,
     );
   },

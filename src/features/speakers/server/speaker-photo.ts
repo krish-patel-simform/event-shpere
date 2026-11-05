@@ -1,30 +1,23 @@
 import "server-only";
-import type { StrapiUploadedFile } from "../../cms";
 import {
-  SPEAKER_PHOTO_MAX_BYTES,
-  SPEAKER_PHOTO_TYPES,
-  type SpeakerPhotoType,
-} from "../constants";
-
-// The multipart wrapper (boundaries, headers) adds a few hundred bytes around the file.
-const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+  IMAGE_MULTIPART_OVERHEAD_BYTES,
+  type StrapiUploadedFile,
+} from "../../cms";
+import { isAcceptableImage, type ImagePolicy } from "../../cms/server";
+import { SPEAKER_PHOTO_MAX_BYTES, SPEAKER_PHOTO_TYPES } from "../constants";
 
 /** Largest request body accepted for a photo upload: the file plus the multipart wrapper. */
 export const SPEAKER_PHOTO_MAX_BODY_BYTES =
-  SPEAKER_PHOTO_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
+  SPEAKER_PHOTO_MAX_BYTES + IMAGE_MULTIPART_OVERHEAD_BYTES;
 
-/**
- * Checked AFTER Strapi stored the file, on what Strapi reports: the MIME type it detected
- * from the bytes (a PDF renamed to .jpg is still a PDF), real image dimensions, and the size.
- */
+/** What a speaker photo may be. The steps that enforce it live in the cms feature. */
+export const SPEAKER_PHOTO_POLICY: ImagePolicy = {
+  types: SPEAKER_PHOTO_TYPES,
+  maxBytes: SPEAKER_PHOTO_MAX_BYTES,
+  maxBodyBytes: SPEAKER_PHOTO_MAX_BODY_BYTES,
+};
+
+/** Checked AFTER Strapi stored the file, on what Strapi reports. */
 export function isAcceptablePhoto(file: StrapiUploadedFile): boolean {
-  return (
-    isSpeakerPhotoType(file.mime) &&
-    Boolean(file.width && file.height) &&
-    file.size * 1024 <= SPEAKER_PHOTO_MAX_BYTES // Strapi's size is in KB
-  );
-}
-
-function isSpeakerPhotoType(mime: string): mime is SpeakerPhotoType {
-  return (SPEAKER_PHOTO_TYPES as readonly string[]).includes(mime);
+  return isAcceptableImage(file, SPEAKER_PHOTO_POLICY);
 }

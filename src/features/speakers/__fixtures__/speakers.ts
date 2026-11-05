@@ -6,6 +6,7 @@ import type {
 
 /** A speaker with a full profile: photo, role, five topics. */
 export const ananya: SpeakerListItemDto = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01",
   slug: "ananya-rao-3f9a1c",
   firstName: "Ananya",
   lastName: "Rao",
@@ -30,6 +31,7 @@ export const ananya: SpeakerListItemDto = {
 
 /** Only a job title, no photo and no topics. */
 export const meera: SpeakerListItemDto = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d03",
   slug: "meera-joshi-7b2e4d",
   firstName: "Meera",
   lastName: "Joshi",
@@ -43,6 +45,7 @@ export const meera: SpeakerListItemDto = {
 
 /** In the database, but the CMS has nothing for them right now. */
 export const vikram: SpeakerListItemDto = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d04",
   slug: "vikram-mehta-1a2b3c",
   firstName: "Vikram",
   lastName: "Mehta",

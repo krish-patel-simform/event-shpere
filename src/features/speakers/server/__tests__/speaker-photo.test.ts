@@ -1,5 +1,10 @@
 import { isAcceptablePhoto } from "../speaker-photo";
 
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
+
 describe("isAcceptablePhoto", () => {
   const jpeg = {
     id: 1,

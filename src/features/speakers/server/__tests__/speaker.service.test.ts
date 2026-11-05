@@ -26,7 +26,10 @@ jest.mock("../../../../config/env", () => ({ env: {} }));
 jest.mock("../speaker.repository", () => ({}));
 jest.mock("../../../auth/server", () => ({}));
 jest.mock("../../../email/server", () => ({}));
-jest.mock("../../../cms/server", () => ({}));
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
 jest.mock("../../../organizer/server", () => ({}));
 
 const createdAt = new Date("2026-10-23T10:00:00.000Z");
@@ -395,12 +398,14 @@ describe("createSpeakerBodySchema", () => {
 // ---------- public reads ----------
 
 const ankitRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d11",
   slug: "ankit-sharma-3f9a1c",
   firstName: "Ankit",
   lastName: "Sharma",
   cmsSpeakerId: "doc-ankit",
 };
 const priyaRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d12",
   slug: "priya-rao-7b2e4d",
   firstName: "Priya",
   lastName: "Rao",
@@ -408,6 +413,7 @@ const priyaRow = {
 };
 // A speaker whose CMS entry was never linked.
 const unlinkedRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d13",
   slug: "ravi-k-1a2b3c",
   firstName: "Ravi",
   lastName: "K",
@@ -460,6 +466,8 @@ describe("speakerService.listSpeakers", () => {
     expect(result.meta).toEqual({ page: 2, pageSize: 2, total: 5 });
     expect(result.items).toEqual([
       {
+        // The profile id: an organizer picks a session's speakers by it.
+        id: ankitRow.id,
         slug: "ankit-sharma-3f9a1c",
         firstName: "Ankit",
         lastName: "Sharma",
@@ -479,6 +487,7 @@ describe("speakerService.listSpeakers", () => {
       },
       // In Postgres but not returned by Strapi → name only.
       {
+        id: priyaRow.id,
         slug: "priya-rao-7b2e4d",
         firstName: "Priya",
         lastName: "Rao",
@@ -688,7 +697,7 @@ describe("speakerSlugParamsSchema", () => {
 
 const userId = user.id;
 // What findOwnSpeaker returns for the logged-in speaker.
-const ownRow = { id: profile.id, ...ankitRow };
+const ownRow = { ...ankitRow, id: profile.id };
 
 describe("speakerService.getOwnProfile", () => {
   it("returns the form values: bio as text, links as stored, photo without its file id", async () => {
