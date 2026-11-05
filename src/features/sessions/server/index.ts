@@ -5,3 +5,5 @@ export {
   hallBookingService,
   type HallBookingService,
 } from "./hall-booking.service";
+export { sessionService, type SessionService } from "./session.service";
+export { readCoverUpload } from "./session-cover";
