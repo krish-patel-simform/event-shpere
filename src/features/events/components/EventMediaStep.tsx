@@ -1,22 +1,29 @@
 "use client";
 
 import { useIsMutating } from "@tanstack/react-query";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { ImagePlus, Trash2, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ChangeEvent } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { formatFileSize } from "@/src/core/format/format-file-size";
 import { Alert, Button, buttonStyles, Card } from "@/src/core/ui";
-import { EVENT_GALLERY_MAX_IMAGES } from "../constants";
+import {
+  EVENT_GALLERY_BATCH_MAX_BYTES,
+  EVENT_GALLERY_MAX_IMAGES,
+} from "../constants";
 import { eventMutationKeys } from "../hooks/event-cache";
-import { useAddGalleryImage } from "../hooks/useAddGalleryImage";
+import { useAddGalleryImages } from "../hooks/useAddGalleryImages";
 import { useDeleteEventCover } from "../hooks/useDeleteEventCover";
 import { useDeleteGalleryImage } from "../hooks/useDeleteGalleryImage";
 import { useGetEventContent } from "../hooks/useGetEventContent";
 import { useUploadEventCover } from "../hooks/useUploadEventCover";
 import { eventEditHref, eventHref } from "../routes";
 import type { EventMediaDto } from "../schemas/event-content.schemas";
+import { plural } from "../utils/event-display";
 import {
+  addToGallerySelection,
   eventImageFileError,
+  EVENT_GALLERY_HINT,
   EVENT_IMAGE_ACCEPT,
   EVENT_IMAGE_HINT,
 } from "../utils/event-image-file";
@@ -80,9 +87,10 @@ export function EventMediaStep({ eventId }: { eventId: string }) {
           Back
         </Link>
         {isUploading ? (
-          // A link cannot be disabled, so a real disabled button takes its place while an image
-          // is on its way: leaving now would hide whether the upload worked.
-          <Button isPending title="Wait for the image to finish uploading">
+          // A link cannot be disabled, so a plain disabled button takes its place while an image
+          // is on its way: leaving now would hide whether the upload worked. No spinner: the
+          // upload's own button already shows the progress.
+          <Button disabled title="Wait for the images to finish uploading">
             Finish
           </Button>
         ) : (
@@ -96,36 +104,31 @@ export function EventMediaStep({ eventId }: { eventId: string }) {
 }
 
 /**
- * A hidden file input with a button that opens it. `onFile` gets a file that passed the early
- * checks; a file that did not shows its message instead.
+ * A hidden file input with a button that opens it. `onFiles` gets what was chosen (one file, or
+ * several with `multiple`); the card decides what to do with it.
  */
 function ImagePicker({
   label,
   disabled,
   isPending,
-  onFile,
-  clientError,
-  setClientError,
+  multiple = false,
+  onFiles,
   variant = "secondary",
 }: {
   label: string;
   disabled?: boolean;
-  isPending: boolean;
-  onFile: (file: File) => void;
-  clientError: string | undefined;
-  setClientError: (message: string | undefined) => void;
+  isPending?: boolean;
+  multiple?: boolean;
+  onFiles: (files: File[]) => void;
   variant?: "primary" | "secondary";
 }) {
   const input = useRef<HTMLInputElement>(null);
 
   function choose(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     // Reset the input, so choosing the same file again still fires a change.
     event.target.value = "";
-    if (!file) return;
-    const message = eventImageFileError(file);
-    setClientError(message);
-    if (!message) onFile(file);
+    if (files.length > 0) onFiles(files);
   }
 
   return (
@@ -134,6 +137,7 @@ function ImagePicker({
         ref={input}
         type="file"
         accept={EVENT_IMAGE_ACCEPT}
+        multiple={multiple}
         aria-label={label}
         tabIndex={-1}
         className="sr-only"
@@ -148,11 +152,6 @@ function ImagePicker({
         {!isPending && <ImagePlus aria-hidden="true" className="size-4" />}
         {isPending ? "Uploading…" : label}
       </Button>
-      {clientError && (
-        <p role="alert" className="text-sm text-danger">
-          {clientError}
-        </p>
-      )}
     </>
   );
 }
@@ -193,6 +192,15 @@ function CoverCard({
   const busy = upload.isPending || remove.isPending;
   const serverError = upload.error ?? remove.error;
 
+  function chooseCover([file]: File[]) {
+    const message = eventImageFileError(file);
+    setClientError(message);
+    if (message) return;
+    upload.reset();
+    remove.reset();
+    upload.mutate(file);
+  }
+
   return (
     <Card
       title="Cover image"
@@ -221,15 +229,7 @@ function CoverCard({
             variant={cover ? "secondary" : "primary"}
             disabled={remove.isPending}
             isPending={upload.isPending}
-            clientError={clientError}
-            setClientError={(message) => {
-              setClientError(message);
-              if (!message) {
-                upload.reset();
-                remove.reset();
-              }
-            }}
-            onFile={(file) => upload.mutate(file)}
+            onFiles={chooseCover}
           />
           {cover && (
             <Button
@@ -246,11 +246,22 @@ function CoverCard({
           )}
           <span className="text-xs text-muted">{EVENT_IMAGE_HINT}</span>
         </div>
+        {clientError && (
+          <p role="alert" className="text-sm text-danger">
+            {clientError}
+          </p>
+        )}
       </div>
     </Card>
   );
 }
 
+/**
+ * The gallery: the images it holds, and a way to add more at once. "Add images" picks several
+ * files (they are only listed, with how many and how big); "Upload N images" sends them all in
+ * ONE request, and the list is cleared when they are saved. A failed upload keeps the list, so the
+ * organizer can try again without choosing again.
+ */
 function GalleryCard({
   eventId,
   gallery,
@@ -258,11 +269,34 @@ function GalleryCard({
   eventId: string;
   gallery: EventMediaDto[];
 }) {
-  const add = useAddGalleryImage(eventId);
+  const add = useAddGalleryImages(eventId);
   const remove = useDeleteGalleryImage(eventId);
+  const [selected, setSelected] = useState<File[]>([]);
   const [clientError, setClientError] = useState<string>();
-  const full = gallery.length >= EVENT_GALLERY_MAX_IMAGES;
+
+  const busy = add.isPending || remove.isPending;
+  const room = EVENT_GALLERY_MAX_IMAGES - gallery.length;
+  const full = room <= 0;
+  const selectedBytes = selected.reduce((sum, file) => sum + file.size, 0);
   const serverError = add.error ?? remove.error;
+
+  function pick(files: File[]) {
+    const next = addToGallerySelection(selected, files, room);
+    setSelected(next.files);
+    setClientError(next.error);
+    add.reset();
+    remove.reset();
+  }
+
+  function unpick(file: File) {
+    setSelected((current) => current.filter((item) => item !== file));
+    setClientError(undefined);
+  }
+
+  function upload() {
+    setClientError(undefined);
+    add.mutate(selected, { onSuccess: () => setSelected([]) });
+  }
 
   return (
     <Card
@@ -296,7 +330,7 @@ function GalleryCard({
                     variant="secondary"
                     className="absolute right-2 top-2 px-2 py-2"
                     aria-label={`Remove gallery image ${index + 1}`}
-                    disabled={remove.isPending || add.isPending}
+                    disabled={busy}
                     isPending={removing}
                     onClick={() => {
                       setClientError(undefined);
@@ -313,27 +347,74 @@ function GalleryCard({
             })}
           </ul>
         )}
+
+        {selected.length > 0 && (
+          <div className="space-y-2 rounded-md border border-line p-3">
+            <p className="text-sm font-semibold" role="status">
+              {plural(selected.length, "image")} selected ·{" "}
+              {formatFileSize(selectedBytes)} of{" "}
+              {formatFileSize(EVENT_GALLERY_BATCH_MAX_BYTES)}
+            </p>
+            <ul
+              aria-label="Images selected for upload"
+              className="divide-y divide-line text-sm"
+            >
+              {selected.map((file) => (
+                <li
+                  key={`${file.name}-${file.size}-${file.lastModified}`}
+                  className="flex items-center justify-between gap-3 py-1.5"
+                >
+                  <span className="min-w-0 truncate">{file.name}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-muted">
+                    {formatFileSize(file.size)}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.name} from the selection`}
+                      disabled={add.isPending}
+                      onClick={() => unpick(file)}
+                      className="rounded-md p-1.5 hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <X aria-hidden="true" className="size-4" />
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2.5">
           <ImagePicker
-            label="Add image"
-            disabled={full || remove.isPending}
-            isPending={add.isPending}
-            clientError={clientError}
-            setClientError={(message) => {
-              setClientError(message);
-              if (!message) {
-                add.reset();
-                remove.reset();
-              }
-            }}
-            onFile={(file) => add.mutate(file)}
+            label="Add images"
+            multiple
+            disabled={full || busy}
+            onFiles={pick}
           />
+          {selected.length > 0 && (
+            <Button
+              disabled={remove.isPending}
+              isPending={add.isPending}
+              onClick={upload}
+            >
+              {!add.isPending && (
+                <Upload aria-hidden="true" className="size-4" />
+              )}
+              {add.isPending
+                ? `Uploading ${plural(selected.length, "image")}…`
+                : `Upload ${plural(selected.length, "image")}`}
+            </Button>
+          )}
           <span className="text-xs text-muted">
             {full
               ? `The gallery is full (${EVENT_GALLERY_MAX_IMAGES} images). Remove one to add another.`
-              : EVENT_IMAGE_HINT}
+              : EVENT_GALLERY_HINT}
           </span>
         </div>
+        {clientError && (
+          <p role="alert" className="text-sm text-danger">
+            {clientError}
+          </p>
+        )}
       </div>
     </Card>
   );

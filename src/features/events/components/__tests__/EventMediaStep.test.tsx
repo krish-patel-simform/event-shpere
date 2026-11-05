@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { renderWithClient } from "../../__fixtures__/render";
@@ -21,7 +21,7 @@ jest.mock("../../api/event-api.service", () => ({
     getContent: jest.fn(),
     uploadCover: jest.fn(),
     deleteCover: jest.fn(),
-    addGalleryImage: jest.fn(),
+    addGalleryImages: jest.fn(),
     deleteGalleryImage: jest.fn(),
   },
 }));
@@ -59,14 +59,18 @@ async function renderLoaded(content: Partial<EventContentDto> = {}) {
   return userEvent.setup({ applyAccept: false });
 }
 
-/** Chooses a file in the input with this label (the input is hidden behind a button). */
+/** Chooses a file (or several) in the input with this label (the input is hidden behind a button). */
 async function choose(
   user: ReturnType<typeof userEvent.setup>,
   label: string,
-  file: File,
+  file: File | File[],
 ) {
   await user.upload(screen.getByLabelText(label, { selector: "input" }), file);
 }
+
+/** A named image of a given size, for the gallery's selection. */
+const picture = (name: string, bytes = 100, type = "image/png") =>
+  new File([new Uint8Array(bytes)], name, { type, lastModified: 1 });
 
 beforeEach(() => jest.resetAllMocks());
 
@@ -287,31 +291,178 @@ describe("EventMediaStep: the cover", () => {
 });
 
 describe("EventMediaStep: the gallery", () => {
-  it("adds one image", async () => {
-    api.addGalleryImage.mockResolvedValue({ gallery: [image(2)] });
+  const selection = () =>
+    within(screen.getByRole("list", { name: "Images selected for upload" }));
+
+  it("only lists the chosen images, with how many and how big, until Upload is pressed", async () => {
     const user = await renderLoaded();
-    const file = png();
 
-    await choose(user, "Add image", file);
+    await choose(user, "Add images", [
+      picture("a.png", 1024),
+      picture("b.png", 2048),
+    ]);
 
-    await waitFor(() =>
-      expect(api.addGalleryImage).toHaveBeenCalledWith(eventId, file),
-    );
+    expect(await screen.findByText(/2 images selected/)).toBeInTheDocument();
+    expect(screen.getByText(/3.0 KB of 4.0 MB/)).toBeInTheDocument();
+    expect(selection().getByText("a.png")).toBeInTheDocument();
+    expect(selection().getByText("b.png")).toBeInTheDocument();
+    expect(api.addGalleryImages).not.toHaveBeenCalled();
   });
 
-  it("refuses a file of the wrong type, without calling the API", async () => {
+  it("uploads every chosen image in ONE call, with the count on the button", async () => {
+    api.addGalleryImages.mockResolvedValue({ gallery: [image(2), image(3)] });
+    const user = await renderLoaded();
+    const first = picture("a.png");
+    const second = picture("b.png");
+    await choose(user, "Add images", [first, second]);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 2 images" }),
+    );
+
+    await waitFor(() => expect(api.addGalleryImages).toHaveBeenCalledTimes(1));
+    expect(api.addGalleryImages).toHaveBeenCalledWith(eventId, [first, second]);
+  });
+
+  it("says 'image' for a single one", async () => {
     const user = await renderLoaded();
 
-    await choose(
-      user,
-      "Add image",
-      new File(["GIF"], "a.gif", { type: "image/gif" }),
+    await choose(user, "Add images", picture("a.png"));
+
+    expect(
+      await screen.findByRole("button", { name: "Upload 1 image" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 image selected/)).toBeInTheDocument();
+  });
+
+  it("has no Upload button until something is chosen", async () => {
+    await renderLoaded();
+
+    expect(
+      screen.queryByRole("button", { name: /^Upload \d/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("adds a second choice to the first one instead of replacing it", async () => {
+    const user = await renderLoaded();
+
+    await choose(user, "Add images", picture("a.png"));
+    await choose(user, "Add images", picture("b.png"));
+
+    expect(await screen.findByText(/2 images selected/)).toBeInTheDocument();
+    expect(selection().getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("takes an image off the selection before it is uploaded", async () => {
+    const user = await renderLoaded();
+    await choose(user, "Add images", [picture("a.png"), picture("b.png")]);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Remove a.png from the selection",
+      }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Choose a JPG, PNG or WebP image.",
+    expect(screen.getByText(/1 image selected/)).toBeInTheDocument();
+    expect(screen.queryByText("a.png")).not.toBeInTheDocument();
+  });
+
+  it("clears the selection once the images are saved", async () => {
+    api.addGalleryImages.mockResolvedValue({ gallery: [image(2)] });
+    const user = await renderLoaded();
+    await choose(user, "Add images", picture("a.png"));
+
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 1 image" }),
     );
-    expect(api.addGalleryImage).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("list", { name: "Images selected for upload" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /^Upload \d/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the selection when the upload fails, so it can be tried again", async () => {
+    api.addGalleryImages.mockRejectedValueOnce(
+      new ApiError(503, "CMS_UNAVAILABLE", "Try again later"),
+    );
+    api.addGalleryImages.mockResolvedValueOnce({ gallery: [image(2)] });
+    const user = await renderLoaded();
+    await choose(user, "Add images", picture("a.png"));
+
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 1 image" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Try again later",
+    );
+    expect(selection().getByText("a.png")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Upload 1 image" }));
+    await waitFor(() => expect(api.addGalleryImages).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the progress with the count while uploading, and blocks a second click", async () => {
+    api.addGalleryImages.mockReturnValue(new Promise(() => {}));
+    const user = await renderLoaded();
+    await choose(user, "Add images", [picture("a.png"), picture("b.png")]);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 2 images" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Uploading 2 images…" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeDisabled();
+  });
+
+  it("leaves out a file of the wrong type, names it, and keeps the good ones", async () => {
+    const user = await renderLoaded();
+
+    await choose(user, "Add images", [
+      picture("a.png"),
+      new File(["GIF"], "b.gif", { type: "image/gif" }),
+    ]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "b.gif: Choose a JPG, PNG or WebP image.",
+    );
+    expect(screen.getByText(/1 image selected/)).toBeInTheDocument();
+    expect(api.addGalleryImages).not.toHaveBeenCalled();
+  });
+
+  it("leaves out what would not fit in one upload, and says to upload in more than one go", async () => {
+    const user = await renderLoaded();
+
+    await choose(user, "Add images", [
+      picture("a.png", 3 * 1024 * 1024),
+      picture("b.png", 2 * 1024 * 1024),
+    ]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /at most 4 MB of images; 1 image left out/,
+    );
+    expect(screen.getByText(/1 image selected/)).toBeInTheDocument();
+  });
+
+  it("takes only as many as the gallery has room for", async () => {
+    const nearlyFull = Array.from(
+      { length: EVENT_GALLERY_MAX_IMAGES - 1 },
+      (_, index) => image(index + 1),
+    );
+    const user = await renderLoaded({ gallery: nearlyFull });
+
+    await choose(user, "Add images", [picture("a.png"), picture("b.png")]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "room for 1 more image; 1 image left out",
+    );
+    expect(screen.getByText(/1 image selected/)).toBeInTheDocument();
   });
 
   it("removes an image by its id", async () => {
@@ -333,17 +484,20 @@ describe("EventMediaStep: the gallery", () => {
     );
     await renderLoaded({ gallery: full });
 
-    expect(screen.getByRole("button", { name: "Add image" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeDisabled();
     expect(screen.getByText(/The gallery is full/)).toBeInTheDocument();
   });
 
-  it("shows the server's reason when the gallery is full on the server (409)", async () => {
-    api.addGalleryImage.mockRejectedValue(
+  it("shows the server's reason when the images do not fit on the server (409)", async () => {
+    api.addGalleryImages.mockRejectedValue(
       new ApiError(409, "GALLERY_FULL", "The gallery can hold 10 images"),
     );
     const user = await renderLoaded();
+    await choose(user, "Add images", png());
 
-    await choose(user, "Add image", png());
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 1 image" }),
+    );
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The gallery could not be saved");
@@ -379,6 +533,7 @@ describe("EventMediaStep: Finish while an image is on its way", () => {
     await choose(user, "Upload cover", png());
 
     await waitFor(() => expect(finishButton()).toBeDisabled());
+    expect(finishButton()).not.toHaveAttribute("aria-busy");
     expect(finishLink()).not.toBeInTheDocument();
 
     upload.resolve({ coverImage: image(5) });
@@ -405,16 +560,21 @@ describe("EventMediaStep: Finish while an image is on its way", () => {
     ).toBeInTheDocument();
   });
 
-  it("is disabled while a gallery image uploads", async () => {
+  it("is disabled while gallery images upload, with no spinner of its own", async () => {
     const upload = deferred<{ gallery: EventMediaDto[] }>();
-    api.addGalleryImage.mockReturnValue(upload.promise);
+    api.addGalleryImages.mockReturnValue(upload.promise);
     const user = await renderLoaded();
+    await choose(user, "Add images", [picture("a.png"), picture("b.png")]);
 
-    await choose(user, "Add image", png());
+    await user.click(
+      await screen.findByRole("button", { name: "Upload 2 images" }),
+    );
 
     await waitFor(() => expect(finishButton()).toBeDisabled());
+    // Plain disabled: the progress shows on the Upload button, not on Finish.
+    expect(finishButton()).not.toHaveAttribute("aria-busy");
 
-    upload.resolve({ gallery: [image(2)] });
+    upload.resolve({ gallery: [image(2), image(3)] });
     expect(
       await screen.findByRole("link", { name: "Finish" }),
     ).toBeInTheDocument();

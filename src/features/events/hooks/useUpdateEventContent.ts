@@ -7,18 +7,16 @@ import type {
   EventContentDto,
   UpdateEventContentBody,
 } from "../schemas/event-content.schemas";
-import { eventQueryKeys, invalidateEventContent } from "./event-cache";
+import { applyEventContent } from "./event-cache";
 
 /** Saves the event page's text (the variable is the body of PATCH .../content). */
 export function useUpdateEventContent(eventId: string) {
   const queryClient = useQueryClient();
   return useMutation<EventContentDto, ApiError, UpdateEventContentBody>({
     mutationFn: (body) => eventApiService.updateContent(eventId, body),
-    onSuccess: (content) => {
-      // The answer is the whole content as saved: put it in the cache so the step shows it at once.
-      queryClient.setQueryData(eventQueryKeys.content(eventId), content);
-      // The publish checklist reads "description written" from the overview.
-      return invalidateEventContent(queryClient, eventId);
-    },
+    // The answer is the whole content as saved: it is shown at once, then the content is read
+    // again to match what is stored. The overview is not read: its description flag follows from
+    // the content.
+    onSuccess: (content) => applyEventContent(queryClient, eventId, content),
   });
 }
