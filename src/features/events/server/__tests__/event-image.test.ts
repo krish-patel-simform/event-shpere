@@ -2,6 +2,11 @@ import { ValidationError } from "../../../../core/http/errors";
 import { EVENT_IMAGE_MAX_BODY_BYTES } from "../../constants";
 import { isAcceptableEventImage, readImageUpload } from "../event-image";
 
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
+
 describe("readImageUpload", () => {
   const request = (headers: Record<string, string>, body?: string) =>
     new Request("http://app.test/api/events/x/cover", {

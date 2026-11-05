@@ -19,7 +19,10 @@ import {
 
 // Empty factories: the DB client, Strapi client and env are never loaded.
 jest.mock("../event.repository", () => ({}));
-jest.mock("../../../cms/server", () => ({}));
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
 jest.mock("../../../organizer/server", () => ({}));
 
 const hoursFromNow = (hours: number) =>

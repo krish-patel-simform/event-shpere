@@ -29,7 +29,10 @@ import { updateEventBodySchema } from "../../schemas/events.schemas";
 
 // Empty factories: the DB client, Strapi client and env are never loaded.
 jest.mock("../event.repository", () => ({}));
-jest.mock("../../../cms/server", () => ({}));
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
 jest.mock("../../../organizer/server", () => ({}));
 
 let errorSpy: jest.SpyInstance;
@@ -510,7 +513,6 @@ describe("eventService.updateEvent", () => {
     await expect(
       service.updateEvent(eventId, body({ title: "x y z" }), otherOrganizer),
     ).rejects.toBeInstanceOf(NotFoundError);
-    expect(repo.findEventRecord).not.toHaveBeenCalled();
     expect(repo.updateEvent).not.toHaveBeenCalled();
   });
 
@@ -545,7 +547,7 @@ describe("eventService.updateEvent", () => {
 
   it("refuses a completed event: published and already over (409)", async () => {
     const { service, repo } = setup();
-    repo.findEventRecord.mockResolvedValue({
+    repo.findEventById.mockResolvedValue({
       ...eventRecord,
       status: "published",
       startAt: new Date("2026-10-30T04:00:00.000Z"),
@@ -599,7 +601,7 @@ describe("eventService.updateEvent", () => {
 
     it("lets an event that is already running keep its start while other things change", async () => {
       const { service, repo } = setup();
-      repo.findEventRecord.mockResolvedValue({
+      repo.findEventById.mockResolvedValue({
         ...eventRecord,
         status: "published",
         startAt: new Date("2026-11-02T04:00:00.000Z"),
@@ -665,7 +667,7 @@ describe("eventService.updateEvent", () => {
 
     it("refuses a start that moves before the registration is set to close (409)", async () => {
       const { service, repo } = setup();
-      repo.findEventRecord.mockResolvedValue({
+      repo.findEventById.mockResolvedValue({
         ...eventRecord,
         registrationClosesAt: new Date("2026-12-11T00:00:00.000Z"),
       });

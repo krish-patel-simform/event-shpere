@@ -26,12 +26,21 @@ import {
   sessionRegistrationsTable,
   sessionsTable,
   sessionSpeakersTable,
+  speakersProfilesTable,
   statesTable,
+  usersTable,
   venuesTable,
   type EventRecord,
+  type EventSession,
   type EventStatus,
+  type SessionSpeaker,
 } from "../../../db/schemas";
 import type { EventSort, EventTabKey } from "../schemas/event-manage.schemas";
+import type {
+  PublicEventPrice,
+  PublicEventSort,
+  PublicEventWhen,
+} from "../schemas/event-public.schemas";
 import { slugify } from "../utils/event-slug";
 
 /** Name of the unique constraint a Postgres "unique_violation" (23505) hit, else null. */
@@ -64,13 +73,21 @@ export type NewEvent = {
   registrationClosesAt: Date | null;
 };
 
-/** The few columns an access check needs; not the whole row. */
+/**
+ * The few columns helpers need to find an event's owner, state, CMS page, dates and venue (a
+ * session must fall inside the event, in a hall of its venue); a function that takes this accepts
+ * the whole event row too.
+ */
 export type EventRef = {
   id: string;
   /** The owner's organizer PROFILE id (organizer_profiles.id). */
   organizerId: string;
   status: EventStatus;
   cmsEventId: string | null;
+  startAt: Date;
+  endAt: Date;
+  /** null = no venue chosen yet. */
+  venueId: string | null;
 };
 
 /** One event for the organizer's list or overview: its columns, venue, and counted figures. */
@@ -85,6 +102,8 @@ export type ManagedEventRow = {
   capacity: number | null;
   ticketPrice: number;
   publishedAt: Date | null;
+  /** Strapi documentId of the Event Page; null until Strapi answered. */
+  cmsEventId: string | null;
   venueId: string | null;
   venueName: string | null;
   venueCity: string | null;
@@ -94,6 +113,50 @@ export type ManagedEventRow = {
   sessionsTotal: number;
   sessionsScheduled: number;
   sessionsCancelled: number;
+};
+
+/** One published or cancelled event for its public page: only what the public may see. */
+export type PublicEventRow = {
+  /** Only to find the event's sessions: the public DTO never carries it. */
+  id: string;
+  slug: string;
+  title: string;
+  status: EventStatus;
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+  capacity: number | null;
+  ticketPrice: number;
+  registrationOpensAt: Date | null;
+  registrationClosesAt: Date | null;
+  /** Strapi documentId of the Event Page; null until Strapi answered. */
+  cmsEventId: string | null;
+  /** Seat bookings that stand (cancelled ones do not count). */
+  registered: number;
+  venueName: string | null;
+  venueAddressLine: string | null;
+  venueCity: string | null;
+  venueState: string | null;
+  venuePostalCode: string | null;
+};
+
+/** One scheduled session of an event, with its hall's name and its speakers. */
+export type PublicSessionRow = {
+  id: string;
+  title: string;
+  type: EventSession["type"];
+  mode: EventSession["mode"];
+  startAt: Date | null;
+  endAt: Date | null;
+  hallName: string | null;
+  price: number;
+  requiresRegistration: boolean;
+  speakers: {
+    slug: string;
+    firstName: string;
+    lastName: string;
+    role: SessionSpeaker["role"];
+  }[];
 };
 
 /** What the overview shows beyond the event itself. */
@@ -155,7 +218,12 @@ function tabCondition(tab: EventTabKey, now: Date): SQL | undefined {
  */
 async function selectManagedEvents(
   where: SQL | undefined,
-  options: { orderBy?: SQL[]; limit?: number; offset?: number } = {},
+  options: {
+    /** A function gets the counted figures, to sort by them (e.g. the most registered). */
+    orderBy?: SQL[] | ((figures: { registered: SQL<number> }) => SQL[]);
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<ManagedEventRow[]> {
   const sessionStats = db
     .select({
@@ -190,6 +258,8 @@ async function selectManagedEvents(
     .groupBy(eventRegistrationsTable.eventId)
     .as("registration_stats");
 
+  const registered = sql<number>`coalesce(${registrationStats.registered}, 0)`;
+
   let query = db
     .select({
       id: eventsTable.id,
@@ -202,11 +272,12 @@ async function selectManagedEvents(
       capacity: eventsTable.capacity,
       ticketPrice: eventsTable.ticketPrice,
       publishedAt: eventsTable.publishedAt,
+      cmsEventId: eventsTable.cmsEventId,
       venueId: venuesTable.id,
       venueName: venuesTable.name,
       venueCity: venuesTable.city,
       venueState: statesTable.name,
-      registered: sql<number>`coalesce(${registrationStats.registered}, 0)`,
+      registered,
       cancelledRegistrations: sql<number>`coalesce(${registrationStats.cancelled}, 0)`,
       sessionsTotal: sql<number>`coalesce(${sessionStats.total}, 0)`,
       sessionsScheduled: sql<number>`coalesce(${sessionStats.scheduled}, 0)`,
@@ -220,7 +291,13 @@ async function selectManagedEvents(
     .where(where)
     .$dynamic();
 
-  if (options.orderBy) query = query.orderBy(...options.orderBy);
+  if (options.orderBy) {
+    const orderBy =
+      typeof options.orderBy === "function"
+        ? options.orderBy({ registered })
+        : options.orderBy;
+    query = query.orderBy(...orderBy);
+  }
   if (options.limit !== undefined) {
     query = query.limit(options.limit).offset(options.offset ?? 0);
   }
@@ -229,6 +306,49 @@ async function selectManagedEvents(
 
 /** `select count(*)` over rows of one table; one number, 0 when there is no row. */
 const countOf = (rows: { n: number }[]) => rows[0]?.n ?? 0;
+
+/** What `db.transaction` hands to its callback: the same queries, inside the transaction. */
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Cancels sessions AND the seats booked for them, for a whole list of sessions at once: two
+ * statements however many sessions there are, not two per session. A cancelled session keeps its
+ * row but frees its hall, and nobody keeps a seat at it. It runs inside the caller's transaction,
+ * so it happens together with whatever else the caller cancels. A session that is already
+ * cancelled is left alone, so its first `cancelled_at` is never overwritten.
+ */
+async function cancelSessionsWithSeats(
+  tx: DbTransaction,
+  sessionIds: string[],
+  at: Date,
+): Promise<void> {
+  if (sessionIds.length === 0) return;
+
+  const cancelled = await tx
+    .update(sessionsTable)
+    .set({ status: "cancelled", cancelledAt: at })
+    .where(
+      and(
+        inArray(sessionsTable.id, sessionIds),
+        ne(sessionsTable.status, "cancelled"),
+      ),
+    )
+    .returning({ id: sessionsTable.id });
+  if (cancelled.length === 0) return;
+
+  await tx
+    .update(sessionRegistrationsTable)
+    .set({ status: "cancelled", cancelledAt: at })
+    .where(
+      and(
+        inArray(
+          sessionRegistrationsTable.sessionId,
+          cancelled.map((row) => row.id),
+        ),
+        eq(sessionRegistrationsTable.status, "registered"),
+      ),
+    );
+}
 
 export const eventRepository = {
   /**
@@ -293,6 +413,187 @@ export const eventRepository = {
     return (
       row ?? { all: 0, draft: 0, published: 0, completed: 0, cancelled: 0 }
     );
+  },
+
+  //* The public side (discovery): nothing here is limited to an owner, so each query itself says
+  //* which events anyone may see. A draft is never one of them.
+
+  /**
+   * One page of the events anyone can browse: PUBLISHED only (never drafts, never cancelled),
+   * upcoming or past, optionally free or paid, searched by title, in the order asked, with the
+   * total that matches. The search text is a bound parameter, and % and _ in it search for
+   * themselves.
+   */
+  async listPublicEvents(params: {
+    search?: string;
+    price?: PublicEventPrice;
+    when: PublicEventWhen;
+    sort: PublicEventSort;
+    now: Date;
+    limit: number;
+    offset: number;
+  }): Promise<{ rows: ManagedEventRow[]; total: number }> {
+    const where = and(
+      eq(eventsTable.status, "published"),
+      // Still on or yet to come, or already over: split at the end time.
+      params.when === "upcoming"
+        ? gte(eventsTable.endAt, params.now)
+        : lt(eventsTable.endAt, params.now),
+      params.price === "free" ? eq(eventsTable.ticketPrice, 0) : undefined,
+      params.price === "paid" ? gt(eventsTable.ticketPrice, 0) : undefined,
+      params.search
+        ? ilike(eventsTable.title, `%${escapeLike(params.search)}%`)
+        : undefined,
+    );
+    // id breaks ties, so paging never shows a row twice or skips one.
+    const orderBy = ({ registered }: { registered: SQL<number> }): SQL[] => {
+      switch (params.sort) {
+        case "soonest":
+          return [asc(eventsTable.startAt), asc(eventsTable.id)];
+        case "latest":
+          return [desc(eventsTable.startAt), desc(eventsTable.id)];
+        case "price_asc":
+          return [
+            asc(eventsTable.ticketPrice),
+            asc(eventsTable.startAt),
+            asc(eventsTable.id),
+          ];
+        case "price_desc":
+          return [
+            desc(eventsTable.ticketPrice),
+            asc(eventsTable.startAt),
+            asc(eventsTable.id),
+          ];
+        case "popular":
+          return [
+            desc(registered),
+            asc(eventsTable.startAt),
+            asc(eventsTable.id),
+          ];
+      }
+    };
+
+    const [rows, totals] = await Promise.all([
+      selectManagedEvents(where, {
+        orderBy,
+        limit: params.limit,
+        offset: params.offset,
+      }),
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(eventsTable)
+        .where(where),
+    ]);
+    return { rows, total: countOf(totals) };
+  },
+
+  /**
+   * One event for its public page, found by its public link. A published event, or a cancelled
+   * one (it stays visible with a banner); a draft is "not found", exactly like an unknown slug.
+   */
+  async findPublicEventBySlug(slug: string): Promise<PublicEventRow | null> {
+    const [row] = await db
+      .select({
+        id: eventsTable.id,
+        slug: eventsTable.slug,
+        title: eventsTable.title,
+        status: eventsTable.status,
+        startAt: eventsTable.startAt,
+        endAt: eventsTable.endAt,
+        timezone: eventsTable.timezone,
+        capacity: eventsTable.capacity,
+        ticketPrice: eventsTable.ticketPrice,
+        registrationOpensAt: eventsTable.registrationOpensAt,
+        registrationClosesAt: eventsTable.registrationClosesAt,
+        cmsEventId: eventsTable.cmsEventId,
+        registered: sql<number>`(select count(*)::int from ${eventRegistrationsTable} where ${eventRegistrationsTable.eventId} = ${eventsTable.id} and ${eventRegistrationsTable.status} = 'registered')`,
+        venueName: venuesTable.name,
+        venueAddressLine: venuesTable.addressLine,
+        venueCity: venuesTable.city,
+        venueState: statesTable.name,
+        venuePostalCode: venuesTable.postalCode,
+      })
+      .from(eventsTable)
+      .leftJoin(venuesTable, eq(venuesTable.id, eventsTable.venueId))
+      .leftJoin(statesTable, eq(statesTable.id, venuesTable.stateId))
+      .where(
+        and(
+          eq(eventsTable.slug, slug),
+          inArray(eventsTable.status, ["published", "cancelled"]),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+
+  /**
+   * The event's SCHEDULED sessions for its public page, earliest first, each with its hall's name
+   * and its speakers in their display order. Cancelled and draft sessions are not public, and
+   * neither is a suspended speaker. Two queries however many sessions there are.
+   */
+  async listPublicSessions(eventId: string): Promise<PublicSessionRow[]> {
+    const sessions = await db
+      .select({
+        id: sessionsTable.id,
+        title: sessionsTable.title,
+        type: sessionsTable.type,
+        mode: sessionsTable.mode,
+        startAt: sessionsTable.startAt,
+        endAt: sessionsTable.endAt,
+        hallName: hallsTable.name,
+        price: sessionsTable.price,
+        requiresRegistration: sessionsTable.requiresRegistration,
+      })
+      .from(sessionsTable)
+      .leftJoin(hallsTable, eq(hallsTable.id, sessionsTable.hallId))
+      .where(
+        and(
+          eq(sessionsTable.eventId, eventId),
+          eq(sessionsTable.status, "scheduled"),
+        ),
+      )
+      // id breaks ties, so two sessions at the same time keep a steady order.
+      .orderBy(asc(sessionsTable.startAt), asc(sessionsTable.id));
+    if (sessions.length === 0) return [];
+
+    const speakerRows = await db
+      .select({
+        sessionId: sessionSpeakersTable.sessionId,
+        slug: speakersProfilesTable.slug,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        role: sessionSpeakersTable.role,
+      })
+      .from(sessionSpeakersTable)
+      // The name lives on the user the speaker profile belongs to.
+      .innerJoin(
+        speakersProfilesTable,
+        eq(speakersProfilesTable.id, sessionSpeakersTable.speakerId),
+      )
+      .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+      .where(
+        and(
+          inArray(
+            sessionSpeakersTable.sessionId,
+            sessions.map((session) => session.id),
+          ),
+          // A suspended speaker has no public page, so they are not named either.
+          ne(usersTable.status, "suspended"),
+        ),
+      )
+      .orderBy(asc(sessionSpeakersTable.displayOrder));
+
+    return sessions.map((session) => ({
+      ...session,
+      speakers: speakerRows
+        .filter((speaker) => speaker.sessionId === session.id)
+        .map((speaker) => ({
+          slug: speaker.slug,
+          firstName: speaker.firstName,
+          lastName: speaker.lastName,
+          role: speaker.role,
+        })),
+    }));
   },
 
   /** One event with its venue and counts, or null. Whose it is is the service's decision. */
@@ -472,15 +773,66 @@ export const eventRepository = {
     return event ?? null;
   },
 
-  /** What an edit needs to decide: who owns the event, whether it is cancelled, where its CMS page is. */
-  async findEventById(eventId: string): Promise<EventRef | null> {
+  /**
+   * Cancels a PUBLISHED event and everything that hangs on it, in ONE transaction, so nothing is
+   * left half cancelled:
+   * 1. the event itself;
+   * 2. every registration for the event;
+   * 3. every session that is not cancelled yet, with the seats booked for it
+   *    (cancelSessionsWithSeats takes them as one list).
+   * The halls are free again at once, because a session holds its hall only while it is not
+   * cancelled. null = the event is no longer published (cancelled a moment ago by another
+   * request, or never published): the UPDATE decides, so two cancels cannot both win.
+   */
+  async cancelEvent(eventId: string, at: Date): Promise<EventRecord | null> {
+    return db.transaction(async (tx) => {
+      const [event] = await tx
+        .update(eventsTable)
+        .set({ status: "cancelled", cancelledAt: at })
+        .where(
+          and(eq(eventsTable.id, eventId), eq(eventsTable.status, "published")),
+        )
+        .returning();
+      if (!event) return null;
+
+      await tx
+        .update(eventRegistrationsTable)
+        .set({ status: "cancelled", cancelledAt: at })
+        .where(
+          and(
+            eq(eventRegistrationsTable.eventId, eventId),
+            eq(eventRegistrationsTable.status, "registered"),
+          ),
+        );
+
+      const open = await tx
+        .select({ id: sessionsTable.id })
+        .from(sessionsTable)
+        .where(
+          and(
+            eq(sessionsTable.eventId, eventId),
+            ne(sessionsTable.status, "cancelled"),
+          ),
+        );
+      await cancelSessionsWithSeats(
+        tx,
+        open.map((row) => row.id),
+        at,
+      );
+
+      return event;
+    });
+  },
+
+  /**
+   * The whole event row, for the access check: who owns it, whether it is cancelled, where its
+   * CMS page is, and every other column an action then needs, so it does not read the row twice.
+   * It is more than an `EventRef` (which stays as the small type helpers ask for), so everything
+   * that takes an `EventRef` still accepts it.
+   */
+  async findEventById(eventId: string): Promise<EventRecord | null> {
     const [event] = await db
-      .select({
-        id: eventsTable.id,
-        organizerId: eventsTable.organizerId,
-        status: eventsTable.status,
-        cmsEventId: eventsTable.cmsEventId,
-      })
+      .select()
       .from(eventsTable)
       .where(eq(eventsTable.id, eventId));
     return event ?? null;

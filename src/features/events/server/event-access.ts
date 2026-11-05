@@ -7,8 +7,9 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../../core/http/errors";
+import type { EventRecord } from "../../../db/schemas";
 import type { OrganizerService } from "../../organizer/server";
-import type { EventRef, EventRepository } from "./event.repository";
+import type { EventRepository } from "./event.repository";
 
 /** Who is asking: the signed-in user from the access token. */
 export type EventActor = Pick<CurrentUser, "id" | "role" | "permissions">;
@@ -43,15 +44,18 @@ export function createEventAccess(deps: EventAccessDeps) {
     },
 
     /**
-     * Who may touch this event: EVENT_MANAGE_ALL (admin) any event, EVENT_MANAGE_OWN (organizer)
-     * only their own. Somebody else's event is a 404, never a 403, so its existence is not
-     * revealed. A write also needs a not-cancelled event.
+     * Returns the event if the organizer owns it, or throws. EVENT_MANAGE_OWN (organizer) reaches
+     * only their own events; EVENT_MANAGE_ALL (admin) passes for any event. Somebody else's event
+     * is a 404, never a 403, so its existence is not revealed. A write also needs a not-cancelled
+     * event. The WHOLE event row comes back, so an action that needs more than the owner and the
+     * status (dates, price, venue...) does not read it a second time. Callers that only need an
+     * `EventRef` still accept it: the row has everything an `EventRef` has.
      */
-    async requireEvent(
+    async getEventIfOrgOwns(
       eventId: string,
       actor: EventActor,
       { write }: { write: boolean },
-    ): Promise<EventRef> {
+    ): Promise<EventRecord> {
       if (!hasAll(actor) && !hasOwn(actor)) throw new ForbiddenError();
 
       // The event's owner is an organizer PROFILE, so compare with the caller's profile id, not

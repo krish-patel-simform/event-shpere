@@ -1,6 +1,5 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { createByteLimit } from "../../../core/http/byte-limit";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
 import {
   ConflictError,
@@ -18,6 +17,7 @@ import {
   type StrapiUploadedFile,
 } from "../../cms";
 import {
+  createImageUploader,
   strapiEventClient,
   strapiMediaClient,
   type StrapiEventClient,
@@ -27,10 +27,7 @@ import {
   organizerService,
   type OrganizerService,
 } from "../../organizer/server";
-import {
-  EVENT_GALLERY_MAX_IMAGES,
-  EVENT_IMAGE_MAX_BODY_BYTES,
-} from "../constants";
+import { EVENT_GALLERY_MAX_IMAGES } from "../constants";
 import type {
   EventContentDto,
   EventCoverDto,
@@ -44,6 +41,11 @@ import type {
   MyEventListQuery,
 } from "../schemas/event-manage.schemas";
 import type {
+  PublicEventDetailDto,
+  PublicEventListItemDto,
+  PublicEventListQuery,
+} from "../schemas/event-public.schemas";
+import type {
   CreateEventBody,
   EventDto,
   UpdateEventBody,
@@ -54,6 +56,8 @@ import {
   toEventMediaDto,
   toEventOverviewDto,
   toManagedEventDto,
+  toPublicEventDetailDto,
+  toPublicEventListItemDto,
 } from "./event.dto";
 import {
   eventRepository,
@@ -62,7 +66,7 @@ import {
   type EventRepository,
 } from "./event.repository";
 import { createEventAccess, type EventActor } from "./event-access";
-import { isAcceptableEventImage, type ImageUpload } from "./event-image";
+import { EVENT_IMAGE_POLICY, type ImageUpload } from "./event-image";
 
 // Same default as the events.timezone column; used for a draft with no venue and no zone.
 const DEFAULT_TIMEZONE = "Asia/Kolkata";
@@ -83,6 +87,10 @@ export type EventServiceDeps = {
     | "countSessionsOutside"
     | "countSessionsInOtherVenue"
     | "updateEvent"
+    | "cancelEvent"
+    | "listPublicEvents"
+    | "findPublicEventBySlug"
+    | "listPublicSessions"
   >;
   /** The event's page in Strapi: its text content. */
   strapiClient: Pick<
@@ -90,6 +98,7 @@ export type EventServiceDeps = {
     | "createEventPage"
     | "deleteEventPage"
     | "findEventPageById"
+    | "findEventPagesByIds"
     | "updateEventPage"
   >;
   /** Strapi's media library: the image uploads and removing replaced files. */
@@ -109,6 +118,13 @@ const cmsUnavailable = () =>
 const invalidImage = () =>
   new ValidationError(
     "The image must be one JPEG, PNG or WebP file of at most 4 MB",
+  );
+
+// A gallery upload may hold several files, but all of them travel in one request, so the 4 MB
+// is for the whole upload, not for each image.
+const invalidGalleryImages = () =>
+  new ValidationError(
+    "Send JPEG, PNG or WebP images, at most 4 MB in total in one upload",
   );
 
 /** Body → what Strapi gets: only the keys that were sent, rich texts turned into blocks. */
@@ -162,6 +178,27 @@ export function createEventService(deps: EventServiceDeps) {
   const access = createEventAccess(deps);
 
   //* Strapi helpers
+
+  /**
+   * A Strapi read the PUBLIC pages can do without: a failure is logged (message only) and the
+   * page goes on with `fallback`, so a visitor still sees the facts from Postgres (title, dates,
+   * venue, price) when the CMS is down. The organizer's own screens use requireCms instead.
+   */
+  async function withoutCmsOnFailure<T>(
+    what: string,
+    fallback: T,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await load();
+    } catch (error) {
+      console.error(
+        `[events] CMS content for ${what} not loaded, showing the facts only:`,
+        error instanceof Error ? error.message : error,
+      );
+      return fallback;
+    }
+  }
 
   /** A Strapi call the request cannot do without: any failure → 503, and the caller stops. */
   async function requireCms<T>(
@@ -279,68 +316,99 @@ export function createEventService(deps: EventServiceDeps) {
 
   //* Image helpers
 
-  /** Best effort: a file left behind only takes space in the media library. */
-  async function removeUploadedFile(id: number) {
-    try {
-      await deps.mediaClient.deleteFile(id);
-    } catch (error) {
-      console.error(
-        `[events] Strapi file ${id} not deleted:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
+  // Streaming an upload to Strapi, checking what it stored and deleting bad files is the same
+  // for every feature: it lives in the cms feature. Events only bring their limits and wording.
+  const { uploadImages, uploadOneImage, removeUploadedFile } =
+    createImageUploader({
+      mediaClient: deps.mediaClient,
+      policy: EVENT_IMAGE_POLICY,
+      scope: "events",
+      noun: "image",
+      invalid: invalidImage,
+      unavailable: cmsUnavailable,
+    });
 
-  /**
-   * Streams the upload to Strapi (counting the bytes on the way) and checks what Strapi
-   * stored: exactly one real image of an allowed type and size. Anything else is deleted again.
-   */
-  async function uploadOneImage(
-    upload: ImageUpload,
-  ): Promise<StrapiUploadedFile> {
-    const limit = createByteLimit(EVENT_IMAGE_MAX_BODY_BYTES);
-    let result: Awaited<ReturnType<StrapiMediaClient["uploadFiles"]>>;
-    try {
-      result = await deps.mediaClient.uploadFiles(
-        upload.body.pipeThrough(limit.stream),
-        upload.contentType,
-      );
-    } catch (error) {
-      if (limit.exceeded()) throw invalidImage();
-      console.error(
-        "[events] image upload to Strapi failed:",
-        error instanceof Error ? error.message : error,
-      );
-      throw cmsUnavailable();
-    }
-    // Strapi refused the file itself (e.g. a type its upload settings deny).
-    if (!result.ok) throw invalidImage();
-
-    const [image, ...extra] = result.files;
-    if (!image || extra.length > 0 || !isAcceptableEventImage(image)) {
-      await Promise.all(
-        result.files.map((file) => removeUploadedFile(file.id)),
-      );
-      throw invalidImage();
-    }
-    return image;
-  }
-
-  /** saveToCms for an image that was just uploaded: if saving fails, the new file is removed. */
+  /** saveToCms for images that were just uploaded: if saving fails, the new files are removed. */
   async function saveImageToCms(
     event: EventRef,
-    image: StrapiUploadedFile,
+    images: readonly StrapiUploadedFile[],
     data: StrapiEventPageUpdate,
   ): Promise<CmsEventPage> {
     try {
       return await saveToCms(event, data);
     } catch (error) {
-      await removeUploadedFile(image.id);
+      await Promise.all(images.map((image) => removeUploadedFile(image.id)));
       throw error;
     }
   }
 
   return {
+    //* The public side (discovery): open to everyone, so nothing here checks an owner. Which
+    //* events are visible is decided by the repository's queries (published; a cancelled one only
+    //* on its own page); a draft is a 404, exactly like an unknown link.
+
+    /**
+     * One page of the events anyone can browse (published only). Postgres decides WHICH events
+     * are listed (filter, order, total); Strapi only adds each card's tagline and banner,
+     * fetched for the whole page in one call. If Strapi fails the cards simply have no banner.
+     */
+    async listPublicEvents(
+      query: PublicEventListQuery,
+    ): Promise<{ items: PublicEventListItemDto[]; meta: PageMeta }> {
+      const { page, pageSize } = query;
+
+      const { rows, total } = await repo.listPublicEvents({
+        // An empty value after trim counts as no search.
+        search: query.search || undefined,
+        price: query.price,
+        when: query.when,
+        sort: query.sort,
+        now: now(),
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
+
+      const documentIds = rows.flatMap((row) =>
+        row.cmsEventId ? [row.cmsEventId] : [],
+      );
+      const pages = await withoutCmsOnFailure("the event list", [], () =>
+        deps.strapiClient.findEventPagesByIds(documentIds),
+      );
+      const pageById = new Map(pages.map((item) => [item.documentId, item]));
+
+      return {
+        items: rows.map((row) =>
+          toPublicEventListItemDto(
+            row,
+            (row.cmsEventId && pageById.get(row.cmsEventId)) || null,
+          ),
+        ),
+        meta: { page, pageSize, total },
+      };
+    },
+
+    /**
+     * One event's public page, found by its link. A published event, or a cancelled one (it stays
+     * visible with a banner); a draft or an unknown link is a 404. The facts and the sessions
+     * come from Postgres, the written content from Strapi, read in parallel; if Strapi fails the
+     * page still has the facts and the sessions, with `content: null`.
+     */
+    async getPublicEvent(slug: string): Promise<PublicEventDetailDto> {
+      const row = await repo.findPublicEventBySlug(slug);
+      if (!row) throw new NotFoundError("Event not found");
+
+      const { cmsEventId } = row;
+      const [page, sessions] = await Promise.all([
+        cmsEventId
+          ? withoutCmsOnFailure(`event ${cmsEventId}`, null, () =>
+              deps.strapiClient.findEventPageById(cmsEventId),
+            )
+          : Promise.resolve(null),
+        repo.listPublicSessions(row.id),
+      ]);
+      return toPublicEventDetailDto(row, page, sessions);
+    },
+
     //* The event itself
 
     /**
@@ -457,7 +525,9 @@ export function createEventService(deps: EventServiceDeps) {
       eventId: string,
       actor: EventActor,
     ): Promise<EventOverviewData> {
-      const ref = await access.requireEvent(eventId, actor, { write: false });
+      const ref = await access.getEventIfOrgOwns(eventId, actor, {
+        write: false,
+      });
       const row = await repo.findManagedEvent(eventId);
       if (!row) throw new NotFoundError("Event not found");
 
@@ -483,9 +553,10 @@ export function createEventService(deps: EventServiceDeps) {
       body: UpdateEventBody,
       actor: EventActor,
     ): Promise<EventDto> {
-      await access.requireEvent(eventId, actor, { write: true });
-      const current = await repo.findEventRecord(eventId);
-      if (!current) throw new NotFoundError("Event not found");
+      // The whole event row: the access check already read it, so there is no second lookup.
+      const current = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
 
       const at = now();
       // A published event whose end has passed is completed, and completed is read-only.
@@ -618,6 +689,53 @@ export function createEventService(deps: EventServiceDeps) {
       return toEventDto(updated);
     },
 
+    /**
+     * Cancels a published event: its sessions are cancelled with it (so their halls are free
+     * again), and so are all the seats booked for the sessions and all the registrations for the
+     * event, in one transaction. Cancelling is final. Only the organizer who owns the event may
+     * do it: the route requires EVENT_MANAGE_OWN, and the service refuses anyone who is not an
+     * organizer even if that permission were ever granted (an admin cancels nothing). Someone
+     * else's event is a 404.
+     *
+     * - already cancelled: answered as it is (cancelling twice is harmless)
+     * - a draft: 409 EVENT_NOT_PUBLISHED (a draft is deleted, not cancelled)
+     * - ended (completed, read-only): 409 EVENT_ENDED
+     * The Strapi page stays. Refunds and messages to attendees are not done here.
+     */
+    async cancelEvent(eventId: string, actor: EventActor): Promise<EventDto> {
+      if (actor.role !== "organizer") {
+        throw new ForbiddenError("Only the organizer can cancel an event");
+      }
+      // write: false, so an event that is already cancelled gets its answer instead of a 409. The
+      // whole event row comes back, so there is no second lookup.
+      const current = await access.getEventIfOrgOwns(eventId, actor, {
+        write: false,
+      });
+
+      if (current.status === "cancelled") return toEventDto(current);
+      if (current.status === "draft") {
+        throw new ConflictError(
+          "EVENT_NOT_PUBLISHED",
+          "A draft event is deleted, not cancelled",
+        );
+      }
+      const at = now();
+      if (current.endAt < at) {
+        throw new ConflictError(
+          "EVENT_ENDED",
+          "A completed event can no longer be cancelled",
+        );
+      }
+
+      const cancelled = await repo.cancelEvent(eventId, at);
+      if (cancelled) return toEventDto(cancelled);
+
+      // Someone cancelled it between the read and the write: the answer is the same.
+      const latest = await repo.findEventRecord(eventId);
+      if (!latest) throw new NotFoundError("Event not found");
+      return toEventDto(latest);
+    },
+
     //* The event's page in Strapi: its text content and images
 
     /** The edit form's current values (text content and images). */
@@ -625,7 +743,9 @@ export function createEventService(deps: EventServiceDeps) {
       eventId: string,
       actor: EventActor,
     ): Promise<EventContentDto> {
-      const event = await access.requireEvent(eventId, actor, { write: false });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: false,
+      });
       return toEventContentDto(await loadPage(event));
     },
 
@@ -635,7 +755,9 @@ export function createEventService(deps: EventServiceDeps) {
       body: UpdateEventContentBody,
       actor: EventActor,
     ): Promise<EventContentDto> {
-      const event = await access.requireEvent(eventId, actor, { write: true });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
       const page = await saveToCms(event, toStrapiUpdate(body));
       return toEventContentDto(page);
     },
@@ -647,11 +769,15 @@ export function createEventService(deps: EventServiceDeps) {
       actor: EventActor,
     ): Promise<EventCoverDto> {
       // Before a single byte goes to Strapi: only someone who may edit this event can upload.
-      const event = await access.requireEvent(eventId, actor, { write: true });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
       const current = await loadPage(event);
 
       const image = await uploadOneImage(upload);
-      const page = await saveImageToCms(event, image, { coverImage: image.id });
+      const page = await saveImageToCms(event, [image], {
+        coverImage: image.id,
+      });
 
       const oldId = current?.coverImage?.id;
       if (oldId && oldId !== image.id) await removeUploadedFile(oldId);
@@ -669,7 +795,9 @@ export function createEventService(deps: EventServiceDeps) {
       eventId: string,
       actor: EventActor,
     ): Promise<EventCoverDto> {
-      const event = await access.requireEvent(eventId, actor, { write: true });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
       const current = await loadPage(event);
       if (!current?.coverImage) return { coverImage: null };
 
@@ -679,28 +807,44 @@ export function createEventService(deps: EventServiceDeps) {
     },
 
     /**
-     * Adds one image to the gallery (at most EVENT_GALLERY_MAX_IMAGES). Read, append, write:
-     * two uploads at the very same moment could lose one, which is acceptable for one
-     * organizer editing their own event.
+     * Adds one or more images to the gallery in ONE request (at most EVENT_GALLERY_MAX_IMAGES in
+     * all). They are saved whole or not at all: a bad file, or more images than there is room
+     * for, stores none of them. Read, append, write: two uploads at the very same moment could
+     * lose some, which is acceptable for one organizer editing their own event.
      */
-    async addGalleryImage(
+    async addGalleryImages(
       eventId: string,
       upload: ImageUpload,
       actor: EventActor,
     ): Promise<EventGalleryDto> {
-      const event = await access.requireEvent(eventId, actor, { write: true });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
       const gallery = (await loadPage(event))?.gallery ?? [];
+      const room = EVENT_GALLERY_MAX_IMAGES - gallery.length;
       // Before the upload, so a full gallery does not cost a transfer.
-      if (gallery.length >= EVENT_GALLERY_MAX_IMAGES) {
+      if (room <= 0) {
         throw new ConflictError(
           "GALLERY_FULL",
           `A gallery holds at most ${EVENT_GALLERY_MAX_IMAGES} images`,
         );
       }
 
-      const image = await uploadOneImage(upload);
-      const page = await saveImageToCms(event, image, {
-        gallery: [...gallery.map((item) => item.id), image.id],
+      const images = await uploadImages(upload, invalidGalleryImages);
+      // The number of files is only known once Strapi has them: too many are removed again.
+      if (images.length > room) {
+        await Promise.all(images.map((image) => removeUploadedFile(image.id)));
+        throw new ConflictError(
+          "GALLERY_FULL",
+          `A gallery holds at most ${EVENT_GALLERY_MAX_IMAGES} images; there is room for ${room} more`,
+        );
+      }
+
+      const page = await saveImageToCms(event, images, {
+        gallery: [
+          ...gallery.map((item) => item.id),
+          ...images.map((image) => image.id),
+        ],
       });
       return { gallery: page.gallery.map(toEventMediaDto) };
     },
@@ -714,7 +858,9 @@ export function createEventService(deps: EventServiceDeps) {
       fileId: number,
       actor: EventActor,
     ): Promise<EventGalleryDto> {
-      const event = await access.requireEvent(eventId, actor, { write: true });
+      const event = await access.getEventIfOrgOwns(eventId, actor, {
+        write: true,
+      });
       const gallery = (await loadPage(event))?.gallery ?? [];
       if (!gallery.some((item) => item.id === fileId)) {
         throw new NotFoundError("Image not found");
@@ -732,6 +878,12 @@ export function createEventService(deps: EventServiceDeps) {
 }
 
 export type EventService = ReturnType<typeof createEventService>;
+
+/** The shared "who may touch which event" rule, for other features' services (sessions). */
+export const eventAccess = createEventAccess({
+  eventRepository,
+  organizerVerification: organizerService,
+});
 
 export const eventService = createEventService({
   eventRepository,

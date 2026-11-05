@@ -128,7 +128,8 @@ export const toIsoWithOffset = (date: string, time: string) =>
   `${date}T${time}:00${IST_OFFSET}`;
 
 /** Rupees as typed ("499.50") → paise (49950). Rounded, because 0.07 * 100 is 7.000000000000001. */
-const rupeesToPaise = (rupees: string) => Math.round(Number(rupees) * 100);
+export const rupeesToPaise = (rupees: string) =>
+  Math.round(Number(rupees) * 100);
 
 /**
  * The body of POST /api/events. An empty venue or capacity is left out (not sent as ""), and the

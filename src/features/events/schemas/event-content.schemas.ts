@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cmsMediaSchema } from "../../cms";
 
 // A uuid, not just a string: a malformed id would otherwise reach Postgres and become a 500.
 export const eventIdParam = z.object({
@@ -111,14 +112,9 @@ export type UpdateEventContentBody = z.infer<
 
 //* Responses
 
-export const eventMediaSchema = z.object({
-  /** Strapi upload id: what DELETE .../gallery/[fileId] takes. */
-  id: z.number().int().positive(),
-  url: z.string(),
-  alt: z.string().nullable(),
-  width: z.number().int().nullable(),
-  height: z.number().int().nullable(),
-});
+// One image: the same shape for every feature's responses (cms owns it). `id` is the Strapi
+// upload id, which DELETE .../gallery/[fileId] takes.
+export const eventMediaSchema = cmsMediaSchema;
 export type EventMediaDto = z.infer<typeof eventMediaSchema>;
 
 // What the edit form shows: rich texts as plain text, empty things as "" / [] / null.

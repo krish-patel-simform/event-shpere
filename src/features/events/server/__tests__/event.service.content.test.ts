@@ -26,7 +26,10 @@ import {
 
 // Empty factories: the DB client, Strapi clients and env are never loaded.
 jest.mock("../event.repository", () => ({}));
-jest.mock("../../../cms/server", () => ({}));
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
 jest.mock("../../../organizer/server", () => ({}));
 
 const paragraph = (text: string) => ({
@@ -144,7 +147,7 @@ describe("who may use an event's page", () => {
       service.updateContent(eventId, { tagline: "x" }, organizer),
       service.replaceCover(eventId, upload(), organizer),
       service.removeCover(eventId, organizer),
-      service.addGalleryImage(eventId, upload(), organizer),
+      service.addGalleryImages(eventId, upload(), organizer),
       service.removeGalleryImage(eventId, 5, organizer),
     ];
     for (const write of writes) {
@@ -499,7 +502,7 @@ describe("eventService.removeCover", () => {
   });
 });
 
-describe("eventService.addGalleryImage", () => {
+describe("eventService.addGalleryImages", () => {
   it("appends the new image to the existing ones and returns the whole gallery", async () => {
     const { service, strapi } = setup();
     strapi.findEventPageById.mockResolvedValue(
@@ -509,12 +512,119 @@ describe("eventService.addGalleryImage", () => {
       page({ gallery: [media(5), media(6), media(31)] }),
     );
 
-    const result = await service.addGalleryImage(eventId, upload(), organizer);
+    const result = await service.addGalleryImages(eventId, upload(), organizer);
 
     expect(strapi.updateEventPage).toHaveBeenCalledWith("doc-1", {
       gallery: [5, 6, 31],
     });
     expect(result.gallery.map((item) => item.id)).toEqual([5, 6, 31]);
+  });
+
+  describe("several images in one request", () => {
+    const files = [newFile, { ...newFile, id: 32 }, { ...newFile, id: 33 }];
+
+    it("sends them to Strapi once and saves them all, after the existing ones, in order", async () => {
+      const { service, strapi, mediaClient } = setup();
+      mediaClient.uploadFiles.mockResolvedValue({ ok: true, files });
+      strapi.findEventPageById.mockResolvedValue(page({ gallery: [media(5)] }));
+      strapi.updateEventPage.mockResolvedValue(
+        page({ gallery: [media(5), media(31), media(32), media(33)] }),
+      );
+
+      const result = await service.addGalleryImages(
+        eventId,
+        upload(),
+        organizer,
+      );
+
+      expect(mediaClient.uploadFiles).toHaveBeenCalledTimes(1);
+      expect(strapi.updateEventPage).toHaveBeenCalledWith("doc-1", {
+        gallery: [5, 31, 32, 33],
+      });
+      expect(result.gallery.map((item) => item.id)).toEqual([5, 31, 32, 33]);
+      expect(mediaClient.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it("keeps none of them when there is room for fewer (409), and deletes what was uploaded", async () => {
+      const { service, strapi, mediaClient } = setup();
+      mediaClient.uploadFiles.mockResolvedValue({ ok: true, files });
+      strapi.findEventPageById.mockResolvedValue(
+        page({
+          gallery: Array.from(
+            { length: EVENT_GALLERY_MAX_IMAGES - 2 },
+            (_, i) => media(i + 1),
+          ),
+        }),
+      );
+
+      const error = await service
+        .addGalleryImages(eventId, upload(), organizer)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).code).toBe("GALLERY_FULL");
+      expect((error as ConflictError).message).toMatch(/room for 2 more/);
+      expect(strapi.updateEventPage).not.toHaveBeenCalled();
+      expect(mediaClient.deleteFile.mock.calls.map(([id]) => id)).toEqual([
+        31, 32, 33,
+      ]);
+    });
+
+    it("takes exactly as many as there is room for", async () => {
+      const { service, strapi, mediaClient } = setup();
+      mediaClient.uploadFiles.mockResolvedValue({
+        ok: true,
+        files: files.slice(0, 2),
+      });
+      strapi.findEventPageById.mockResolvedValue(
+        page({
+          gallery: Array.from(
+            { length: EVENT_GALLERY_MAX_IMAGES - 2 },
+            (_, i) => media(i + 1),
+          ),
+        }),
+      );
+      strapi.updateEventPage.mockResolvedValue(page({ gallery: [] }));
+
+      await service.addGalleryImages(eventId, upload(), organizer);
+
+      expect(strapi.updateEventPage).toHaveBeenCalledTimes(1);
+      expect(mediaClient.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it("keeps none of them when one is not an image (400), and deletes them all", async () => {
+      const { service, strapi, mediaClient } = setup();
+      mediaClient.uploadFiles.mockResolvedValue({
+        ok: true,
+        files: [files[0], { ...files[1], mime: "image/gif" }, files[2]],
+      });
+
+      const error = await service
+        .addGalleryImages(eventId, upload(), organizer)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ValidationError);
+      expect((error as ValidationError).message).toMatch(
+        /at most 4 MB in total/,
+      );
+      expect(strapi.updateEventPage).not.toHaveBeenCalled();
+      expect(mediaClient.deleteFile.mock.calls.map(([id]) => id)).toEqual([
+        31, 32, 33,
+      ]);
+    });
+
+    it("deletes every new file when saving the gallery fails", async () => {
+      const { service, strapi, mediaClient } = setup();
+      mediaClient.uploadFiles.mockResolvedValue({ ok: true, files });
+      strapi.updateEventPage.mockRejectedValue(new Error("timeout"));
+
+      await expect(
+        service.addGalleryImages(eventId, upload(), organizer),
+      ).rejects.toMatchObject({ status: 503 });
+      expect(mediaClient.deleteFile.mock.calls.map(([id]) => id)).toEqual([
+        31, 32, 33,
+      ]);
+    });
   });
 
   it("refuses a full gallery (409) before the upload costs anything", async () => {
@@ -528,7 +638,7 @@ describe("eventService.addGalleryImage", () => {
     );
 
     const error = await service
-      .addGalleryImage(eventId, upload(), organizer)
+      .addGalleryImages(eventId, upload(), organizer)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ConflictError);
@@ -541,7 +651,7 @@ describe("eventService.addGalleryImage", () => {
     strapi.updateEventPage.mockRejectedValue(new Error("timeout"));
 
     await expect(
-      service.addGalleryImage(eventId, upload(), organizer),
+      service.addGalleryImages(eventId, upload(), organizer),
     ).rejects.toMatchObject({ status: 503 });
     expect(mediaClient.deleteFile).toHaveBeenCalledWith(31);
   });
@@ -554,7 +664,7 @@ describe("eventService.addGalleryImage", () => {
     });
 
     await expect(
-      service.addGalleryImage(eventId, upload(), organizer),
+      service.addGalleryImages(eventId, upload(), organizer),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(strapi.updateEventPage).not.toHaveBeenCalled();
     expect(mediaClient.deleteFile).toHaveBeenCalledWith(31);
