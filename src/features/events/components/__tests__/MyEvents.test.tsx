@@ -17,6 +17,7 @@ import {
   EVENT_ROUTES,
   publicEventHref,
 } from "../../routes";
+import type { EventDto } from "../../schemas/events.schemas";
 import type { ManagedEvent } from "../../types/event-manage.types";
 import { MyEvents } from "../MyEvents";
 
@@ -27,6 +28,7 @@ jest.mock("../../api/event-api.service", () => ({
     getOverview: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    cancel: jest.fn(),
   },
 }));
 const api = jest.mocked(eventApiService);
@@ -348,7 +350,26 @@ describe("a row's menu", () => {
     ).toHaveAttribute("href", publicEventHref(draft.slug));
   });
 
-  it("does not offer cancelling or deleting yet: they have no endpoint", async () => {
+  it("offers Cancel event last for a published event", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<MyEvents />);
+    await screen.findByRole("table");
+
+    await openMenu(user, "Design Systems Engineering Day");
+
+    expect(
+      within(screen.getByRole("menu"))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Manage event",
+      "Edit details",
+      "View public page",
+      "Cancel event",
+    ]);
+  });
+
+  it("does not offer cancelling a draft, and deleting one has no endpoint yet", async () => {
     const user = userEvent.setup();
     renderWithClient(<MyEvents />);
     await screen.findByRole("table");
@@ -394,5 +415,91 @@ describe("a row's menu", () => {
         name: "Edit details",
       }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("cancelling an event", () => {
+  const designDay = SAMPLE_EVENTS.find((event) => event.id === DESIGN_DAY_ID)!;
+
+  /** What the API answers once the event is cancelled. */
+  const cancelledEvent: EventDto = {
+    id: designDay.id,
+    slug: designDay.slug,
+    title: designDay.title,
+    status: "cancelled",
+    startAt: designDay.startAt,
+    endAt: designDay.endAt,
+    timezone: designDay.timezone,
+    venueId: designDay.venue?.id ?? null,
+    capacity: designDay.capacity,
+    ticketPrice: designDay.ticketPrice,
+    currency: "INR",
+    registrationOpensAt: null,
+    registrationClosesAt: null,
+    publishedAt: "2026-10-01T10:00:00.000Z",
+    createdAt: "2026-09-01T10:00:00.000Z",
+  };
+
+  async function chooseCancel(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole("table");
+    await openMenu(user, designDay.title);
+    await user.click(screen.getByRole("menuitem", { name: "Cancel event" }));
+  }
+
+  it("asks first, and sends nothing when the organizer keeps the event", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<MyEvents />);
+
+    await chooseCancel(user);
+    const dialog = within(
+      screen.getByRole("dialog", { name: "Cancel this event?" }),
+    );
+    await user.click(dialog.getByRole("button", { name: "Keep event" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.cancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels the event once confirmed, reads the list again and says so", async () => {
+    const user = userEvent.setup();
+    api.cancel.mockResolvedValue(cancelledEvent);
+    renderWithClient(<MyEvents />);
+
+    await chooseCancel(user);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel event",
+      }),
+    );
+
+    expect(
+      await screen.findByText("Design Systems Engineering Day was cancelled"),
+    ).toBeInTheDocument();
+    expect(api.cancel).toHaveBeenCalledWith(DESIGN_DAY_ID);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // The row now belongs to another tab: the list and the counts are asked for again.
+    await waitFor(() => expect(api.listMine).toHaveBeenCalledTimes(2));
+    expect(api.countMine).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the server's message when the event cannot be cancelled", async () => {
+    const user = userEvent.setup();
+    api.cancel.mockRejectedValue(
+      new ApiError(409, "EVENT_NOT_CANCELLABLE", "The event has ended"),
+    );
+    renderWithClient(<MyEvents />);
+
+    await chooseCancel(user);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel event",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't cancel the event",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("The event has ended");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { CalendarDays, ExternalLink, Pencil } from "lucide-react";
+import { Ban, CalendarDays, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
 import { formatCount } from "@/src/core/format/format-number";
 import {
@@ -41,13 +41,19 @@ type EventsTableProps = {
   /** A tab or filter is active, so an empty list means "no match". */
   isFiltered: boolean;
   onClearFilters: () => void;
+  /** The organizer chose "Cancel event" on a row; the page asks to confirm. */
+  onCancel: (event: ManagedEvent) => void;
 };
 
 /**
- * What a row's menu offers: open it, edit it (a completed or cancelled event is read-only) and
- * see its public page. Cancelling and deleting come with their endpoints.
+ * What a row's menu offers: open it, edit it (a completed or cancelled event is read-only), see
+ * its public page and, for a published event only, cancel it (last, in red). A draft is deleted,
+ * not cancelled: that comes with its endpoint.
  */
-function rowActions(event: ManagedEvent): ActionMenuItem[] {
+function rowActions(
+  event: ManagedEvent,
+  onCancel: (event: ManagedEvent) => void,
+): ActionMenuItem[] {
   const items: ActionMenuItem[] = [
     { label: "Manage event", href: eventHref(event.id), icon: CalendarDays },
   ];
@@ -63,6 +69,15 @@ function rowActions(event: ManagedEvent): ActionMenuItem[] {
     href: publicEventHref(event.slug),
     icon: ExternalLink,
   });
+  if (event.status === "published") {
+    items.push({
+      label: "Cancel event",
+      icon: Ban,
+      tone: "danger",
+      separatorBefore: true,
+      onSelect: () => onCancel(event),
+    });
+  }
   return items;
 }
 
@@ -75,6 +90,7 @@ export function EventsTable({
   onPageChange,
   isFiltered,
   onClearFilters,
+  onCancel,
 }: EventsTableProps) {
   if (events.length === 0) {
     return isFiltered ? (
@@ -196,7 +212,7 @@ export function EventsTable({
                   <td className="px-4 py-3 text-right">
                     <ActionMenu
                       label={`Actions for ${event.title}`}
-                      items={rowActions(event)}
+                      items={rowActions(event, onCancel)}
                     />
                   </td>
                 </ClickableRow>

@@ -6,7 +6,6 @@ import {
   type EventServiceDeps,
 } from "../server/event.service";
 import type {
-  EventRef,
   ManagedEventRow,
   NewEvent,
   OverviewExtras,
@@ -48,14 +47,6 @@ export const attendee = {
   permissions: new Set<string>(),
 };
 
-/** What the access check reads: the organizer's draft whose Strapi page is "doc-1". */
-export const eventRef: EventRef = {
-  id: eventId,
-  organizerId,
-  status: "draft",
-  cmsEventId: "doc-1",
-};
-
 /** The whole events row, for edits that compare new values with the current ones. */
 export const eventRecord: EventRecord = {
   id: eventId,
@@ -91,6 +82,7 @@ export const managedRow: ManagedEventRow = {
   capacity: 250,
   ticketPrice: 0,
   publishedAt: null,
+  cmsEventId: "doc-1",
   venueId,
   venueName: "Hotel Orchid",
   venueCity: "Pune",
@@ -115,6 +107,13 @@ export const venue = {
   timezone: "America/New_York",
   isActive: true,
 };
+
+/**
+ * What the access check reads: the organizer's draft whose Strapi page is "doc-1". It is the
+ * WHOLE row, because the access check returns the whole event (an action then reads its dates,
+ * price and so on from it instead of looking the event up again).
+ */
+export const eventRef: EventRecord = eventRecord;
 
 /** An event page with nothing written yet, as Strapi's client returns it. */
 export const emptyPage: CmsEventPage = {
@@ -169,6 +168,20 @@ export function setupEventService() {
     countRegistered: jest.fn().mockResolvedValue(0),
     countSessionsOutside: jest.fn().mockResolvedValue(0),
     countSessionsInOtherVenue: jest.fn().mockResolvedValue(0),
+    // The public side: nothing listed, no event found, until a test says otherwise.
+    listPublicEvents: jest.fn().mockResolvedValue({ rows: [], total: 0 }),
+    findPublicEventBySlug: jest.fn().mockResolvedValue(null),
+    listPublicSessions: jest.fn().mockResolvedValue([]),
+    // Like the database: the event, cancelled at the given time.
+    cancelEvent: jest
+      .fn()
+      .mockImplementation(
+        async (_id: string, at: Date): Promise<EventRecord> => ({
+          ...eventRecord,
+          status: "cancelled",
+          cancelledAt: at,
+        }),
+      ),
     updateEvent: jest
       .fn()
       .mockImplementation(
@@ -185,6 +198,7 @@ export function setupEventService() {
     createEventPage: jest.fn().mockResolvedValue({ documentId: "doc-new" }),
     deleteEventPage: jest.fn().mockResolvedValue(undefined),
     findEventPageById: jest.fn().mockResolvedValue(emptyPage),
+    findEventPagesByIds: jest.fn().mockResolvedValue([]),
     updateEventPage: jest.fn().mockResolvedValue(emptyPage),
   };
   const media = {

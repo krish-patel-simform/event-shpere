@@ -711,7 +711,7 @@ describe("EventForm: editing", () => {
   });
 });
 
-describe("EventForm: which halls are free", () => {
+describe("EventForm: which halls are available", () => {
   const hallsOf = (...bookedHalls: string[]) =>
     ["Hall A", "Hall B"].map((name, index) => {
       const bookedSlots = bookedHalls.includes(name)
@@ -747,7 +747,9 @@ describe("EventForm: which halls are free", () => {
     await pick(user, venueSelect(), "Hotel Orchid");
 
     expect(
-      screen.getByText("Choose the start and end dates to see which halls are free."),
+      screen.getByText(
+        "Choose the start and end dates to see which halls are available.",
+      ),
     ).toBeInTheDocument();
     expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
   });
@@ -762,9 +764,9 @@ describe("EventForm: which halls are free", () => {
     await chooseVenueAndDates(user, start);
 
     expect(
-      await screen.findByText("1 of 2 halls are completely free on these dates."),
+      await screen.findByText("1 of 2 halls are available on these dates."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Free")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
     expect(screen.getByText("Booked")).toBeInTheDocument();
     expect(screen.getByText("12 Dec, 10:00–12:00")).toBeInTheDocument();
   });
@@ -796,25 +798,29 @@ describe("EventForm: which halls are free", () => {
     renderWithClient(<EventForm onSubmit={jest.fn()} />);
     await statesLoaded();
     await chooseVenueAndDates(user, start);
-    await screen.findByText("2 of 2 halls are completely free on these dates.");
+    await screen.findByText("2 of 2 halls are available on these dates.");
 
     // The next range is answered later: the old halls must not stay on screen meanwhile.
     venuesApi.getHallAvailability.mockReturnValue(new Promise(() => {}));
     setValue("End date", dayFromNow(31));
 
     expect(
-      await screen.findByRole("status", { name: "Checking which halls are free" }),
+      await screen.findByRole("status", {
+        name: "Checking which halls are available",
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("2 of 2 halls are completely free on these dates."),
+      screen.queryByText("2 of 2 halls are available on these dates."),
     ).not.toBeInTheDocument();
   });
 
-  it("warns when no hall is completely free, and still lets the event be saved", async () => {
+  it("warns when no hall is available, and still lets the event be saved", async () => {
     const user = userEvent.setup();
     const onSubmit = jest.fn();
     const start = dayFromNow(30);
-    venuesApi.getHallAvailability.mockResolvedValue(hallsOf("Hall A", "Hall B"));
+    venuesApi.getHallAvailability.mockResolvedValue(
+      hallsOf("Hall A", "Hall B"),
+    );
     renderWithClient(<EventForm onSubmit={onSubmit} />);
     await statesLoaded();
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
@@ -822,7 +828,7 @@ describe("EventForm: which halls are free", () => {
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
 
     expect(
-      await screen.findByText(/No hall is completely free on these dates/),
+      await screen.findByText(/No hall is available for all of these dates/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -846,7 +852,7 @@ describe("EventForm: which halls are free", () => {
 
     expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
     expect(
-      screen.queryByText(/completely free on these dates/),
+      screen.queryByText(/halls? (is|are) available on these dates/),
     ).not.toBeInTheDocument();
   });
 });

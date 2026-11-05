@@ -9,7 +9,8 @@ import {
 } from "../../__fixtures__/event-manage";
 import { CancelEventDialog, DeleteDraftDialog } from "../EventDialogs";
 
-// The dialogs for cancelling and deleting. No screen opens them yet: their endpoints come next.
+// The dialogs for cancelling and deleting. My events opens the cancel one; the delete one waits for
+// its endpoint.
 
 const summit = SAMPLE_EVENTS.find((event) => event.id === SUMMIT_ID)!;
 const fintech = SAMPLE_EVENTS.find((event) => event.id === FINTECH_ID)!;

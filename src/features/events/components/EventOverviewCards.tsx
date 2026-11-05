@@ -9,6 +9,7 @@ import Link from "next/link";
 import { formatCount } from "@/src/core/format/format-number";
 import {
   Button,
+  buttonStyles,
   Card,
   cn,
   DescriptionList,
@@ -167,6 +168,14 @@ export function PublishChecklistCard({
               <p className="font-semibold">{item.title}</p>
               <p className="text-muted">{item.description}</p>
             </div>
+            {item.action && (
+              <Link
+                href={item.action.href}
+                className={buttonStyles({ variant: "secondary" })}
+              >
+                {item.action.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>

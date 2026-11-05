@@ -1,18 +1,12 @@
 "use client";
 
-import { CalendarDays, ExternalLink, MapPin, Pencil } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
-import { ApiError } from "@/src/core/api-client/base-api.service";
-import { Alert, Breadcrumb, Button, buttonStyles } from "@/src/core/ui";
-import { useGetEventOverview } from "../hooks/useGetEventOverview";
-import { eventEditHref, EVENT_ROUTES, publicEventHref } from "../routes";
+import { Alert, buttonStyles } from "@/src/core/ui";
+import { eventEditHref, publicEventHref } from "../routes";
 import type { EventOverviewData } from "../types/event-manage.types";
-import { getAttentionItems, unscheduledCount } from "../utils/event-attention";
-import {
-  formatEventDates,
-  isEditable,
-  venueLine,
-} from "../utils/event-display";
+import { getAttentionItems } from "../utils/event-attention";
+import { isEditable } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import {
   AttentionCard,
@@ -21,8 +15,8 @@ import {
   PublishChecklistCard,
   RegistrationProgressCard,
 } from "./EventOverviewCards";
-import { EventSectionTabs } from "./EventSectionTabs";
-import { EventStatusBadge } from "./EventStatusBadge";
+import { EventLoader } from "./EventLoader";
+import { EventPageHeader } from "./EventPageHeader";
 
 /**
  * The organizer's page for one event, loaded from GET /api/events/[id]: its status and figures,
@@ -30,59 +24,11 @@ import { EventStatusBadge } from "./EventStatusBadge";
  * its details. Publishing, cancelling and deleting come with their endpoints.
  */
 export function EventOverview({ eventId }: { eventId: string }) {
-  const overview = useGetEventOverview(eventId);
-
-  if (overview.isPending) {
-    return (
-      <div
-        role="status"
-        aria-label="Loading event"
-        className="mx-auto max-w-6xl animate-pulse space-y-4 motion-reduce:animate-none"
-      >
-        <div className="h-8 w-72 rounded bg-surface-subtle" />
-        <div className="h-4 w-96 max-w-full rounded bg-surface-subtle" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((card) => (
-            <div key={card} className="h-24 rounded-lg bg-surface-subtle" />
-          ))}
-        </div>
-        <div className="h-64 rounded-lg bg-surface-subtle" />
-      </div>
-    );
-  }
-
-  if (overview.isError) {
-    // A 404 is final (not the organizer's event, or deleted); anything else may pass.
-    const notFound =
-      overview.error instanceof ApiError && overview.error.status === 404;
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <Alert
-          tone="error"
-          title={notFound ? "Event not found" : "We couldn't load this event"}
-        >
-          {notFound
-            ? "It may have been deleted, or it is not one of your events."
-            : overview.error.message}
-        </Alert>
-        <div className="flex flex-wrap gap-2.5">
-          {!notFound && (
-            <Button variant="secondary" onClick={() => void overview.refetch()}>
-              Try again
-            </Button>
-          )}
-          <Link
-            href={EVENT_ROUTES.list}
-            className={buttonStyles({ variant: "secondary" })}
-          >
-            Back to My events
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return <OverviewPage overview={overview.data} />;
+  return (
+    <EventLoader eventId={eventId}>
+      {(overview) => <OverviewPage overview={overview} />}
+    </EventLoader>
+  );
 }
 
 /** The overview of one loaded event. */
@@ -90,6 +36,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
   const editable = isEditable(event.status);
   const checklist = getPublishChecklist({
+    eventId: event.id,
     hasVenue: event.venue !== null,
     hallCount: overview.hallCount,
     content: overview.content,
@@ -98,33 +45,11 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header className="space-y-3.5">
-        <Breadcrumb
-          items={[
-            { label: "My events", href: EVENT_ROUTES.list },
-            { label: event.title },
-          ]}
-        />
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold">{event.title}</h1>
-              <EventStatusBadge status={event.status} />
-            </div>
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted">
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays aria-hidden="true" className="size-4" />
-                {formatEventDates(event.startAt, event.endAt, event.timezone, {
-                  weekday: true,
-                })}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin aria-hidden="true" className="size-4" />
-                {venueLine(event)}
-              </span>
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2.5">
+      <EventPageHeader
+        overview={overview}
+        current="overview"
+        actions={
+          <>
             <Link
               href={publicEventHref(event.slug)}
               className={buttonStyles({ variant: "secondary" })}
@@ -141,19 +66,9 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
                 Edit event
               </Link>
             )}
-          </div>
-        </div>
-        <EventSectionTabs
-          eventId={event.id}
-          counts={{
-            sessions: event.sessions.total,
-            unscheduled: unscheduledCount(overview),
-            speakers: overview.speakerCount,
-            halls: overview.hallCount,
-            attendees: event.registered,
-          }}
-        />
-      </header>
+          </>
+        }
+      />
 
       {event.status === "cancelled" && (
         <Alert tone="error" title="This event is cancelled">

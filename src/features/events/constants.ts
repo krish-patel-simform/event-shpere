@@ -1,3 +1,5 @@
+import { IMAGE_MULTIPART_OVERHEAD_BYTES } from "../cms";
+
 // Event image rules: the server enforces them, the UI uses the same values for its hints.
 
 /** Only real images. The type Strapi detects from the file's bytes must be one of these. */
@@ -12,15 +14,19 @@ export type EventImageType = (typeof EVENT_IMAGE_TYPES)[number];
 // (the multipart wrapper below counts too). Check the current limit in Vercel's docs.
 export const EVENT_IMAGE_MAX_BYTES = 4 * 1024 * 1024; // 4 MB
 
-// The multipart wrapper (boundaries, part headers) adds a few hundred bytes around the file.
-const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
-
 /** Largest request body accepted for one image upload: the file plus the multipart wrapper. */
 export const EVENT_IMAGE_MAX_BODY_BYTES =
-  EVENT_IMAGE_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
+  EVENT_IMAGE_MAX_BYTES + IMAGE_MULTIPART_OVERHEAD_BYTES;
 
 /** At most this many gallery images per event. */
 export const EVENT_GALLERY_MAX_IMAGES = 10;
+
+/**
+ * Several gallery images go up in ONE request, and that request is capped (see the 4.5 MB
+ * function body limit above), so the images of one upload may add up to this much, not 4 MB each.
+ * A bigger selection is uploaded in more than one go.
+ */
+export const EVENT_GALLERY_BATCH_MAX_BYTES = EVENT_IMAGE_MAX_BYTES;
 
 /**
  * Name of the file field in the multipart form. The body is streamed to Strapi as-is, and

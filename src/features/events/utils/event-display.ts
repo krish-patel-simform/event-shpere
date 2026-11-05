@@ -228,6 +228,22 @@ export function sessionsCell(event: ManagedEvent): {
   };
 }
 
+/** A card turns amber when this many seats or fewer are left. */
+export const FEW_SEATS_LEFT = 20;
+
+/** The seats badge on a public event card: the text and its colour. null = no seat limit. */
+export function seatsLeftBadge(seatsLeft: number | null): {
+  text: string;
+  tone: "success" | "warning" | "neutral";
+} {
+  if (seatsLeft === null) return { text: "No seat limit", tone: "neutral" };
+  if (seatsLeft === 0) return { text: "Sold out", tone: "neutral" };
+  return {
+    text: `${plural(seatsLeft, "seat")} left`,
+    tone: seatsLeft <= FEW_SEATS_LEFT ? "warning" : "success",
+  };
+}
+
 /** Whether the organizer can still change the event: not once it is completed or cancelled. */
 export function isEditable(status: EventDisplayStatus): boolean {
   return status === "draft" || status === "published";

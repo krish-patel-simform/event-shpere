@@ -30,7 +30,7 @@ jest.mock("../../api/event-api.service", () => ({
     updateContent: jest.fn(),
     uploadCover: jest.fn(),
     deleteCover: jest.fn(),
-    addGalleryImage: jest.fn(),
+    addGalleryImages: jest.fn(),
     deleteGalleryImage: jest.fn(),
   },
 }));

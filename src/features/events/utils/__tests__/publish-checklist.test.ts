@@ -3,7 +3,10 @@ import {
   type PublishChecklistInput,
 } from "../publish-checklist";
 
+const eventId = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f03";
+
 const ready: PublishChecklistInput = {
+  eventId,
   hasVenue: true,
   hallCount: 2,
   content: { hasDescription: true, hasBanner: true },
@@ -12,6 +15,76 @@ const ready: PublishChecklistInput = {
 
 const check = (overrides: Partial<PublishChecklistInput>) =>
   getPublishChecklist({ ...ready, ...overrides });
+
+/** Where the organizer is sent to fix one item of the checklist. */
+const actionOf = (
+  result: ReturnType<typeof getPublishChecklist>,
+  key: "details" | "content" | "halls" | "sessions",
+) => result.items.find((item) => item.key === key)?.action;
+
+describe("getPublishChecklist: where to fix what is missing", () => {
+  it("offers nothing when everything is in place", () => {
+    const result = check({});
+
+    expect(result.items.map((item) => item.action)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("sends a missing venue to the details step of the event form", () => {
+    expect(actionOf(check({ hasVenue: false }), "details")).toEqual({
+      label: "Choose venue",
+      href: `/organizer/events/${eventId}/edit`,
+    });
+  });
+
+  it("sends missing content to the content step", () => {
+    expect(
+      actionOf(
+        check({ content: { hasDescription: false, hasBanner: true } }),
+        "content",
+      ),
+    ).toEqual({
+      label: "Write content",
+      href: `/organizer/events/${eventId}/edit?step=content`,
+    });
+  });
+
+  it("offers nothing for content the CMS could not answer for: nothing is known to be missing", () => {
+    expect(actionOf(check({ content: null }), "content")).toBeNull();
+  });
+
+  it("offers nothing for missing halls: only an administrator adds them", () => {
+    expect(actionOf(check({ hallCount: 0 }), "halls")).toBeNull();
+  });
+
+  it("sends an event with no sessions to the add-session form", () => {
+    expect(
+      actionOf(
+        check({ sessions: { total: 0, scheduled: 0, cancelled: 0 } }),
+        "sessions",
+      ),
+    ).toEqual({
+      label: "Add session",
+      href: `/organizer/events/${eventId}/sessions/new`,
+    });
+  });
+
+  it("sends unscheduled sessions to the sessions list to review", () => {
+    expect(
+      actionOf(
+        check({ sessions: { total: 2, scheduled: 1, cancelled: 0 } }),
+        "sessions",
+      ),
+    ).toEqual({
+      label: "Review sessions",
+      href: `/organizer/events/${eventId}/sessions`,
+    });
+  });
+});
 
 describe("getPublishChecklist", () => {
   it("can publish when everything is in place", () => {

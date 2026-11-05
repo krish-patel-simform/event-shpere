@@ -13,6 +13,10 @@ import {
   eventTabCountsSchema,
   myEventListResponseSchema,
 } from "../../schemas/event-manage.schemas";
+import {
+  publicEventDetailSchema,
+  publicEventListResponseSchema,
+} from "../../schemas/event-public.schemas";
 import { eventResponseSchema } from "../../schemas/events.schemas";
 import { eventApiService } from "../event-api.service";
 
@@ -26,6 +30,49 @@ const eventId = "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10";
 beforeEach(() => jest.clearAllMocks());
 
 describe("eventApiService", () => {
+  it("listPublic sends only the filters that are set, and parses the public list schema", () => {
+    eventApiService.listPublic({
+      search: "summit",
+      price: "free",
+      when: "past",
+      sort: "popular",
+      page: 2,
+      pageSize: 12,
+    });
+    eventApiService.listPublic({ search: "", pageSize: 12 });
+
+    expect(apiRequestPage).toHaveBeenNthCalledWith(
+      1,
+      {
+        method: "GET",
+        url: "/events",
+        params: {
+          page: 2,
+          pageSize: 12,
+          search: "summit",
+          price: "free",
+          when: "past",
+          sort: "popular",
+        },
+      },
+      publicEventListResponseSchema,
+    );
+    // Nothing set: the server's defaults apply.
+    expect((apiRequestPage as jest.Mock).mock.calls[1][0].params).toEqual({
+      page: 1,
+      pageSize: 12,
+    });
+  });
+
+  it("getPublic reads one event by its slug and parses the public detail schema", () => {
+    eventApiService.getPublic("design-systems-day");
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "GET", url: "/events/slug/design-systems-day" },
+      publicEventDetailSchema,
+    );
+  });
+
   it("listMine asks for a page of the caller's events and parses the list schema", () => {
     eventApiService.listMine({
       status: "published",
@@ -117,6 +164,15 @@ describe("eventApiService", () => {
     );
   });
 
+  it("cancel posts to the event's cancel endpoint, with no body", () => {
+    eventApiService.cancel(eventId);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: `/events/${eventId}/cancel` },
+      eventResponseSchema,
+    );
+  });
+
   it("getContent reads the page content and parses the content schema", () => {
     eventApiService.getContent(eventId);
 
@@ -166,14 +222,29 @@ describe("eventApiService", () => {
       });
     });
 
-    it("addGalleryImage posts one file to the gallery", () => {
-      eventApiService.addGalleryImage(eventId, file);
+    it("addGalleryImages posts one file to the gallery", () => {
+      eventApiService.addGalleryImages(eventId, [file]);
 
       const { config, schema, data } = sentUpload();
       expect(config.method).toBe("POST");
       expect(config.url).toBe(`/events/${eventId}/gallery`);
       expect(data.get(EVENT_IMAGE_FORM_FIELD)).toBe(file);
       expect(schema).toBe(eventGalleryResponseSchema);
+    });
+
+    it("addGalleryImages posts several files in ONE request, in order", () => {
+      const second = new File(["y"], "second.png", { type: "image/png" });
+      const third = new File(["z"], "third.png", { type: "image/png" });
+
+      eventApiService.addGalleryImages(eventId, [file, second, third]);
+
+      expect(apiRequest).toHaveBeenCalledTimes(1);
+      const { data } = sentUpload();
+      expect(data.getAll(EVENT_IMAGE_FORM_FIELD)).toEqual([
+        file,
+        second,
+        third,
+      ]);
     });
   });
 

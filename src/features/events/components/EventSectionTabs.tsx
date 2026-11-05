@@ -1,26 +1,46 @@
 import Link from "next/link";
 import { cn } from "@/src/core/ui";
-import { eventHref } from "../routes";
+import {
+  eventAttendeesHref,
+  eventHallsHref,
+  eventHref,
+  eventScheduleHref,
+  eventSessionsHref,
+  eventSpeakersHref,
+} from "../routes";
+
+/** The tabs of an event's organizer pages; the page you are on is marked. */
+export type EventSection =
+  "overview" | "sessions" | "schedule" | "speakers" | "halls" | "attendees";
 
 type Section = {
   label: string;
+  key: EventSection;
+  href: string;
   count?: number;
   /** The count turns amber: something here needs the organizer. */
   warn?: boolean;
-  /** Its page exists. The others are listed but not links yet. */
-  built: boolean;
 };
 
-/**
- * The tabs every event page shares: Overview, Sessions, Schedule board, Speakers, Halls,
- * Attendees. Only Overview has a page so far; the rest show as disabled instead of linking to
- * pages that do not exist.
- */
+/** The page title shown last in the breadcrumb of a tab (the overview ends at the event). */
+export const EVENT_SECTION_LABELS: Record<EventSection, string> = {
+  overview: "Overview",
+  sessions: "Sessions",
+  schedule: "Schedule board",
+  speakers: "Speakers",
+  halls: "Halls",
+  attendees: "Attendees",
+};
+
+/** The tabs every event page shares: Overview, Sessions, Schedule board, Speakers, Halls, Attendees. */
 export function EventSectionTabs({
   eventId,
+  current,
   counts,
 }: {
   eventId: string;
+  /** The tab of the page being shown. */
+  current: EventSection;
   counts: {
     sessions: number;
     unscheduled: number;
@@ -30,17 +50,38 @@ export function EventSectionTabs({
   };
 }) {
   const sections: Section[] = [
-    { label: "Overview", built: true },
-    { label: "Sessions", count: counts.sessions, built: false },
+    { label: "Overview", key: "overview", href: eventHref(eventId) },
+    {
+      label: "Sessions",
+      key: "sessions",
+      href: eventSessionsHref(eventId),
+      count: counts.sessions,
+    },
     {
       label: "Schedule board",
+      key: "schedule",
+      href: eventScheduleHref(eventId),
       count: counts.unscheduled || undefined,
       warn: true,
-      built: false,
     },
-    { label: "Speakers", count: counts.speakers, built: false },
-    { label: "Halls", count: counts.halls, built: false },
-    { label: "Attendees", count: counts.attendees, built: false },
+    {
+      label: "Speakers",
+      key: "speakers",
+      href: eventSpeakersHref(eventId),
+      count: counts.speakers,
+    },
+    {
+      label: "Halls",
+      key: "halls",
+      href: eventHallsHref(eventId),
+      count: counts.halls,
+    },
+    {
+      label: "Attendees",
+      key: "attendees",
+      href: eventAttendeesHref(eventId),
+      count: counts.attendees,
+    },
   ];
 
   return (
@@ -49,46 +90,32 @@ export function EventSectionTabs({
       className="flex gap-6 overflow-x-auto border-b border-line"
     >
       {sections.map((section) => {
-        const className =
-          "inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-0.5 text-sm";
-        const count = section.count !== undefined && (
-          <span
-            className={cn(
-              "rounded-full px-1.5 text-xs font-semibold",
-              section.warn
-                ? "bg-warning-soft text-warning"
-                : "bg-surface-subtle text-muted",
-            )}
-          >
-            {section.count}
-          </span>
-        );
-
-        if (!section.built) {
-          return (
-            <span
-              key={section.label}
-              aria-disabled="true"
-              title="Coming soon"
-              className={cn(
-                className,
-                "cursor-not-allowed border-transparent text-muted",
-              )}
-            >
-              {section.label}
-              {count}
-            </span>
-          );
-        }
+        const isCurrent = section.key === current;
         return (
           <Link
-            key={section.label}
-            href={eventHref(eventId)}
-            aria-current="page"
-            className={cn(className, "border-brand font-semibold text-link")}
+            key={section.key}
+            href={section.href}
+            aria-current={isCurrent ? "page" : undefined}
+            className={cn(
+              "inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-0.5 text-sm",
+              isCurrent
+                ? "border-brand font-semibold text-link"
+                : "border-transparent text-muted hover:text-foreground",
+            )}
           >
             {section.label}
-            {count}
+            {section.count !== undefined && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-xs font-semibold",
+                  section.warn
+                    ? "bg-warning-soft text-warning"
+                    : "bg-surface-subtle text-muted",
+                )}
+              >
+                {section.count}
+              </span>
+            )}
           </Link>
         );
       })}

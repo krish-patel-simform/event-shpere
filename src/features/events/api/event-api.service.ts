@@ -4,6 +4,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
+import { fileUploadRequest } from "../../../core/api-client/file-upload";
 import { EVENT_IMAGE_FORM_FIELD } from "../constants";
 import {
   eventContentResponseSchema,
@@ -24,6 +25,12 @@ import {
   type EventTabKey,
 } from "../schemas/event-manage.schemas";
 import {
+  publicEventDetailSchema,
+  publicEventListResponseSchema,
+  type PublicEventDetailDto,
+  type PublicEventListQuery,
+} from "../schemas/event-public.schemas";
+import {
   eventResponseSchema,
   type CreateEventRequest,
   type EventDto,
@@ -40,22 +47,53 @@ export type ListMyEventsParams = {
   pageSize: number;
 };
 
-/**
- * One image as multipart/form-data. The JSON content type of the shared client is cleared, so
- * the browser sets `multipart/form-data` with its boundary itself.
- */
-function imageUpload(url: string, file: File) {
-  const data = new FormData();
-  data.append(EVENT_IMAGE_FORM_FIELD, file);
-  return {
-    method: "POST",
-    url,
-    data,
-    headers: { "Content-Type": undefined },
-  } as const;
-}
+/** What the browse page asks for; a left-out filter means the server does not filter by it. */
+export type ListPublicEventsParams = Pick<PublicEventListQuery, "pageSize"> &
+  Partial<Omit<PublicEventListQuery, "pageSize">>;
+
+/** One image, or several, as multipart/form-data in the field the server reads. */
+const imageUpload = (url: string, files: File | readonly File[]) =>
+  fileUploadRequest(url, EVENT_IMAGE_FORM_FIELD, files);
 
 export const eventApiService = {
+  /**
+   * One page of the events anyone can browse (published only), searched, filtered and sorted by
+   * the server, and how many match in total. Needs no login.
+   */
+  listPublic({
+    search,
+    price,
+    when,
+    sort,
+    page = 1,
+    pageSize,
+  }: ListPublicEventsParams) {
+    return apiRequestPage(
+      {
+        method: "GET",
+        url: "/events",
+        // Only what is set goes into the URL, so the server's defaults apply to the rest.
+        params: {
+          page,
+          pageSize,
+          ...(search ? { search } : {}),
+          ...(price ? { price } : {}),
+          ...(when ? { when } : {}),
+          ...(sort ? { sort } : {}),
+        },
+      },
+      publicEventListResponseSchema,
+    );
+  },
+
+  /** One event's public page by its link (404 for a draft or an unknown slug). */
+  getPublic(slug: string): Promise<PublicEventDetailDto> {
+    return apiRequest(
+      { method: "GET", url: `/events/slug/${slug}` },
+      publicEventDetailSchema,
+    );
+  },
+
   /** One page of the signed-in organizer's own events, and how many match in total. */
   listMine({ status, search, sort, page = 1, pageSize }: ListMyEventsParams) {
     return apiRequestPage(
@@ -107,6 +145,17 @@ export const eventApiService = {
     );
   },
 
+  /**
+   * Cancels a published event (final). Its sessions, session bookings and registrations are
+   * cancelled with it. 409 when the event is a draft or already completed.
+   */
+  cancel(eventId: string): Promise<EventDto> {
+    return apiRequest(
+      { method: "POST", url: `/events/${eventId}/cancel` },
+      eventResponseSchema,
+    );
+  },
+
   /** The event page's text and images (Strapi). */
   getContent(eventId: string): Promise<EventContentDto> {
     return apiRequest(
@@ -139,10 +188,16 @@ export const eventApiService = {
     return apiRequest({ method: "DELETE", url: `/events/${eventId}/cover` });
   },
 
-  /** Adds one image to the gallery (409 when it already holds the most). Returns the gallery. */
-  addGalleryImage(eventId: string, file: File): Promise<EventGalleryDto> {
+  /**
+   * Adds one or more images to the gallery in ONE request (409 `GALLERY_FULL` when they do not
+   * all fit, and then none is kept). Returns the whole gallery.
+   */
+  addGalleryImages(
+    eventId: string,
+    files: readonly File[],
+  ): Promise<EventGalleryDto> {
     return apiRequest(
-      imageUpload(`/events/${eventId}/gallery`, file),
+      imageUpload(`/events/${eventId}/gallery`, files),
       eventGalleryResponseSchema,
     );
   },

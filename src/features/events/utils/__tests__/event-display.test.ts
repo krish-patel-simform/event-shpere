@@ -9,6 +9,7 @@ import {
   isFiltering,
   plural,
   registrationsCell,
+  seatsLeftBadge,
   sessionsCell,
   thumbDate,
   toFormDateTime,
@@ -178,6 +179,29 @@ describe("sessionsCell", () => {
 
   it("says when every session was cancelled", () => {
     expect(sessionsCell(byId(MEETUP_ID)).secondary).toBe("All cancelled");
+  });
+});
+
+describe("seatsLeftBadge", () => {
+  it("is green while plenty of seats are left", () => {
+    expect(seatsLeftBadge(120)).toEqual({
+      text: "120 seats left",
+      tone: "success",
+    });
+  });
+
+  it("turns amber at 20 seats or fewer, and says 1 seat in the singular", () => {
+    expect(seatsLeftBadge(21).tone).toBe("success");
+    expect(seatsLeftBadge(20).tone).toBe("warning");
+    expect(seatsLeftBadge(1)).toEqual({ text: "1 seat left", tone: "warning" });
+  });
+
+  it("says sold out at 0, and no limit when there is none", () => {
+    expect(seatsLeftBadge(0)).toEqual({ text: "Sold out", tone: "neutral" });
+    expect(seatsLeftBadge(null)).toEqual({
+      text: "No seat limit",
+      tone: "neutral",
+    });
   });
 });
 

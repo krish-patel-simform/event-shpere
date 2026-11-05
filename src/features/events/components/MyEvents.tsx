@@ -2,13 +2,15 @@
 
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { useDebouncedValue } from "@/src/core/hooks/use-debounced-value";
 import { Alert, Button, buttonStyles, tabId, Tabs } from "@/src/core/ui";
+import { useCancelEvent } from "../hooks/useCancelEvent";
 import { useGetMyEventCounts } from "../hooks/useGetMyEventCounts";
 import { useGetMyEventList } from "../hooks/useGetMyEventList";
 import { EVENT_ROUTES } from "../routes";
 import type { EventTabKey } from "../schemas/event-manage.schemas";
+import type { ManagedEvent } from "../types/event-manage.types";
 import {
   DEFAULT_EVENT_FILTERS,
   EVENT_TABS,
@@ -16,6 +18,7 @@ import {
   TAB_DESCRIPTIONS,
   type EventFilters as Filters,
 } from "../utils/event-display";
+import { CancelEventDialog } from "./EventDialogs";
 import { EventFilters } from "./EventFilters";
 import { EventsTable } from "./EventsTable";
 
@@ -46,6 +49,24 @@ export function MyEvents() {
     pageSize: PAGE_SIZE,
   });
   const counts = useGetMyEventCounts();
+
+  // The event whose "Cancel event" dialog is open; null = closed.
+  const [cancelling, setCancelling] = useState<ManagedEvent | null>(null);
+  const cancel = useCancelEvent();
+
+  // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
+  // would still be open when the organizer comes back. Close it as the page is hidden.
+  useLayoutEffect(() => () => setCancelling(null), []);
+
+  function askToCancel(event: ManagedEvent) {
+    cancel.reset();
+    setCancelling(event);
+  }
+  // The dialog closes when the answer comes, whether it worked or not; the message says which.
+  function confirmCancel(event: ManagedEvent) {
+    if (cancel.isPending) return;
+    cancel.mutate(event.id, { onSettled: () => setCancelling(null) });
+  }
 
   // A new tab, search or sort starts again from the first page.
   function changeTab(next: EventTabKey) {
@@ -86,6 +107,17 @@ export function MyEvents() {
           Create event
         </Link>
       </header>
+
+      {cancel.isSuccess && (
+        <Alert tone="success" title={`${cancel.data.title} was cancelled`}>
+          Registration is closed, and its page shows a cancelled banner.
+        </Alert>
+      )}
+      {cancel.isError && (
+        <Alert tone="error" title="We couldn't cancel the event">
+          {cancel.error.message}
+        </Alert>
+      )}
 
       <Tabs
         label="Filter events by status"
@@ -137,9 +169,16 @@ export function MyEvents() {
             onPageChange={setPage}
             isFiltered={isFiltering(tab, { ...filters, search: term })}
             onClearFilters={clearFilters}
+            onCancel={askToCancel}
           />
         )}
       </div>
+
+      <CancelEventDialog
+        event={cancelling}
+        onClose={() => setCancelling(null)}
+        onConfirm={confirmCancel}
+      />
     </div>
   );
 }

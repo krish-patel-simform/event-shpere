@@ -1,7 +1,14 @@
+import {
+  eventEditHref,
+  eventSessionNewHref,
+  eventSessionsHref,
+} from "../routes";
 import { plural } from "./event-display";
 
 /** What decides whether an event can be published. */
 export type PublishChecklistInput = {
+  /** The event, so each missing item can link to the page that fixes it. */
+  eventId: string;
   /** A venue is chosen. */
   hasVenue: boolean;
   hallCount: number;
@@ -18,6 +25,8 @@ export type ChecklistItem = {
   ok: boolean;
   /** What is done, or what is still missing. */
   description: string;
+  /** Where to fix what is missing; null when it is done, or when the organizer cannot fix it. */
+  action: { label: string; href: string } | null;
 };
 
 export type PublishChecklist = {
@@ -36,7 +45,7 @@ export type PublishChecklist = {
 export function getPublishChecklist(
   input: PublishChecklistInput,
 ): PublishChecklist {
-  const { hasVenue, hallCount, content } = input;
+  const { eventId, hasVenue, hallCount, content } = input;
   const { total, scheduled, cancelled } = input.sessions;
   // Cancelled sessions are not waiting for a slot on the board.
   const unscheduled = Math.max(total - scheduled - cancelled, 0);
@@ -49,6 +58,9 @@ export function getPublishChecklist(
       description: hasVenue
         ? "Dates, venue, capacity and ticket price are set."
         : "Choose a venue for the event.",
+      action: hasVenue
+        ? null
+        : { label: "Choose venue", href: eventEditHref(eventId) },
     },
     {
       key: "content",
@@ -61,6 +73,14 @@ export function getPublishChecklist(
           : content.hasDescription
             ? "The description is written."
             : `The description is missing.${content.hasBanner ? "" : " A banner placeholder will be used."}`,
+      // Nothing to fix when the CMS just did not answer: the check is tried again on its own.
+      action:
+        content === null || content.hasDescription
+          ? null
+          : {
+              label: "Write content",
+              href: eventEditHref(eventId, "content"),
+            },
     },
     {
       key: "halls",
@@ -70,6 +90,8 @@ export function getPublishChecklist(
         hallCount > 0
           ? `${plural(hallCount, "hall")} available at the venue.`
           : "The venue has no halls yet. An administrator adds them.",
+      // Only an administrator can add halls.
+      action: null,
     },
     {
       key: "sessions",
@@ -81,6 +103,12 @@ export function getPublishChecklist(
           : unscheduled > 0
             ? `${plural(unscheduled, "session")} ${unscheduled === 1 ? "is" : "are"} not scheduled yet.`
             : "Every session is on the schedule.",
+      action:
+        total === 0
+          ? { label: "Add session", href: eventSessionNewHref(eventId) }
+          : unscheduled > 0
+            ? { label: "Review sessions", href: eventSessionsHref(eventId) }
+            : null,
     },
   ];
 

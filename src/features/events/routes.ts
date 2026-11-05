@@ -17,6 +17,36 @@ export function eventHref(id: string): string {
   return `${EVENT_ROUTES.list}/${id}`;
 }
 
+/** The organizer's sessions of one event (its second tab). `id` = events.id. */
+export function eventSessionsHref(id: string): string {
+  return `${eventHref(id)}/sessions`;
+}
+
+/** The organizer's schedule board of one event (its third tab). `id` = events.id. */
+export function eventScheduleHref(id: string): string {
+  return `${eventHref(id)}/schedule`;
+}
+
+/** The speakers assigned to one event (its fourth tab). `id` = events.id. */
+export function eventSpeakersHref(id: string): string {
+  return `${eventHref(id)}/speakers`;
+}
+
+/** The halls of one event's venue (its fifth tab). `id` = events.id. */
+export function eventHallsHref(id: string): string {
+  return `${eventHref(id)}/halls`;
+}
+
+/** The people registered for one event (its last tab). `id` = events.id. */
+export function eventAttendeesHref(id: string): string {
+  return `${eventHref(id)}/attendees`;
+}
+
+/** The form that adds a session to an event. `id` = events.id. */
+export function eventSessionNewHref(id: string): string {
+  return `${eventSessionsHref(id)}/new`;
+}
+
 /**
  * The steps of the event form, in order. The URL holds the current one (`?step=content`), so a
  * refresh or the back button keeps the place.

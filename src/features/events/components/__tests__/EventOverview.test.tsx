@@ -13,7 +13,16 @@ import {
   SUMMIT_ID,
 } from "../../__fixtures__/event-manage";
 import { eventApiService } from "../../api/event-api.service";
-import { eventEditHref, EVENT_ROUTES, publicEventHref } from "../../routes";
+import {
+  eventAttendeesHref,
+  eventEditHref,
+  eventHallsHref,
+  eventScheduleHref,
+  eventSessionsHref,
+  eventSpeakersHref,
+  EVENT_ROUTES,
+  publicEventHref,
+} from "../../routes";
 import type { EventOverviewData } from "../../types/event-manage.types";
 import { EventOverview } from "../EventOverview";
 
@@ -153,6 +162,24 @@ describe("EventOverview: a draft", () => {
     expect(card.getByRole("button", { name: "Publish event" })).toBeDisabled();
   });
 
+  it("links each missing item to the page that fixes it", async () => {
+    await renderOverview(sample(FINTECH_ID));
+
+    const card = within(
+      screen.getByRole("region", { name: "Ready to publish?" }),
+    );
+    expect(card.getByRole("link", { name: "Write content" })).toHaveAttribute(
+      "href",
+      eventEditHref(FINTECH_ID, "content"),
+    );
+    expect(card.getByRole("link", { name: "Review sessions" })).toHaveAttribute(
+      "href",
+      eventSessionsHref(FINTECH_ID),
+    );
+    // Done items (and the halls, which only an administrator adds) have no button.
+    expect(card.getAllByRole("link")).toHaveLength(2);
+  });
+
   it("keeps Publish disabled even when nothing is missing: publishing has no endpoint yet", async () => {
     await renderOverview(readyDraft());
 
@@ -184,7 +211,7 @@ describe("EventOverview: a draft", () => {
     );
   });
 
-  it("offers editing and the public page, and the other sections as disabled tabs", async () => {
+  it("offers editing and the public page, and a link for every section tab", async () => {
     await renderOverview(sample(FINTECH_ID));
 
     expect(screen.getByRole("link", { name: "Edit event" })).toHaveAttribute(
@@ -201,13 +228,26 @@ describe("EventOverview: a draft", () => {
       "aria-current",
       "page",
     );
-    // Their pages are not built yet: shown, but not links.
+    expect(sections.getByRole("link", { name: /Sessions/ })).toHaveAttribute(
+      "href",
+      eventSessionsHref(FINTECH_ID),
+    );
+    // Every other section has a page too.
     expect(
-      sections.queryByRole("link", { name: /Sessions/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      sections.getByText("Sessions").closest("[aria-disabled]"),
-    ).toHaveAttribute("aria-disabled", "true");
+      sections.getByRole("link", { name: /Schedule board/ }),
+    ).toHaveAttribute("href", eventScheduleHref(FINTECH_ID));
+    expect(sections.getByRole("link", { name: /Speakers/ })).toHaveAttribute(
+      "href",
+      eventSpeakersHref(FINTECH_ID),
+    );
+    expect(sections.getByRole("link", { name: /Halls/ })).toHaveAttribute(
+      "href",
+      eventHallsHref(FINTECH_ID),
+    );
+    expect(sections.getByRole("link", { name: /Attendees/ })).toHaveAttribute(
+      "href",
+      eventAttendeesHref(FINTECH_ID),
+    );
   });
 
   it("shows the details, with the public link as text", async () => {
