@@ -240,12 +240,14 @@ export const hallsTable = pgTable(
  * Step 4: talks, workshops, panels, keynotes. A session can exist without a hall or time
  * (the "unplaced" tray on the board).
  *
- * NOT expressible in Drizzle, added in a custom migration (`drizzle-kit generate --custom`):
- * no two *scheduled* sessions in one hall at the same time, across all events.
+ * NOT expressible in Drizzle, added in a custom migration (0009_sessions_no_hall_overlap):
+ * no two sessions that HOLD a hall (not cancelled, with a time: draft or scheduled) in one hall at
+ * the same time, across all events. It is the safety net under the service's own check, for two
+ * saves at the same moment.
  *   CREATE EXTENSION IF NOT EXISTS btree_gist;
  *   ALTER TABLE sessions ADD CONSTRAINT sessions_no_hall_overlap
  *     EXCLUDE USING gist (hall_id WITH =, tstzrange(start_at, end_at) WITH &&)
- *     WHERE (status = 'scheduled' AND hall_id IS NOT NULL);
+ *     WHERE (status <> 'cancelled' AND hall_id IS NOT NULL AND start_at IS NOT NULL);
  */
 export const sessionsTable = pgTable(
   "sessions",
@@ -543,7 +545,7 @@ export type NewVenue = typeof venuesTable.$inferInsert;
 export type EventRecord = typeof eventsTable.$inferSelect;
 export type NewEventRecord = typeof eventsTable.$inferInsert;
 export type EventStatus = (typeof eventStatusEnum.enumValues)[number];
-export type EventMode = (typeof sessionModeEnum.enumValues)[number];
+export type SessionMode = (typeof sessionModeEnum.enumValues)[number];
 export type Hall = typeof hallsTable.$inferSelect;
 export type EventSession = typeof sessionsTable.$inferSelect;
 export type SessionType = (typeof sessionTypeEnum.enumValues)[number];

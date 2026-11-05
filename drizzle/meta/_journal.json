@@ -64,6 +64,13 @@
       "when": 1793684929155,
       "tag": "0008_organizer_owns_events",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793799725015,
+      "tag": "0009_sessions_no_hall_overlap",
+      "breakpoints": true
     }
   ]
 }
