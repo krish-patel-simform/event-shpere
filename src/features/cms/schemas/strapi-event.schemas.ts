@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   strapiBlocksSchema,
   strapiMediaSchema,
+  type CmsMedia,
   type StrapiBlocks,
 } from "./strapi-common.schemas";
 
@@ -70,15 +71,11 @@ export const strapiEventPageResponseSchema = z.object({
   data: strapiEventPageEntrySchema,
 });
 
-/** One image of a page after the client cleaned it up: absolute URL, no undefined. */
-export type CmsMedia = {
-  /** Upload file id (needed to delete the file when the image is replaced or removed). */
-  id: number;
-  url: string;
-  alt: string | null;
-  width: number | null;
-  height: number | null;
-};
+// GET /api/event-pages?filters[documentId][$in]=...: Strapi's JSON is untrusted, so each entry is
+// checked on its own with strapiEventPageEntrySchema (one bad entry is skipped, not the whole list).
+export const strapiEventPageListResponseSchema = z.object({
+  data: z.array(z.unknown()),
+});
 
 /** An Event Page after the client cleaned it up: absolute image URLs, no null lists. */
 export type CmsEventPage = {

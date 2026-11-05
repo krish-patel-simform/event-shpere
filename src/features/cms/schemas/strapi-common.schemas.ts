@@ -22,6 +22,20 @@ export const strapiMediaSchema = z.object({
 });
 export type StrapiMedia = z.infer<typeof strapiMediaSchema>;
 
+/**
+ * One image after the client cleaned it up (absolute URL, no undefined): the shape every
+ * feature's responses use for a cover, a photo or a gallery image.
+ */
+export const cmsMediaSchema = z.object({
+  /** Upload file id (needed to delete the file when the image is replaced or removed). */
+  id: z.number().int().positive(),
+  url: z.string(),
+  alt: z.string().nullable(),
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+});
+export type CmsMedia = z.infer<typeof cmsMediaSchema>;
+
 //* POST {STRAPI_URL}/api/upload (multipart, field "files"), streamed through from the browser
 
 /** One uploaded file as Strapi reports it. Used to verify the upload after the fact. */

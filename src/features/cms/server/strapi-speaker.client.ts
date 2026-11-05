@@ -11,6 +11,7 @@ import {
   type StrapiSpeakerEntry,
   type StrapiSpeakerUpdate,
 } from "../schemas/strapi-speaker.schemas";
+import { createCmsMediaMapper } from "./strapi-media-mapper";
 import { StrapiRequestError } from "./strapi-organizer.client";
 
 export type StrapiSpeakerClientConfig = {
@@ -36,27 +37,14 @@ export function createStrapiSpeakerClient(config: StrapiSpeakerClientConfig) {
     return { authorization: `Bearer ${config.apiToken}` };
   }
 
-  /** Local uploads come back as "/uploads/x.jpg": make them absolute so the browser can load them. */
-  function absoluteUrl(url: string): string {
-    if (/^https?:\/\//i.test(url)) return url;
-    return `${config.baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
-  }
+  const { toCmsMedia } = createCmsMediaMapper(config.baseUrl);
 
   /** Strapi's shape → ours: absolute photo URL, empty strings and missing fields → null. */
   function toCmsSpeaker(entry: StrapiSpeakerEntry): CmsSpeaker {
-    const media = entry.photo;
     return {
       documentId: entry.documentId,
       bio: entry.bio ?? [],
-      photo: media
-        ? {
-            id: media.id,
-            url: absoluteUrl(media.url),
-            alt: media.alternativeText || null,
-            width: media.width ?? null,
-            height: media.height ?? null,
-          }
-        : null,
+      photo: entry.photo ? toCmsMedia(entry.photo) : null,
       company: entry.company || null,
       jobTitle: entry.jobTitle || null,
       linkedinUrl: entry.linkedinUrl || null,

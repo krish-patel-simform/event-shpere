@@ -2,15 +2,16 @@ import "server-only";
 import { env } from "../../../config/env";
 import {
   strapiCreateEventPageResponseSchema,
+  strapiEventPageEntrySchema,
+  strapiEventPageListResponseSchema,
   strapiEventPageResponseSchema,
   type CmsEventPage,
-  type CmsMedia,
   type StrapiCreatedEventPage,
   type StrapiCreateEventPageRequest,
   type StrapiEventPageEntry,
   type StrapiEventPageUpdate,
 } from "../schemas/strapi-event.schemas";
-import type { StrapiMedia } from "../schemas/strapi-common.schemas";
+import { createCmsMediaMapper } from "./strapi-media-mapper";
 import { StrapiRequestError } from "./strapi-organizer.client";
 
 export type StrapiEventClientConfig = {
@@ -36,21 +37,7 @@ export function createStrapiEventClient(config: StrapiEventClientConfig) {
     return { authorization: `Bearer ${config.apiToken}` };
   }
 
-  /** Local uploads come back as "/uploads/x.jpg": make them absolute so the browser can load them. */
-  function absoluteUrl(url: string): string {
-    if (/^https?:\/\//i.test(url)) return url;
-    return `${config.baseUrl}${url.startsWith("/") ? "" : "/"}${url}`;
-  }
-
-  function toCmsMedia(media: StrapiMedia): CmsMedia {
-    return {
-      id: media.id,
-      url: absoluteUrl(media.url),
-      alt: media.alternativeText || null,
-      width: media.width ?? null,
-      height: media.height ?? null,
-    };
-  }
+  const { toCmsMedia } = createCmsMediaMapper(config.baseUrl);
 
   /** Strapi's shape → ours: absolute image URLs, empty strings and missing fields → null / []. */
   function toCmsEventPage(entry: StrapiEventPageEntry): CmsEventPage {
@@ -135,6 +122,57 @@ export function createStrapiEventClient(config: StrapiEventClientConfig) {
       return toCmsEventPage(
         strapiEventPageResponseSchema.parse(await response.json()).data,
       );
+    },
+
+    /**
+     * The pages of a whole list of events in ONE call, with only their cover image (a list card
+     * shows the tagline and the banner, nothing else). An entry that fails validation is logged
+     * and left out: that event just shows without CMS content. Strapi's order is not the list's:
+     * match the pages by documentId. (The type has no draft/publish: which events are shown is
+     * decided in Postgres, and only those ids are asked for.)
+     */
+    async findEventPagesByIds(documentIds: string[]): Promise<CmsEventPage[]> {
+      if (documentIds.length === 0) return [];
+
+      const params = new URLSearchParams({ "populate[coverImage]": "true" });
+      documentIds.forEach((id, index) =>
+        params.append(`filters[documentId][$in][${index}]`, id),
+      );
+      // Strapi pages its answers (25 by default): ask for exactly as many as we sent.
+      params.set("pagination[pageSize]", String(documentIds.length));
+
+      const response = await doFetch(
+        `${config.baseUrl}/api/event-pages?${params.toString()}`,
+        {
+          method: "GET",
+          headers: authHeaders(),
+          signal: AbortSignal.timeout(timeoutMs),
+        },
+      );
+      if (!response.ok) {
+        throw new StrapiRequestError(
+          response.status,
+          `Strapi list event pages failed with HTTP ${response.status}`,
+        );
+      }
+
+      const { data } = strapiEventPageListResponseSchema.parse(
+        await response.json(),
+      );
+      const pages: CmsEventPage[] = [];
+      for (const raw of data) {
+        const parsed = strapiEventPageEntrySchema.safeParse(raw);
+        if (parsed.success) {
+          pages.push(toCmsEventPage(parsed.data));
+        } else {
+          // Field paths only: the values are editorial content, nothing we need in logs.
+          console.error(
+            "[cms] invalid Strapi event page skipped:",
+            parsed.error.issues.map((issue) => issue.path.join(".")).join(", "),
+          );
+        }
+      }
+      return pages;
     },
 
     /**

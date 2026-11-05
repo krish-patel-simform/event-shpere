@@ -218,6 +218,98 @@ describe("strapiEventClient.findEventPageById", () => {
   });
 });
 
+describe("strapiEventClient.findEventPagesByIds", () => {
+  const second = { ...strapiPage, id: 8, documentId: "doc-2", tagline: null };
+
+  it("asks for all the pages in ONE call, with only the cover image populated", async () => {
+    const { client, fetchMock } = setup(
+      jsonResponse(200, { data: [strapiPage, second] }),
+    );
+
+    await client.findEventPagesByIds(["doc-1", "doc-2"]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/api/event-pages");
+    expect(parsed.searchParams.get("filters[documentId][$in][0]")).toBe(
+      "doc-1",
+    );
+    expect(parsed.searchParams.get("filters[documentId][$in][1]")).toBe(
+      "doc-2",
+    );
+    expect(parsed.searchParams.get("populate[coverImage]")).toBe("true");
+    // A card needs no gallery, FAQs or SEO.
+    expect(parsed.searchParams.has("populate[gallery]")).toBe(false);
+    // Strapi pages at 25: ask for exactly as many as were sent.
+    expect(parsed.searchParams.get("pagination[pageSize]")).toBe("2");
+    expect(init.method).toBe("GET");
+    expect(init.headers).toMatchObject({ authorization: "Bearer api-token" });
+  });
+
+  it("returns the cleaned-up pages: absolute cover URL, empty things null", async () => {
+    const { client } = setup(jsonResponse(200, { data: [strapiPage, second] }));
+
+    const pages = await client.findEventPagesByIds(["doc-1", "doc-2"]);
+
+    expect(pages.map((page) => page.documentId)).toEqual(["doc-1", "doc-2"]);
+    expect(pages[0]?.tagline).toBe("Learn it all");
+    expect(pages[0]?.coverImage?.url).toBe("http://cms.test/uploads/cover.jpg");
+    expect(pages[1]?.tagline).toBeNull();
+  });
+
+  it("does not call Strapi for an empty list", async () => {
+    const { client, fetchMock } = setup(jsonResponse(200, { data: [] }));
+
+    await expect(client.findEventPagesByIds([])).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips an entry that is not a page and keeps the others", async () => {
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const { client } = setup(
+      jsonResponse(200, { data: [{ id: 1 }, strapiPage] }),
+    );
+
+    const pages = await client.findEventPagesByIds(["doc-1", "x"]);
+
+    expect(pages.map((page) => page.documentId)).toEqual(["doc-1"]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
+
+  it("throws a StrapiRequestError on a failed call", async () => {
+    const { client } = setup(jsonResponse(503, { error: {} }));
+
+    const error = await client.findEventPagesByIds(["doc-1"]).catch((e) => e);
+
+    expect(error).toBeInstanceOf(StrapiRequestError);
+    expect(error.status).toBe(503);
+  });
+
+  it("rejects an answer that is not a list", async () => {
+    const { client } = setup(jsonResponse(200, { data: "nope" }));
+
+    await expect(client.findEventPagesByIds(["doc-1"])).rejects.toBeInstanceOf(
+      ZodError,
+    );
+  });
+
+  it("refuses to call Strapi without an API token", async () => {
+    const fetchMock = jest.fn();
+    const client = createStrapiEventClient({
+      baseUrl: "http://cms.test",
+      apiToken: undefined,
+      fetch: fetchMock,
+    });
+
+    await expect(client.findEventPagesByIds(["doc-1"])).rejects.toThrow(
+      "STRAPI_API_TOKEN",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("strapiEventClient.updateEventPage", () => {
   it("PUTs only the given fields and returns the cleaned-up page", async () => {
     const { client, fetchMock } = setup(

@@ -2,6 +2,14 @@
 import "server-only";
 
 export {
+  createImageUploader,
+  isAcceptableImage,
+  readImageUpload,
+  type ImagePolicy,
+  type ImageUpload,
+  type ImageUploader,
+} from "./image-upload";
+export {
   StrapiRequestError,
   strapiOrganizerClient,
   type StrapiOrganizerClient,
@@ -14,6 +22,10 @@ export {
   strapiMediaClient,
   type StrapiMediaClient,
 } from "./strapi-media.client";
+export {
+  strapiSessionClient,
+  type StrapiSessionClient,
+} from "./strapi-session.client";
 export {
   strapiSpeakerClient,
   type StrapiSpeakerClient,
