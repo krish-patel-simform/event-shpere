@@ -59,7 +59,7 @@ describe("HallAvailability: before and while loading", () => {
 
     expect(
       screen.getByText(
-        "Choose the start and end dates to see which halls are free.",
+        "Choose the start and end dates to see which halls are available.",
       ),
     ).toBeInTheDocument();
     expect(api.getHallAvailability).not.toHaveBeenCalled();
@@ -70,14 +70,16 @@ describe("HallAvailability: before and while loading", () => {
     renderIt();
 
     expect(
-      screen.getByRole("status", { name: "Checking which halls are free" }),
+      screen.getByRole("status", {
+        name: "Checking which halls are available",
+      }),
     ).toBeInTheDocument();
     expect(api.getHallAvailability).toHaveBeenCalledWith(venueId, range);
   });
 });
 
 describe("HallAvailability: the answer", () => {
-  it("says how many halls are completely free and lists each hall", async () => {
+  it("says how many halls are available and lists each hall", async () => {
     api.getHallAvailability.mockResolvedValue([
       hall("a", "Hall A"),
       hall("b", "Hall B", [morning]),
@@ -86,25 +88,21 @@ describe("HallAvailability: the answer", () => {
     renderIt();
 
     expect(
-      await screen.findByText(
-        "2 of 3 halls are completely free on these dates.",
-      ),
+      await screen.findByText("2 of 3 halls are available on these dates."),
     ).toBeInTheDocument();
     const list = screen.getByRole("list", {
       name: "Halls and their availability",
     });
     expect(within(list).getByText("Hall A")).toBeInTheDocument();
     expect(within(list).getAllByText("100 seats")).toHaveLength(3);
-    expect(
-      screen.queryByText(/No hall is completely free/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No hall is available/)).not.toBeInTheDocument();
   });
 
-  it("marks a free hall Free", async () => {
+  it("marks a free hall Available", async () => {
     api.getHallAvailability.mockResolvedValue([hall("a", "Hall A")]);
     renderIt();
 
-    expect(await screen.findByText("Free")).toBeInTheDocument();
+    expect(await screen.findByText("Available")).toBeInTheDocument();
     expect(screen.queryByText("Booked")).not.toBeInTheDocument();
   });
 
@@ -114,7 +112,7 @@ describe("HallAvailability: the answer", () => {
 
     expect(await screen.findByText("Booked")).toBeInTheDocument();
     expect(screen.getByText("12 Dec, 10:00–12:00")).toBeInTheDocument();
-    expect(screen.queryByText("Free")).not.toBeInTheDocument();
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
   });
 
   it("uses the singular for a venue with one hall", async () => {
@@ -122,7 +120,7 @@ describe("HallAvailability: the answer", () => {
     renderIt();
 
     expect(
-      await screen.findByText("1 of 1 hall is completely free on these dates."),
+      await screen.findByText("1 of 1 hall is available on these dates."),
     ).toBeInTheDocument();
   });
 
@@ -141,7 +139,7 @@ describe("HallAvailability: the answer", () => {
     expect(within(booked).getByText("+ 2 more")).toBeInTheDocument();
   });
 
-  it("warns, without blocking, when no hall is completely free", async () => {
+  it("warns, without blocking, when no hall is available", async () => {
     api.getHallAvailability.mockResolvedValue([
       hall("a", "Hall A", [morning]),
       hall("b", "Hall B", [morning]),
@@ -149,12 +147,10 @@ describe("HallAvailability: the answer", () => {
     renderIt();
 
     expect(
-      await screen.findByText(
-        "0 of 2 halls are completely free on these dates.",
-      ),
+      await screen.findByText("0 of 2 halls are available on these dates."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/No hall is completely free on these dates/),
+      screen.getByText(/No hall is available for all of these dates/),
     ).toBeInTheDocument();
     expect(screen.getByText(/can still take sessions/)).toBeInTheDocument();
   });
@@ -199,7 +195,7 @@ describe("HallAvailability: failures", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(
-      await screen.findByText("1 of 1 hall is completely free on these dates."),
+      await screen.findByText("1 of 1 hall is available on these dates."),
     ).toBeInTheDocument();
   });
 

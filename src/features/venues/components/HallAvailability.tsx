@@ -20,10 +20,10 @@ type HallAvailabilityProps = {
 };
 
 /**
- * Which halls of the venue are free for the event's dates: each hall is "Free" or lists when it
- * is booked, and a line says how many are completely free. A hall booked for only a part of the
- * range is not free but can still take sessions at other times, so "none free" is a warning,
- * not an error. The times are all this shows: never what is booked or by whom.
+ * Which halls of the venue are available for the event's dates: each hall is "Available" or lists
+ * when it is booked, and a line says how many are available. A hall booked for only a part of the
+ * range is not available but can still take sessions at other times, so "none available" is a
+ * warning, not an error. The times are all this shows: never what is booked or by whom.
  */
 export function HallAvailability({
   venueId,
@@ -35,7 +35,7 @@ export function HallAvailability({
   if (range === null) {
     return (
       <p className="text-sm text-muted">
-        Choose the start and end dates to see which halls are free.
+        Choose the start and end dates to see which halls are available.
       </p>
     );
   }
@@ -44,7 +44,7 @@ export function HallAvailability({
     return (
       <div
         role="status"
-        aria-label="Checking which halls are free"
+        aria-label="Checking which halls are available"
         className="animate-pulse space-y-2 motion-reduce:animate-none"
       >
         <div className="h-4 w-56 rounded bg-surface-subtle" />
@@ -81,13 +81,13 @@ export function HallAvailability({
   return (
     <div className="space-y-3">
       <p className="text-sm font-semibold" role="status">
-        {free} of {total} {total === 1 ? "hall is" : "halls are"} completely
-        free on these dates.
+        {free} of {total} {total === 1 ? "hall is" : "halls are"} available on
+        these dates.
       </p>
       {free === 0 && (
         <Alert tone="warning">
-          No hall is completely free on these dates. A hall that is only partly
-          booked can still take sessions at the times it is free.
+          No hall is available for all of these dates. A hall that is only
+          partly booked can still take sessions at the times it is available.
         </Alert>
       )}
       <ul
@@ -134,7 +134,7 @@ function HallRow({
           </ul>
         </div>
       ) : (
-        <Badge tone="success">Free</Badge>
+        <Badge tone="success">Available</Badge>
       )}
     </li>
   );

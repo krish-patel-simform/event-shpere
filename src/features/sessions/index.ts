@@ -1,10 +1,50 @@
 // Client-safe public API of the sessions feature. Never export anything from ./server here.
+export {
+  SESSION_COVER_FORM_FIELD,
+  SESSION_COVER_MAX_BYTES,
+  SESSION_COVER_TYPES,
+} from "./constants";
+export { AddSession } from "./components/AddSession";
+export { EventSessions } from "./components/EventSessions";
 export { MySessions } from "./components/MySessions";
 export { SessionDetail } from "./components/SessionDetail";
 export { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 export { SessionListSkeleton } from "./components/SessionListSkeleton";
 export { SubmitSession } from "./components/SubmitSession";
-export { SESSION_ROUTES, sessionHref } from "./routes";
+export {
+  eventSessionEditHref,
+  eventSessionNewHref,
+  parseSessionStep,
+  SESSION_ROUTES,
+  SESSION_STEPS,
+  sessionHref,
+  type SessionStep,
+} from "./routes";
+export {
+  SESSION_CONTENT_LIMITS,
+  sessionContentResponseSchema,
+  sessionCoverResponseSchema,
+  updateSessionContentBodySchema,
+  type SessionContentDto,
+  type SessionCoverDto,
+  type UpdateSessionContentBody,
+  type UpdateSessionContentRequest,
+} from "./schemas/session-content.schemas";
+export {
+  createSessionBodySchema,
+  sessionListResponseSchema,
+  sessionParams,
+  sessionResponseSchema,
+  replaceSessionSpeakersBodySchema,
+  updateSessionBodySchema,
+  type CreateSessionBody,
+  type CreateSessionRequest,
+  type ReplaceSessionSpeakersBody,
+  type ReplaceSessionSpeakersRequest,
+  type SessionDto,
+  type UpdateSessionBody,
+  type UpdateSessionRequest,
+} from "./schemas/sessions.schemas";
 export {
   sessionSubmissionSchema,
   type SessionSubmission,
