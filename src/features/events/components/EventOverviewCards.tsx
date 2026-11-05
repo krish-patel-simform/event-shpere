@@ -13,6 +13,7 @@ import {
   Card,
   cn,
   DescriptionList,
+  SourceBadge,
   type DescriptionItem,
 } from "@/src/core/ui";
 import type { EventOverviewData } from "../types/event-manage.types";
@@ -227,10 +228,18 @@ export function AttentionCard({ items }: { items: readonly AttentionItem[] }) {
                 <TriangleAlert aria-hidden="true" className="size-4" />
               )}
             </span>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="font-semibold">{item.title}</p>
               <p className="text-muted">{item.description}</p>
             </div>
+            {item.action && (
+              <Link
+                href={item.action.href}
+                className={buttonStyles({ variant: "secondary" })}
+              >
+                {item.action.label}
+              </Link>
+            )}
           </li>
         ))}
       </ul>
@@ -351,7 +360,8 @@ export function DangerZoneCard({
 }: {
   status: "draft" | "published";
   onCancel: () => void;
-  onDelete: () => void;
+  /** Deletes the draft. Without it the button stays off: there is no delete endpoint yet. */
+  onDelete?: () => void;
 }) {
   return (
     <Card title="Danger zone">
@@ -363,11 +373,18 @@ export function DangerZoneCard({
           <Button
             variant="secondary"
             onClick={onDelete}
+            disabled={!onDelete}
             className="text-danger"
           >
             <Trash2 aria-hidden="true" className="size-4" />
             Delete draft
           </Button>
+          {!onDelete && (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <SourceBadge source="static" />
+              Deleting a draft is not available yet.
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

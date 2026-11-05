@@ -10,10 +10,11 @@ import {
   Button,
   buttonStyles,
   Card,
+  cn,
   SourceBadge,
 } from "@/src/core/ui";
 import { EVENT_GALLERY_MAX_IMAGES, EVENT_IMAGE_MAX_BYTES } from "../constants";
-import { useGetEventContent } from "../hooks/useGetEventContent";
+import type { useGetEventContent } from "../hooks/useGetEventContent";
 import { eventEditHref } from "../routes";
 import type { EventContentDto } from "../schemas/event-content.schemas";
 import { plural } from "../utils/event-display";
@@ -56,12 +57,14 @@ function SectionAction({
  * shows a placeholder, and the event can still be published.
  */
 export function CoverStrip({
+  eventId,
   cover,
-  editHref,
+  editable,
 }: {
+  eventId: string;
   cover: EventContentDto["coverImage"];
-  /** Where "Replace" goes; null once the event can no longer be edited. */
-  editHref: string | null;
+  /** False once the event can no longer be edited: the change link is hidden. */
+  editable: boolean;
 }) {
   return (
     <section
@@ -96,9 +99,9 @@ export function CoverStrip({
           </p>
         )}
       </div>
-      {editHref && (
+      {editable && (
         <Link
-          href={eventEditHref(editHref, "media")}
+          href={eventEditHref(eventId, "media")}
           className={buttonStyles({ variant: "secondary" })}
         >
           {cover ? "Replace" : "Add cover image"}
@@ -193,13 +196,13 @@ function ContentSections({
           </p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {content.gallery.slice(0, GALLERY_PREVIEW).map((image) => (
+            {content.gallery.slice(0, GALLERY_PREVIEW).map((image, index) => (
               <li key={image.id}>
                 {/* A plain <img>, like the cover above. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={image.url}
-                  alt={image.alt ?? ""}
+                  alt={image.alt ?? `Gallery photo ${index + 1}`}
                   loading="lazy"
                   className="aspect-video w-full rounded-md object-cover"
                 />
@@ -275,21 +278,19 @@ function ContentSections({
 
 /**
  * The event page's content as the public sees it: description, gallery, directions and FAQs,
- * read from GET /api/events/[id]/content. It loads on its own, so a slow or unavailable CMS never
- * blocks the figures above; it shows a skeleton while loading and an error with a retry.
+ * from GET /api/events/[id]/content. The page owns the query (the cover strip reads the same
+ * answer), so a slow or unavailable CMS never blocks the figures above: this shows a skeleton
+ * while loading and an error with a retry.
  */
 export function EventContentOverview({
   eventId,
   editable,
-  onContent,
+  content,
 }: {
   eventId: string;
   editable: boolean;
-  /** Gives the cover strip (above, outside this column) the loaded content. */
-  onContent?: (content: EventContentDto) => void;
+  content: ReturnType<typeof useGetEventContent>;
 }) {
-  const content = useGetEventContent(eventId);
-
   if (content.isPending) return <ContentSkeleton />;
 
   if (content.isError) {
@@ -307,7 +308,6 @@ export function EventContentOverview({
     );
   }
 
-  onContent?.(content.data);
   return (
     <>
       <Alert tone="info" title="Page content">
@@ -316,11 +316,7 @@ export function EventContentOverview({
         {editable && (
           <Link
             href={eventEditHref(eventId, "content")}
-            className={
-              buttonStyles({
-                variant: "secondary",
-              }) + " mt-3 w-fit"
-            }
+            className={cn(buttonStyles({ variant: "secondary" }), "mt-3 w-fit")}
           >
             Open content editor
           </Link>
@@ -351,7 +347,6 @@ export function QuickActionsCard() {
         {QUICK_ACTIONS.map(({ label, icon: Icon }) => (
           <li
             key={label}
-            aria-disabled="true"
             className="flex items-center gap-2.5 py-1.5 text-muted"
           >
             <Icon aria-hidden="true" className="size-4" />

@@ -1,15 +1,29 @@
 "use client";
 
-import { ExternalLink, Pencil } from "lucide-react";
+import { ExternalLink, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
+import { useLayoutEffect, useState } from "react";
 import { Alert, buttonStyles } from "@/src/core/ui";
-import { eventEditHref, publicEventHref } from "../routes";
-import type { EventOverviewData } from "../types/event-manage.types";
+import { useHasPermission } from "@/src/features/auth";
+import { useCancelEvent } from "../hooks/useCancelEvent";
+import { useGetEventContent } from "../hooks/useGetEventContent";
+import { eventEditHref, eventSessionNewHref, publicEventHref } from "../routes";
+import type {
+  EventOverviewData,
+  ManagedEvent,
+} from "../types/event-manage.types";
 import { getAttentionItems } from "../utils/event-attention";
 import { isEditable } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import {
+  CoverStrip,
+  EventContentOverview,
+  QuickActionsCard,
+} from "./EventContentCards";
+import { CancelEventDialog } from "./EventDialogs";
+import {
   AttentionCard,
+  DangerZoneCard,
   DetailsCard,
   KpiGrid,
   PublishChecklistCard,
@@ -19,9 +33,10 @@ import { EventLoader } from "./EventLoader";
 import { EventPageHeader } from "./EventPageHeader";
 
 /**
- * The organizer's page for one event, loaded from GET /api/events/[id]: its status and figures,
- * what is left before a draft can be published, what a published event needs attention for, and
- * its details. Publishing, cancelling and deleting come with their endpoints.
+ * The organizer's page for one event, loaded from GET /api/events/[id]: its cover, status and
+ * figures, what is left before a draft can be published, what a published event needs attention
+ * for, the page content, its details, and the danger zone (cancel a published event). Publishing
+ * and deleting a draft come with their endpoints and stay off until then.
  */
 export function EventOverview({ eventId }: { eventId: string }) {
   return (
@@ -35,6 +50,7 @@ export function EventOverview({ eventId }: { eventId: string }) {
 function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
   const editable = isEditable(event.status);
+  const canCreateSession = useHasPermission("SESSION_CREATE");
   const checklist = getPublishChecklist({
     eventId: event.id,
     hasVenue: event.venue !== null,
@@ -42,6 +58,24 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
     content: overview.content,
     sessions: event.sessions,
   });
+
+  // The cover strip and the content sections read the same answer of the CMS.
+  const content = useGetEventContent(event.id);
+
+  // "Cancel event" asks first; the dialog is closed when the page is hidden (React <Activity>
+  // keeps it mounted), and when the answer comes, whether it worked or not.
+  const [cancelling, setCancelling] = useState<ManagedEvent | null>(null);
+  const cancel = useCancelEvent();
+  useLayoutEffect(() => () => setCancelling(null), []);
+
+  function askToCancel() {
+    cancel.reset();
+    setCancelling(event);
+  }
+  function confirmCancel(target: ManagedEvent) {
+    if (cancel.isPending) return;
+    cancel.mutate(target.id, { onSettled: () => setCancelling(null) });
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -57,6 +91,15 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
               <ExternalLink aria-hidden="true" className="size-4" />
               View public page
             </Link>
+            {editable && canCreateSession && (
+              <Link
+                href={eventSessionNewHref(event.id)}
+                className={buttonStyles({ variant: "secondary" })}
+              >
+                <Plus aria-hidden="true" className="size-4" />
+                Create session
+              </Link>
+            )}
             {editable && (
               <Link
                 href={eventEditHref(event.id)}
@@ -80,6 +123,22 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           A completed event is read-only.
         </Alert>
       )}
+      {cancel.isSuccess && (
+        <Alert tone="success" title={`${cancel.data.title} was cancelled`} />
+      )}
+      {cancel.isError && (
+        <Alert tone="error" title="We couldn't cancel the event">
+          {cancel.error.message}
+        </Alert>
+      )}
+
+      {content.isSuccess && (
+        <CoverStrip
+          eventId={event.id}
+          cover={content.data.coverImage}
+          editable={editable}
+        />
+      )}
 
       <KpiGrid overview={overview} />
 
@@ -97,14 +156,29 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           {event.status === "completed" && (
             <RegistrationProgressCard overview={overview} />
           )}
+          <EventContentOverview
+            eventId={event.id}
+            editable={editable}
+            content={content}
+          />
         </div>
         <div className="space-y-5">
           <DetailsCard
             overview={overview}
             editHref={editable ? eventEditHref(event.id) : null}
           />
+          {event.status !== "cancelled" && <QuickActionsCard />}
+          {(event.status === "draft" || event.status === "published") && (
+            <DangerZoneCard status={event.status} onCancel={askToCancel} />
+          )}
         </div>
       </div>
+
+      <CancelEventDialog
+        event={cancelling}
+        onClose={() => setCancelling(null)}
+        onConfirm={confirmCancel}
+      />
     </div>
   );
 }
