@@ -1,3 +1,4 @@
+import { eventScheduleHref, eventSessionsHref } from "../../routes";
 import type { EventOverviewData } from "../../types/event-manage.types";
 import { getAttentionItems, unscheduledCount } from "../event-attention";
 import {
@@ -41,6 +42,21 @@ describe("getAttentionItems", () => {
     expect(items[2].description).toMatch(
       /^Registration is open · published 12 Sept? 2026\.$/,
     );
+  });
+
+  it("links each item that needs the organizer to where it is fixed", () => {
+    const items = getAttentionItems(overview(SUMMIT_ID));
+
+    expect(items[0].action).toEqual({
+      label: "Open schedule board",
+      href: eventScheduleHref(SUMMIT_ID),
+    });
+    expect(items[1].action).toEqual({
+      label: "Review sessions",
+      href: eventSessionsHref(SUMMIT_ID),
+    });
+    // "Event is published" needs nothing from the organizer.
+    expect(items[2].action).toBeUndefined();
   });
 
   it("leaves out unscheduled sessions when there are none", () => {
