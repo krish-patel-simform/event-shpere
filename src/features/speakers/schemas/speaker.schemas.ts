@@ -84,6 +84,8 @@ export const listSpeakersQuerySchema = z.object({
 export type ListSpeakersQuery = z.infer<typeof listSpeakersQuerySchema>;
 
 export const speakerListItemSchema = z.object({
+  /** speaker_profiles.id: what an organizer's session speakers are chosen by. */
+  id: z.uuid(),
   slug: z.string(),
   firstName: z.string(),
   lastName: z.string(),

@@ -51,6 +51,10 @@ describe("createVenueFormSchema", () => {
     expect(messageAt(blank, "city")).toBe("City is required");
   });
 
+  it("needs a state to be picked", () => {
+    expect(messageAt({ ...valid, state: " " }, "state")).toBe("Select a state");
+  });
+
   it("accepts a lower-case country code and refuses a long one", () => {
     expect(messageAt({ ...valid, country: "in" }, "country")).toBeUndefined();
     expect(messageAt({ ...valid, country: "IND" }, "country")).toMatch(
@@ -149,14 +153,12 @@ describe("toCreateVenueBody", () => {
   it("leaves blank optional fields out of the body", () => {
     const body = toCreateVenueBody({
       ...valid,
-      state: "",
       postalCode: "",
       latitude: "",
       longitude: "",
     });
 
     // undefined is dropped when the body is sent as JSON.
-    expect(body.state).toBeUndefined();
     expect(body.postalCode).toBeUndefined();
     expect(body.latitude).toBeUndefined();
     expect(body.longitude).toBeUndefined();

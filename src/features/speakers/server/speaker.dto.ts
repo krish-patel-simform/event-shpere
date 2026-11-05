@@ -87,12 +87,14 @@ function toSummary(row: SpeakerRow, cms: CmsSpeaker) {
   };
 }
 
-// Public: name from Postgres, the rest from the CMS. No email, status or ids.
+// Public: name from Postgres, the rest from the CMS. No email or status. The profile id is the
+// one id shown (the same one a session's speakers carry): an organizer picks speakers by it.
 export function toSpeakerListItemDto(
   row: SpeakerRow,
   cms: CmsSpeaker | null,
 ): SpeakerListItemDto {
   return {
+    id: row.id,
     slug: row.slug,
     firstName: row.firstName,
     lastName: row.lastName,

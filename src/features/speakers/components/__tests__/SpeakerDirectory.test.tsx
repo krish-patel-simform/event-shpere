@@ -357,6 +357,7 @@ describe("SpeakerDirectory: paging", () => {
   function vikramLike(index: number): SpeakerListItemDto {
     const name = String(index).padStart(2, "0");
     return {
+      id: `00000000-0000-4000-8000-${name.padStart(12, "0")}`,
       slug: `speaker-${name}`,
       firstName: `Speaker${name}`,
       lastName: "Test",

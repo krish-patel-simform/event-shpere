@@ -64,6 +64,8 @@ export type ExistingSpeakerRow = {
 
 /** What the public reads need from Postgres; the rest of the profile comes from the CMS. */
 export type SpeakerRow = {
+  /** speaker_profiles.id: what a session's speakers are linked by. */
+  id: string;
   slug: string;
   firstName: string;
   lastName: string;
@@ -72,6 +74,7 @@ export type SpeakerRow = {
 };
 
 const speakerRowColumns = {
+  id: speakersProfilesTable.id,
   slug: speakersProfilesTable.slug,
   firstName: usersTable.firstName,
   lastName: usersTable.lastName,
@@ -79,10 +82,7 @@ const speakerRowColumns = {
 };
 
 /** The logged-in speaker's own profile row (found by their user id, never by a request id). */
-export type OwnSpeakerRow = SpeakerRow & {
-  /** speaker_profiles.id */
-  id: string;
-};
+export type OwnSpeakerRow = SpeakerRow;
 
 // Suspended accounts are not shown publicly. Pending (invited, no password yet) are:
 // a speaker is usable as soon as an organizer adds them.
@@ -148,7 +148,7 @@ export const speakerRepository = {
   /** The speaker profile of this user; null = the user is not a speaker. */
   async findOwnSpeaker(userId: string): Promise<OwnSpeakerRow | null> {
     const [row] = await db
-      .select({ id: speakersProfilesTable.id, ...speakerRowColumns })
+      .select(speakerRowColumns)
       .from(speakersProfilesTable)
       .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
       .where(eq(speakersProfilesTable.userId, userId))

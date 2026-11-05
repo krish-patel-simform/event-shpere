@@ -2,9 +2,22 @@
 export { AdminVenueDetail } from "./components/AdminVenueDetail";
 export { AdminVenueNew } from "./components/AdminVenueNew";
 export { AdminVenues } from "./components/AdminVenues";
+export { HallAvailability } from "./components/HallAvailability";
 export { VenueDirectory } from "./components/VenueDirectory";
 export { VenueProfile, VenueProfileSkeleton } from "./components/VenueProfile";
+export { useGetHallAvailability } from "./hooks/useGetHallAvailability";
+export { useGetVenueList } from "./hooks/useGetVenueList";
 export { adminVenueHref, VENUE_ROUTES, venueHref } from "./routes";
+export {
+  bookedSlotSchema,
+  HALL_AVAILABILITY_MAX_DAYS,
+  hallAvailabilityQuerySchema,
+  hallAvailabilityResponseSchema,
+  hallAvailabilitySchema,
+  type HallAvailabilityDto,
+  type HallAvailabilityQuery,
+  type HallAvailabilityRequest,
+} from "./schemas/hall-availability.schemas";
 export {
   createVenueFormSchema,
   toCreateVenueBody,

@@ -1,5 +1,29 @@
+import { IMAGE_MULTIPART_OVERHEAD_BYTES } from "../cms";
+
 // Fixed choices of the sessions feature. Plain data (no React), shared by the Zod schema, the
 // form and the list filters, so a new format is added in one place.
+
+// Session cover image rules: the server enforces them, the UI uses the same values for its hints.
+
+/** Only real images. The type Strapi detects from the file's bytes must be one of these. */
+export const SESSION_COVER_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+
+// 4 MB: the image passes through a Vercel function, whose request body limit is 4.5 MB.
+export const SESSION_COVER_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Largest request body accepted for the cover: the file plus the multipart wrapper. */
+export const SESSION_COVER_MAX_BODY_BYTES =
+  SESSION_COVER_MAX_BYTES + IMAGE_MULTIPART_OVERHEAD_BYTES;
+
+/**
+ * Name of the file field in the multipart form. The body is streamed to Strapi as-is, and
+ * Strapi's upload API reads its files from a field called "files".
+ */
+export const SESSION_COVER_FORM_FIELD = "files";
 
 export const SESSION_FORMATS = [
   "talk",

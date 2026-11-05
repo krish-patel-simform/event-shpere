@@ -105,12 +105,8 @@ export function daysUntil(iso: string, now: string): number {
   return Math.max(0, Math.ceil(ms / 86_400_000));
 }
 
-/** "1.8 MB" */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// Shared with the events feature's image uploads: one implementation in core.
+export { formatFileSize } from "@/src/core/format/format-file-size";
 
 //* Registrations
 
