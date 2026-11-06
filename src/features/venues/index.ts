@@ -6,6 +6,7 @@ export { HallAvailability } from "./components/HallAvailability";
 export { VenueDirectory } from "./components/VenueDirectory";
 export { VenueProfile, VenueProfileSkeleton } from "./components/VenueProfile";
 export { useGetHallAvailability } from "./hooks/useGetHallAvailability";
+export { useGetVenueDetail } from "./hooks/useGetVenueDetail";
 export { useGetVenueList } from "./hooks/useGetVenueList";
 export { adminVenueHref, VENUE_ROUTES, venueHref } from "./routes";
 export {

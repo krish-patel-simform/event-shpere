@@ -115,7 +115,8 @@ export const venueApiService = {
       {
         method: "GET",
         url: `/venues/${venueId}/halls/availability`,
-        params: { startAt: range.startAt, endAt: range.endAt },
+        // `exceptSessionId` is only there when a session is being edited.
+        params: range,
       },
       hallAvailabilityResponseSchema,
     );

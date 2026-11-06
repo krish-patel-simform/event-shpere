@@ -65,11 +65,14 @@ export const hallBookingRepository = {
    * The times these halls are taken that fall inside [startAt, endAt), earliest first: one
    * query for the whole list, so a screen of halls does not ask once per hall. A hall that is
    * only partly taken still returns its slots, so the caller can show the free gaps.
+   * `exceptSessionId` leaves one session out: the one being edited must not make its own hall look
+   * taken.
    */
   async findHeldSlotsInHalls(params: {
     hallIds: string[];
     startAt: Date;
     endAt: Date;
+    exceptSessionId?: string;
   }): Promise<{ hallId: string; startAt: Date; endAt: Date }[]> {
     if (params.hallIds.length === 0) return [];
 
@@ -86,6 +89,9 @@ export const hallBookingRepository = {
           holdingHall,
           lt(sessionsTable.startAt, params.endAt),
           gt(sessionsTable.endAt, params.startAt),
+          params.exceptSessionId
+            ? ne(sessionsTable.id, params.exceptSessionId)
+            : undefined,
         ),
       )
       .orderBy(sessionsTable.startAt);

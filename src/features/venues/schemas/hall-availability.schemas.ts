@@ -19,6 +19,9 @@ export const hallAvailabilityQuerySchema = z
   .object({
     startAt: isoDate,
     endAt: isoDate,
+    // The session being edited: its own booking must not make its hall look taken. It only hides
+    // that one booking from this answer; saving the session still checks the hall again.
+    exceptSessionId: z.uuid("Session id must be a valid id").optional(),
   })
   .superRefine((query, ctx) => {
     // Zod still runs this when a date failed to parse (the field then holds the raw text), and

@@ -58,6 +58,8 @@ export function createHallBookingService(deps: HallBookingDeps) {
       hallIds: string[];
       startAt: Date;
       endAt: Date;
+      /** The session being edited: its own booking is left out. */
+      exceptSessionId?: string;
     }): Promise<{ hallId: string; startAt: Date; endAt: Date }[]> {
       return deps.repository.findHeldSlotsInHalls(params);
     },

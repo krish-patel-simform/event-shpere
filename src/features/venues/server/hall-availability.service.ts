@@ -60,6 +60,7 @@ export function createHallAvailabilityService(deps: HallAvailabilityDeps) {
         hallIds: halls.map((hall) => hall.id),
         startAt: query.startAt,
         endAt: query.endAt,
+        exceptSessionId: query.exceptSessionId,
       });
 
       return halls.map((hall) => {

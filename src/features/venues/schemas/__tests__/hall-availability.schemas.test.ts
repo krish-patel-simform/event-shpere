@@ -25,6 +25,23 @@ describe("hallAvailabilityQuerySchema", () => {
     expect(parsed.endAt).toEqual(new Date("2026-12-12T11:30:00.000Z"));
   });
 
+  it("takes the id of the session being edited, and refuses anything that is not an id", () => {
+    const sessionId = "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01";
+
+    expect(
+      hallAvailabilityQuerySchema.parse({
+        ...valid,
+        exceptSessionId: sessionId,
+      }).exceptSessionId,
+    ).toBe(sessionId);
+    expect(hallAvailabilityQuerySchema.parse(valid).exceptSessionId).toBe(
+      undefined,
+    );
+    expect(issuePaths({ ...valid, exceptSessionId: "not-an-id" })).toEqual([
+      "exceptSessionId",
+    ]);
+  });
+
   it("refuses an end that is not after the start", () => {
     expect(issuePaths({ ...valid, endAt: valid.startAt })).toContain("endAt");
     expect(

@@ -127,6 +127,34 @@ describe("hallAvailabilityService.getHallAvailability", () => {
     });
   });
 
+  it("leaves out the session being edited, so its own booking does not make its hall busy", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    const sessionId = "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01";
+
+    await service.getHallAvailability(
+      venueId,
+      { ...query, exceptSessionId: sessionId },
+      organizer,
+    );
+
+    expect(deps.hallBooking.findHeldSlots).toHaveBeenCalledWith({
+      hallIds: [hallA, hallB],
+      startAt: query.startAt,
+      endAt: query.endAt,
+      exceptSessionId: sessionId,
+    });
+  });
+
+  it("leaves nothing out when no session is named", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+
+    await service.getHallAvailability(venueId, query, organizer);
+
+    expect(
+      deps.hallBooking.findHeldSlots.mock.calls[0][0].exceptSessionId,
+    ).toBeUndefined();
+  });
+
   it("marks a hall busy when it is only PARTLY taken, and says which times", async () => {
     const { service, deps } = setup({ venue: venue(), halls });
     // Hall B has one session from 10:00 to 12:00 IST inside the 09:00-17:00 range.

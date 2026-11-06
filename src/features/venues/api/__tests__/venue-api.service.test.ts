@@ -36,6 +36,25 @@ describe("venueApiService", () => {
     );
   });
 
+  it("getHallAvailability also sends the session being edited, so its own booking is left out", () => {
+    const range = {
+      startAt: "2026-12-12T09:00:00+05:30",
+      endAt: "2026-12-12T17:00:00+05:30",
+      exceptSessionId: "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01",
+    };
+
+    venueApiService.getHallAvailability(venueId, range);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: range,
+      },
+      hallAvailabilityResponseSchema,
+    );
+  });
+
   it("get reads one venue and parses the detail schema", () => {
     venueApiService.get(venueId);
 
