@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { stateApiService } from "@/src/features/locations/api/state-api.service";
@@ -13,6 +13,7 @@ import {
   SAMPLE_STATES,
   SAMPLE_VENUES,
 } from "../../__fixtures__/event-manage";
+import { setValue } from "../../__fixtures__/pickers";
 import { renderWithClient, venueListFor } from "../../__fixtures__/render";
 import { eventApiService } from "../../api/event-api.service";
 import { eventEditHref, eventHref, EVENT_ROUTES } from "../../routes";
@@ -85,10 +86,6 @@ const stateSelect = () => screen.getByRole("combobox", { name: "State" });
 const venueSelect = () => screen.getByRole("combobox", { name: "Venue" });
 const statesLoaded = () => waitFor(() => expect(stateSelect()).toBeEnabled());
 
-function setValue(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
-}
-
 beforeEach(() => {
   jest.resetAllMocks();
   statesApi.list.mockResolvedValue([...SAMPLE_STATES]);
@@ -124,8 +121,8 @@ describe("EventFormPage: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.type(screen.getByLabelText(/Event capacity/), "250");
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
     await user.click(screen.getByRole("button", { name: "Create event" }));
@@ -155,8 +152,8 @@ describe("EventFormPage: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.click(stateSelect());
     await user.click(
       await screen.findByRole("option", { name: /^Maharashtra/ }),
@@ -202,8 +199,8 @@ describe("EventFormPage: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -228,8 +225,8 @@ describe("EventFormPage: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -256,8 +253,8 @@ describe("EventFormPage: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -358,8 +355,8 @@ describe("EventFormPage: editing", () => {
 
     await user.clear(screen.getByLabelText("Event title"));
     await user.type(screen.getByLabelText("Event title"), "Fintech Forum 2027");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.click(screen.getByRole("button", { name: "Save & continue" }));
 
     await waitFor(() =>
@@ -385,8 +382,8 @@ describe("EventFormPage: editing", () => {
     renderWithClient(<EventFormPage eventId={FINTECH_ID} />);
     await screen.findByLabelText("Event title");
 
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.clear(screen.getByLabelText(/Event capacity/));
     await waitFor(() => expect(venueSelect()).toBeEnabled());
     await user.click(venueSelect());
@@ -416,8 +413,8 @@ describe("EventFormPage: editing", () => {
     renderWithClient(<EventFormPage eventId={FINTECH_ID} />);
     await screen.findByLabelText("Event title");
 
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.click(screen.getByRole("button", { name: "Save & continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -438,8 +435,8 @@ describe("EventFormPage: editing", () => {
     renderWithClient(<EventFormPage eventId={FINTECH_ID} />);
     await screen.findByLabelText("Event title");
 
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.click(screen.getByRole("button", { name: "Save & continue" }));
 
     expect(

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { stateApiService } from "@/src/features/locations/api/state-api.service";
 import { venueApiService } from "@/src/features/venues/api/venue-api.service";
@@ -10,9 +10,11 @@ import {
   SAMPLE_STATES,
   SAMPLE_VENUES,
 } from "../../__fixtures__/event-manage";
+import { dayButtonName, setValue } from "../../__fixtures__/pickers";
 import { renderWithClient, venueListFor } from "../../__fixtures__/render";
 import { eventHref, EVENT_ROUTES } from "../../routes";
 import type { ManagedEvent } from "../../types/event-manage.types";
+import { eventDateLimits } from "../../utils/event-date-limits";
 import { EventForm } from "../EventForm";
 
 jest.mock("@/src/features/locations/api/state-api.service", () => ({
@@ -48,11 +50,6 @@ const optionNames = () =>
 
 /** The states arrive from the API: wait until the State select can be used. */
 const statesLoaded = () => waitFor(() => expect(stateSelect()).toBeEnabled());
-
-/** Date and time boxes are filled with change events: typing into them is browser-specific. */
-function setValue(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label), { target: { value } });
-}
 
 /** The values the form handed to onSubmit (react-hook-form also passes the DOM event). */
 const submittedValues = (onSubmit: jest.Mock) => onSubmit.mock.calls[0][0];
@@ -92,8 +89,15 @@ describe("EventForm: creating", () => {
     await statesLoaded();
 
     expect(screen.getByLabelText("Event title")).toHaveValue("");
-    expect(screen.getByLabelText("Start time")).toHaveValue("09:00");
-    expect(screen.getByLabelText("End time")).toHaveValue("17:00");
+    expect(
+      screen.getByRole("button", { name: /Start date/ }),
+    ).toHaveTextContent("Select a date");
+    expect(
+      screen.getByRole("combobox", { name: /Start time/ }),
+    ).toHaveTextContent("9:00 AM");
+    expect(
+      screen.getByRole("combobox", { name: /End time/ }),
+    ).toHaveTextContent("5:00 PM");
     expect(screen.getByLabelText("Ticket price (₹)")).toHaveValue("");
     expect(screen.getByLabelText("Ticket price (₹)")).toHaveAttribute(
       "placeholder",
@@ -140,15 +144,16 @@ describe("EventForm: creating", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("rejects an end before the start", async () => {
+  it("rejects an end before the start when the start is moved past the end", async () => {
     const user = userEvent.setup();
     renderWithClient(<EventForm onSubmit={jest.fn()} />);
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", dayFromNow(30));
-    setValue("End date", dayFromNow(30));
-    setValue("End time", "08:00");
+    await setValue("Start date", dayFromNow(30));
+    await setValue("End date", dayFromNow(30));
+    // The end can not be chosen before the start, but the start can still be moved past it.
+    await setValue("Start date", dayFromNow(31));
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
     expect(
@@ -156,19 +161,115 @@ describe("EventForm: creating", () => {
     ).toBeInTheDocument();
   });
 
-  it("rejects a start in the past", async () => {
-    const user = userEvent.setup();
-    renderWithClient(<EventForm onSubmit={jest.fn()} />);
-    await statesLoaded();
+  describe("the date and time pickers", () => {
+    const limits = eventDateLimits();
+    const openStartDate = (user: User) =>
+      user.click(screen.getByRole("button", { name: /^Start date/ }));
 
-    await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", "2020-01-01");
-    setValue("End date", "2020-01-01");
-    await user.click(screen.getByRole("button", { name: "Create event" }));
+    it("offers no day before today", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
 
-    expect(
-      await screen.findByText("The event must start in the future"),
-    ).toBeInTheDocument();
+      await openStartDate(user);
+
+      expect(
+        screen.getByRole("button", { name: "Go to the Previous Month" }),
+      ).toHaveAttribute("aria-disabled", "true");
+      expect(
+        screen.getByRole("button", { name: dayButtonName(limits.min) }),
+      ).toBeEnabled();
+    });
+
+    it("offers years from this one up to ten years ahead, and no further", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      await openStartDate(user);
+
+      const years = within(screen.getByRole("dialog")).getByRole("combobox", {
+        name: "Choose the Year",
+      });
+      const names = within(years)
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+      expect(names[0]).toBe(limits.min.slice(0, 4));
+      expect(names.at(-1)).toBe(limits.max.slice(0, 4));
+    });
+
+    it("offers no end day before the start day", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      await setValue("Start date", dayFromNow(30));
+      await user.click(screen.getByRole("button", { name: /^End date/ }));
+
+      expect(
+        screen.getByRole("button", { name: "Go to the Previous Month" }),
+      ).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("disables the times that have passed when the event starts today", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      await setValue("Start date", limits.min);
+      await user.click(screen.getByRole("combobox", { name: /^Start time/ }));
+
+      expect(screen.getByRole("option", { name: "12:00 AM" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+
+    it("allows any start time on a later day", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      await setValue("Start date", dayFromNow(30));
+      await user.click(screen.getByRole("combobox", { name: /^Start time/ }));
+
+      expect(
+        screen.getByRole("option", { name: "12:00 AM" }),
+      ).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("disables end times that are not after the start time on the same day", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      // The start time is 9:00 AM until it is changed.
+      await setValue("Start date", dayFromNow(30));
+      await setValue("End date", dayFromNow(30));
+      await user.click(screen.getByRole("combobox", { name: /^End time/ }));
+
+      expect(screen.getByRole("option", { name: "9:00 AM" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(
+        screen.getByRole("option", { name: "9:15 AM" }),
+      ).not.toHaveAttribute("aria-disabled");
+    });
+
+    it("allows any end time when the event ends on a later day", async () => {
+      const user = userEvent.setup();
+      renderWithClient(<EventForm onSubmit={jest.fn()} />);
+      await statesLoaded();
+
+      await setValue("Start date", dayFromNow(30));
+      await setValue("End date", dayFromNow(31));
+      await user.click(screen.getByRole("combobox", { name: /^End time/ }));
+
+      expect(
+        screen.getByRole("option", { name: "9:00 AM" }),
+      ).not.toHaveAttribute("aria-disabled");
+    });
   });
 
   it("makes capacity a number input that starts at 1 and counts in whole numbers", async () => {
@@ -198,8 +299,8 @@ describe("EventForm: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", dayFromNow(30));
-    setValue("End date", dayFromNow(30));
+    await setValue("Start date", dayFromNow(30));
+    await setValue("End date", dayFromNow(30));
     await user.type(screen.getByLabelText(/Event capacity/), "0");
     await user.clear(screen.getByLabelText("Ticket price (₹)"));
     await user.type(screen.getByLabelText("Ticket price (₹)"), "abc");
@@ -221,8 +322,8 @@ describe("EventForm: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await pick(user, stateSelect(), "Maharashtra");
     await pick(user, venueSelect(), "Hotel Orchid");
     await user.type(screen.getByLabelText(/Event capacity/), "250");
@@ -251,8 +352,8 @@ describe("EventForm: creating", () => {
     await statesLoaded();
 
     await user.type(screen.getByLabelText("Event title"), "Tech Conf");
-    setValue("Start date", start);
-    setValue("End date", start);
+    await setValue("Start date", start);
+    await setValue("End date", start);
     await user.type(screen.getByLabelText("Ticket price (₹)"), "0");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -542,9 +643,15 @@ describe("EventForm: editing", () => {
     expect(screen.getByLabelText("Event title")).toHaveValue(
       "Fintech Product Forum",
     );
-    expect(screen.getByLabelText("Start date")).toHaveValue("2026-12-12");
-    expect(screen.getByLabelText("Start time")).toHaveValue("09:30");
-    expect(screen.getByLabelText("End time")).toHaveValue("17:30");
+    expect(
+      screen.getByRole("button", { name: /Start date/ }),
+    ).toHaveTextContent("Sat, 12 Dec 2026");
+    expect(
+      screen.getByRole("combobox", { name: /Start time/ }),
+    ).toHaveTextContent("9:30 AM");
+    expect(
+      screen.getByRole("combobox", { name: /End time/ }),
+    ).toHaveTextContent("5:30 PM");
     // A number input reports its value as a number.
     expect(screen.getByLabelText(/Event capacity/)).toHaveValue(250);
   });
@@ -694,19 +801,18 @@ describe("EventForm: editing", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("still refuses a start that is typed in and is in the past", async () => {
+    it("shows its past start, but offers no past day for a new one", async () => {
       const user = userEvent.setup();
-      const onSubmit = jest.fn();
-      renderWithClient(<EventForm event={running} onSubmit={onSubmit} />);
+      renderWithClient(<EventForm event={running} onSubmit={jest.fn()} />);
       await statesLoaded();
 
-      setValue("Start date", "2020-02-02");
-      await user.click(screen.getByRole("button", { name: "Save & continue" }));
+      const start = screen.getByRole("button", { name: /^Start date/ });
+      expect(start).toHaveTextContent("Wed, 1 Jan 2020");
 
+      await user.click(start);
       expect(
-        await screen.findByText("The event must start in the future"),
-      ).toBeInTheDocument();
-      expect(onSubmit).not.toHaveBeenCalled();
+        screen.getByRole("button", { name: "Go to the Previous Month" }),
+      ).toHaveAttribute("aria-disabled", "true");
     });
   });
 });
@@ -734,8 +840,8 @@ describe("EventForm: which halls are available", () => {
   async function chooseVenueAndDates(user: User, start: string, end = start) {
     await pick(user, stateSelect(), "Maharashtra");
     await pick(user, venueSelect(), "Hotel Orchid");
-    setValue("Start date", start);
-    setValue("End date", end);
+    await setValue("Start date", start);
+    await setValue("End date", end);
   }
 
   it("asks for the dates first, and sends nothing until there is a range", async () => {
@@ -802,7 +908,7 @@ describe("EventForm: which halls are available", () => {
 
     // The next range is answered later: the old halls must not stay on screen meanwhile.
     venuesApi.getHallAvailability.mockReturnValue(new Promise(() => {}));
-    setValue("End date", dayFromNow(31));
+    await setValue("End date", dayFromNow(31));
 
     expect(
       await screen.findByRole("status", {
@@ -837,10 +943,15 @@ describe("EventForm: which halls are available", () => {
 
   it("does not check the halls for a range the server would refuse (end before start)", async () => {
     const user = userEvent.setup();
+    venuesApi.getHallAvailability.mockResolvedValue(hallsOf());
     renderWithClient(<EventForm onSubmit={jest.fn()} />);
     await statesLoaded();
+    await chooseVenueAndDates(user, dayFromNow(30));
+    await screen.findByText("2 of 2 halls are available on these dates.");
 
-    await chooseVenueAndDates(user, dayFromNow(30), dayFromNow(20));
+    // The end can not be chosen before the start, but the start can be moved past the end.
+    venuesApi.getHallAvailability.mockClear();
+    await setValue("Start date", dayFromNow(31));
 
     expect(venuesApi.getHallAvailability).not.toHaveBeenCalled();
   });

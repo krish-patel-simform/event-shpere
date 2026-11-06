@@ -9,8 +9,10 @@ import {
   Button,
   buttonStyles,
   Card,
+  DatePicker,
   SearchableSelect,
   TextField,
+  TimePicker,
   type SelectOption,
 } from "@/src/core/ui";
 import { StateSelect, useGetStateList } from "@/src/features/locations";
@@ -24,6 +26,13 @@ import {
   type EventFormValues,
 } from "../schemas/event-form.schemas";
 import type { ManagedEvent } from "../types/event-manage.types";
+import {
+  earliestEndTime,
+  earliestStartTime,
+  eventDateLimits,
+  EVENT_TIME_STEP,
+  EVENT_YEARS_AHEAD,
+} from "../utils/event-date-limits";
 import { plural, zoneLabel } from "../utils/event-display";
 import { toHallAvailabilityRange } from "../utils/hall-range";
 import { EventStatusBadge } from "./EventStatusBadge";
@@ -109,6 +118,13 @@ export function EventForm({
   );
   const isEdit = event !== undefined;
 
+  // What the pickers offer: from today (India) to ten years ahead; the end can not be before the
+  // start day; times that have passed today, or are not after the start, are disabled.
+  const limits = eventDateLimits();
+  const endMinDate = startDate || limits.min;
+  const startTimeMin = earliestStartTime(startDate);
+  const endTimeMin = earliestEndTime(startDate, startTime, endDate);
+
   const venueOptions = useMemo<SelectOption[]>(() => {
     const options = venues.options.map((venue) => ({
       value: venue.id,
@@ -173,36 +189,76 @@ export function EventForm({
 
         <Card
           title="Date and time"
-          description="All times are in India Standard Time (IST). Session times must fall inside these dates."
+          description={`All times are in India Standard Time (IST). Choose a day from today up to ${EVENT_YEARS_AHEAD} years ahead. Session times must fall inside these dates.`}
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Start date"
-              type="date"
-              readOnly={isPending}
-              error={errors.startDate?.message}
-              {...register("startDate")}
+            <Controller
+              control={control}
+              name="startDate"
+              render={({ field }) => (
+                <DatePicker
+                  label="Start date"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  fieldRef={field.ref}
+                  min={limits.min}
+                  max={limits.max}
+                  disabled={isPending}
+                  error={errors.startDate?.message}
+                />
+              )}
             />
-            <TextField
-              label="Start time"
-              type="time"
-              readOnly={isPending}
-              error={errors.startTime?.message}
-              {...register("startTime")}
+            <Controller
+              control={control}
+              name="startTime"
+              render={({ field }) => (
+                <TimePicker
+                  label="Start time"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  fieldRef={field.ref}
+                  min={startTimeMin}
+                  step={EVENT_TIME_STEP}
+                  disabled={isPending}
+                  error={errors.startTime?.message}
+                />
+              )}
             />
-            <TextField
-              label="End date"
-              type="date"
-              readOnly={isPending}
-              error={errors.endDate?.message}
-              {...register("endDate")}
+            <Controller
+              control={control}
+              name="endDate"
+              render={({ field }) => (
+                <DatePicker
+                  label="End date"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  fieldRef={field.ref}
+                  min={endMinDate}
+                  max={limits.max}
+                  disabled={isPending}
+                  error={errors.endDate?.message}
+                />
+              )}
             />
-            <TextField
-              label="End time"
-              type="time"
-              readOnly={isPending}
-              error={errors.endTime?.message}
-              {...register("endTime")}
+            <Controller
+              control={control}
+              name="endTime"
+              render={({ field }) => (
+                <TimePicker
+                  label="End time"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  fieldRef={field.ref}
+                  min={endTimeMin}
+                  step={EVENT_TIME_STEP}
+                  disabled={isPending}
+                  error={errors.endTime?.message}
+                />
+              )}
             />
           </div>
         </Card>
