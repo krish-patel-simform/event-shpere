@@ -44,10 +44,34 @@ beforeEach(() => {
 
 describe("SpeakerDetail: Resend invite", () => {
   beforeEach(() => {
+    // Only an admin's answer carries the account state; here the speaker has not set up yet.
+    api.get.mockResolvedValue({ ...ananyaProfile, accountStatus: "pending" });
     api.resendInvite.mockResolvedValue({
       setupEmailQueued: true,
       expiresAt: "2026-10-30T09:00:00.000Z",
     });
+  });
+
+  it("is not shown once the speaker has set up the account (nothing to resend)", async () => {
+    api.get.mockResolvedValue({ ...ananyaProfile, accountStatus: "active" });
+    hasPermission.mockImplementation((code) => code === "SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ananya Rao" });
+
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is not shown when the answer has no account state", async () => {
+    api.get.mockResolvedValue(ananyaProfile);
+    hasPermission.mockImplementation((code) => code === "SPEAKER_MANAGE_ALL");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ananya Rao" });
+
+    expect(
+      screen.queryByRole("button", { name: "Resend invite" }),
+    ).not.toBeInTheDocument();
   });
 
   it("is not shown without the SPEAKER_MANAGE_ALL permission", async () => {

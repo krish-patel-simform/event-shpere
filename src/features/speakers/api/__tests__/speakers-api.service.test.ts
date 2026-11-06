@@ -40,6 +40,15 @@ describe("speakersApiService.list", () => {
     expect(config.params).toEqual({ page: 3, pageSize: 12, search: "ananya" });
   });
 
+  it("sends the ids as one comma separated value, and leaves them out when there are none", () => {
+    speakersApiService.list({ ids: ["a", "b"], pageSize: 2 });
+    speakersApiService.list({ pageSize: 2 });
+
+    const calls = jest.mocked(apiRequestPage).mock.calls;
+    expect(calls[0]?.[0].params).toEqual({ page: 1, pageSize: 2, ids: "a,b" });
+    expect(calls[1]?.[0].params).not.toHaveProperty("ids");
+  });
+
   it("leaves an empty search out, so the server does not filter", () => {
     speakersApiService.list({ search: "", pageSize: 12 });
 

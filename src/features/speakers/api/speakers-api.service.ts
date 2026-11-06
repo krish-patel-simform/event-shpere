@@ -26,17 +26,25 @@ import {
 } from "../schemas/speaker.schemas";
 
 export type ListSpeakersParams = Pick<ListSpeakersQuery, "pageSize"> &
-  Partial<Pick<ListSpeakersQuery, "page" | "search">>;
+  Partial<Pick<ListSpeakersQuery, "page" | "search" | "ids">>;
 
 export const speakersApiService = {
-  /** One page of speakers (A–Z), filtered by name by the server, and how many match in total. */
-  list({ search, page = 1, pageSize }: ListSpeakersParams) {
+  /**
+   * One page of speakers (A–Z), filtered by name by the server, and how many match in total.
+   * `ids` limits the list to those speakers (1 to 50).
+   */
+  list({ search, ids, page = 1, pageSize }: ListSpeakersParams) {
     return apiRequestPage(
       {
         method: "GET",
         url: "/speakers",
         // Only what is set goes into the URL: no search means the server does not filter.
-        params: { page, pageSize, ...(search ? { search } : {}) },
+        params: {
+          page,
+          pageSize,
+          ...(search ? { search } : {}),
+          ...(ids ? { ids: ids.join(",") } : {}),
+        },
       },
       getSpeakersResponseSchema,
     );

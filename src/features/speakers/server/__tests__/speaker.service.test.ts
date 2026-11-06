@@ -403,6 +403,8 @@ const ankitRow = {
   firstName: "Ankit",
   lastName: "Sharma",
   cmsSpeakerId: "doc-ankit",
+  // Invited, no password yet.
+  status: "pending" as const,
 };
 const priyaRow = {
   id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d12",
@@ -410,6 +412,7 @@ const priyaRow = {
   firstName: "Priya",
   lastName: "Rao",
   cmsSpeakerId: "doc-priya",
+  status: "active" as const,
 };
 // A speaker whose CMS entry was never linked.
 const unlinkedRow = {
@@ -515,6 +518,17 @@ describe("speakerService.listSpeakers", () => {
     ]);
   });
 
+  it("passes the ids on to the repository, so only those speakers are read", async () => {
+    const { deps, service } = setup();
+    const ids = [ankitRow.id, priyaRow.id];
+
+    await service.listSpeakers({ ...query, ids });
+
+    expect(deps.speakerRepository.listSpeakers).toHaveBeenCalledWith(
+      expect.objectContaining({ ids }),
+    );
+  });
+
   it("passes the search on, and treats an empty one as no search", async () => {
     const { deps, service } = setup();
 
@@ -568,6 +582,69 @@ describe("speakerService.listSpeakers", () => {
     const result = await service.listSpeakers(query);
 
     expect(JSON.stringify(result)).not.toContain("doc-ankit");
+  });
+});
+
+describe("the account state in the public reads", () => {
+  it("is left out of the list for everyone but a manager: not even the key is there", async () => {
+    const { service } = setup({
+      repo: {
+        listSpeakers: jest
+          .fn()
+          .mockResolvedValue({ rows: [ankitRow, priyaRow], total: 2 }),
+      },
+    });
+
+    const { items } = await service.listSpeakers({ page: 1, pageSize: 5 });
+
+    for (const item of items) expect(item).not.toHaveProperty("accountStatus");
+    expect(JSON.stringify(items)).not.toContain("pending");
+  });
+
+  it("is added to every card of the list for a manager, so 'Resend invite' can be limited to a pending speaker", async () => {
+    const { service } = setup({
+      repo: {
+        listSpeakers: jest
+          .fn()
+          .mockResolvedValue({ rows: [ankitRow, priyaRow], total: 2 }),
+      },
+    });
+
+    const { items } = await service.listSpeakers(
+      { page: 1, pageSize: 5 },
+      { canManage: true },
+    );
+
+    expect(items.map((item) => item.accountStatus)).toEqual([
+      "pending",
+      "active",
+    ]);
+    expect(getSpeakersResponseSchema.safeParse(items).success).toBe(true);
+  });
+
+  it("is left out of one profile for everyone but a manager", async () => {
+    const { service } = setup({
+      repo: { findBySlug: jest.fn().mockResolvedValue(ankitRow) },
+      strapi: { findSpeakerById: jest.fn().mockResolvedValue(ankitCms) },
+    });
+
+    const result = await service.getSpeakerBySlug("ankit-sharma-3f9a1c");
+
+    expect(result).not.toHaveProperty("accountStatus");
+  });
+
+  it("is added to one profile for a manager", async () => {
+    const { service } = setup({
+      repo: { findBySlug: jest.fn().mockResolvedValue(ankitRow) },
+      strapi: { findSpeakerById: jest.fn().mockResolvedValue(ankitCms) },
+    });
+
+    const result = await service.getSpeakerBySlug("ankit-sharma-3f9a1c", {
+      canManage: true,
+    });
+
+    expect(result.accountStatus).toBe("pending");
+    expect(speakerProfileResponseSchema.safeParse(result).success).toBe(true);
   });
 });
 
@@ -674,6 +751,42 @@ describe("listSpeakersQuerySchema", () => {
     expect(listSpeakersQuerySchema.safeParse({ pageSize: "500" }).success).toBe(
       false,
     );
+  });
+
+  describe("ids", () => {
+    const a = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01";
+    const b = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d02";
+
+    it("is not there when it is not asked for: no filter", () => {
+      expect(listSpeakersQuerySchema.parse({})).not.toHaveProperty("ids");
+    });
+
+    it("splits a comma separated list and drops repeats", () => {
+      expect(
+        listSpeakersQuerySchema.parse({ ids: `${a}, ${b},${a}` }).ids,
+      ).toEqual([a, b]);
+    });
+
+    it("rejects an empty list instead of treating it as no filter", () => {
+      expect(listSpeakersQuerySchema.safeParse({ ids: "" }).success).toBe(
+        false,
+      );
+    });
+
+    it("rejects an id that is not a uuid", () => {
+      expect(
+        listSpeakersQuerySchema.safeParse({ ids: `${a},nope` }).success,
+      ).toBe(false);
+    });
+
+    it("rejects more than 50 ids", () => {
+      const ids = Array.from(
+        { length: 51 },
+        (_, i) => `6b2c3d4e-5f6a-4b7c-9d8e-${String(i).padStart(12, "0")}`,
+      ).join(",");
+
+      expect(listSpeakersQuerySchema.safeParse({ ids }).success).toBe(false);
+    });
   });
 });
 

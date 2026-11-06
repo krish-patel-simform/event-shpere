@@ -6,6 +6,7 @@ import {
   DrizzleQueryError,
   eq,
   ilike,
+  inArray,
   ne,
   sql,
 } from "drizzle-orm";
@@ -71,6 +72,8 @@ export type SpeakerRow = {
   lastName: string;
   /** Strapi documentId; null if the CMS entry was never linked. */
   cmsSpeakerId: string | null;
+  /** The account's state. Only an admin's response carries it (see toSpeakerListItemDto). */
+  status: User["status"];
 };
 
 const speakerRowColumns = {
@@ -79,6 +82,7 @@ const speakerRowColumns = {
   firstName: usersTable.firstName,
   lastName: usersTable.lastName,
   cmsSpeakerId: speakersProfilesTable.cmsSpeakerId,
+  status: usersTable.status,
 };
 
 /** The logged-in speaker's own profile row (found by their user id, never by a request id). */
@@ -95,11 +99,14 @@ export const speakerRepository = {
    */
   async listSpeakers(params: {
     search?: string;
+    /** Only these speaker_profiles ids (already validated: 1 to 50 uuids). */
+    ids?: string[];
     limit: number;
     offset: number;
   }): Promise<{ rows: SpeakerRow[]; total: number }> {
     const where = and(
       isPubliclyVisible,
+      params.ids ? inArray(speakersProfilesTable.id, params.ids) : undefined,
       params.search
         ? ilike(
             sql`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,

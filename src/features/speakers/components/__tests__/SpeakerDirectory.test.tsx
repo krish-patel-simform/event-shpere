@@ -582,11 +582,57 @@ describe("SpeakerDirectory: Resend invite", () => {
   const resendButtons = () =>
     screen.queryAllByRole("button", { name: /^Resend invite to / });
 
+  // Only an admin's answer carries the account state; here every speaker has not set up yet.
+  const pending = speakerRows.map((row) => ({
+    ...row,
+    accountStatus: "pending" as const,
+  }));
+
   beforeEach(() => {
+    serve(pending);
     api.resendInvite.mockResolvedValue({
       setupEmailQueued: true,
       expiresAt: "2026-10-30T09:00:00.000Z",
     });
+  });
+
+  it("is not shown for a speaker who already set up the account, only for a pending one", async () => {
+    grant("SPEAKER_MANAGE_ALL");
+    serve([
+      { ...speakerRows[0], accountStatus: "active" },
+      { ...speakerRows[1], accountStatus: "pending" },
+    ]);
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(resendButtons()).toHaveLength(1);
+    expect(
+      within(card(/Ananya Rao/)).queryByRole("button", {
+        name: /Resend invite/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(card(/Meera Joshi/)).getByRole("button", {
+        name: "Resend invite to Meera Joshi",
+      }),
+    ).toBeVisible();
+  });
+
+  it("is not shown when the answer has no account state, e.g. the admin's answer is missing it", async () => {
+    grant("SPEAKER_MANAGE_ALL");
+    serve(speakerRows);
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(resendButtons()).toHaveLength(0);
+  });
+
+  it("is not shown without the permission, even if the account is pending", async () => {
+    grant("SPEAKER_CREATE");
+    renderPage();
+    await screen.findByRole("link", { name: "Ananya Rao" });
+
+    expect(resendButtons()).toHaveLength(0);
   });
 
   it("is checked with the SPEAKER_MANAGE_ALL permission, which only the admin has", async () => {

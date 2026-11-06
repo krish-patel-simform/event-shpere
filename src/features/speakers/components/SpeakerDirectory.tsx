@@ -233,8 +233,12 @@ export function SpeakerDirectory() {
               <SpeakerCard
                 key={speaker.slug}
                 speaker={speaker}
+                // Only to a speaker who has not set up the account yet: the state comes with the
+                // list, for an admin only.
                 onResendInvite={
-                  canResendInvite ? () => sendInvite(speaker) : undefined
+                  canResendInvite && speaker.accountStatus === "pending"
+                    ? () => sendInvite(speaker)
+                    : undefined
                 }
                 isResendingInvite={
                   resendInvite.isPending &&

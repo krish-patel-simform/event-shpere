@@ -370,12 +370,14 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
      */
     async listSpeakers(
       query: ListSpeakersQuery,
+      { canManage = false }: { canManage?: boolean } = {},
     ): Promise<{ items: SpeakerListItemDto[]; meta: PageMeta }> {
       const { page, pageSize } = query;
 
       const { rows, total } = await deps.speakerRepository.listSpeakers({
         // An empty value after trim counts as no search.
         search: query.search || undefined,
+        ids: query.ids,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
@@ -393,6 +395,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
           toSpeakerListItemDto(
             row,
             (row.cmsSpeakerId && cmsById.get(row.cmsSpeakerId)) || null,
+            canManage,
           ),
         ),
         meta: { page, pageSize, total },
@@ -400,7 +403,10 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
     },
 
     /** SPK-2: one public speaker profile. Unknown (or suspended) slug → 404. */
-    async getSpeakerBySlug(slug: string): Promise<SpeakerProfileDto> {
+    async getSpeakerBySlug(
+      slug: string,
+      { canManage = false }: { canManage?: boolean } = {},
+    ): Promise<SpeakerProfileDto> {
       const row = await deps.speakerRepository.findBySlug(slug);
       if (!row) throw new NotFoundError("Speaker not found");
 
@@ -411,7 +417,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
           )
         : null;
 
-      return toSpeakerProfileDto(row, cms);
+      return toSpeakerProfileDto(row, cms, canManage);
     },
 
     /** The edit form's current values. The speaker comes from the login, never from the URL. */
