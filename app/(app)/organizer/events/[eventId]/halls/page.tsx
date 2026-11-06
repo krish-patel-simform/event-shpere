@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PermissionGate } from "@/src/features/auth";
-import { EventHalls } from "@/src/features/events";
+import { EventHalls } from "@/src/features/sessions";
 
 export const metadata: Metadata = { title: "Event halls" };
 
 // Same access as the event's overview: organizers (their own events) and admins (any event). The
-// rows are sample data until the venue's halls are loaded for the event.
+// halls come from the event's venue (GET /api/venues/[id]), the counts from its sessions.
 export default function EventHallsPage(
   props: PageProps<"/organizer/events/[eventId]/halls">,
 ) {
