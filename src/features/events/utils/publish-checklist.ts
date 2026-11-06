@@ -49,6 +49,8 @@ export function getPublishChecklist(
   const { total, scheduled, cancelled } = input.sessions;
   // Cancelled sessions are not waiting for a slot on the board.
   const unscheduled = Math.max(total - scheduled - cancelled, 0);
+  // A cancelled session is not a session an attendee can join: an event of only those has none.
+  const live = Math.max(total - cancelled, 0);
 
   const items: ChecklistItem[] = [
     {
@@ -96,15 +98,15 @@ export function getPublishChecklist(
     {
       key: "sessions",
       title: "Sessions on the schedule",
-      ok: total > 0 && unscheduled === 0,
+      ok: live > 0 && unscheduled === 0,
       description:
-        total === 0
+        live === 0
           ? "Add at least one session."
           : unscheduled > 0
             ? `${plural(unscheduled, "session")} ${unscheduled === 1 ? "is" : "are"} not scheduled yet.`
             : "Every session is on the schedule.",
       action:
-        total === 0
+        live === 0
           ? { label: "Add session", href: eventSessionNewHref(eventId) }
           : unscheduled > 0
             ? { label: "Review sessions", href: eventSessionsHref(eventId) }
@@ -123,7 +125,7 @@ export function getPublishChecklist(
         case "halls":
           return "halls";
         case "sessions":
-          return total === 0
+          return live === 0
             ? "sessions"
             : `${unscheduled} unscheduled ${unscheduled === 1 ? "session" : "sessions"}`;
       }

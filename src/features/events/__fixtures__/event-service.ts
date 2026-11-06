@@ -182,6 +182,16 @@ export function setupEventService() {
           cancelledAt: at,
         }),
       ),
+    // Like the database: the draft, published at the given time.
+    publishEvent: jest
+      .fn()
+      .mockImplementation(
+        async (_id: string, at: Date): Promise<EventRecord> => ({
+          ...eventRecord,
+          status: "published",
+          publishedAt: at,
+        }),
+      ),
     updateEvent: jest
       .fn()
       .mockImplementation(

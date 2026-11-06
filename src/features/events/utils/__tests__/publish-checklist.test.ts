@@ -184,6 +184,15 @@ describe("getPublishChecklist", () => {
     expect(result.canPublish).toBe(true);
   });
 
+  it("needs a session that is not cancelled: an event of only cancelled ones has none", () => {
+    const result = check({
+      sessions: { total: 2, scheduled: 0, cancelled: 2 },
+    });
+
+    expect(result.missing).toEqual(["sessions"]);
+    expect(result.canPublish).toBe(false);
+  });
+
   it("lists every missing thing together, in order", () => {
     const result = check({
       hasVenue: false,

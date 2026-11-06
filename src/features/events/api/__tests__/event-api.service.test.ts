@@ -173,6 +173,15 @@ describe("eventApiService", () => {
     );
   });
 
+  it("publish posts to the event's publish endpoint, with no body", () => {
+    eventApiService.publish(eventId);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: `/events/${eventId}/publish` },
+      eventResponseSchema,
+    );
+  });
+
   it("getContent reads the page content and parses the content schema", () => {
     eventApiService.getContent(eventId);
 

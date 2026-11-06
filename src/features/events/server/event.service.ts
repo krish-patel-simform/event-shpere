@@ -65,6 +65,7 @@ import {
   type EventRef,
   type EventRepository,
 } from "./event.repository";
+import { getPublishChecklist } from "../utils/publish-checklist";
 import { createEventAccess, type EventActor } from "./event-access";
 import { EVENT_IMAGE_POLICY, type ImageUpload } from "./event-image";
 
@@ -88,6 +89,7 @@ export type EventServiceDeps = {
     | "countSessionsInOtherVenue"
     | "updateEvent"
     | "cancelEvent"
+    | "publishEvent"
     | "listPublicEvents"
     | "findPublicEventBySlug"
     | "listPublicSessions"
@@ -734,6 +736,114 @@ export function createEventService(deps: EventServiceDeps) {
       const latest = await repo.findEventRecord(eventId);
       if (!latest) throw new NotFoundError("Event not found");
       return toEventDto(latest);
+    },
+
+    /**
+     * Publishes the organizer's OWN draft, so attendees can find it and register.
+     *
+     * Who: only the organizer who owns the event (EVENT_PUBLISH_OWN, checked by the route). An
+     * admin may hold EVENT_PUBLISH_ALL, but an admin does not publish: the service refuses them
+     * too, and someone else's event is a 404.
+     *
+     * What must be true, all re-checked here (the screen's checklist is never trusted):
+     * - it is a draft that has not ended (already published: answered as it is; cancelled: 409)
+     * - its venue is still active, and has at least one active hall
+     * - the page has a description (cover and gallery are optional: a placeholder is shown). If
+     *   the CMS cannot answer, it is a 503: an event is never published on a guess
+     * - it has a live session, and no session is still a draft (every session has its slot)
+     * - every session is inside the event's dates and in a hall of its venue
+     * A missing item is 409 EVENT_NOT_READY with the list of what is missing.
+     */
+    async publishEvent(eventId: string, actor: EventActor): Promise<EventDto> {
+      if (actor.role !== "organizer") {
+        throw new ForbiddenError("Only the organizer can publish an event");
+      }
+      const current = await access.getEventIfOrgOwns(eventId, actor, {
+        write: false,
+      });
+
+      if (current.status === "published") return toEventDto(current);
+      if (current.status === "cancelled") {
+        throw new ConflictError(
+          "EVENT_CANCELLED",
+          "A cancelled event can't be published",
+        );
+      }
+      const at = now();
+      if (current.endAt <= at) {
+        throw new ConflictError(
+          "EVENT_ENDED",
+          "An event that has already ended can't be published",
+        );
+      }
+
+      if (current.venueId) {
+        const venue = await repo.findVenue(current.venueId);
+        if (!venue?.isActive) {
+          throw new ConflictError(
+            "VENUE_INACTIVE",
+            "This event's venue is inactive. Choose an active venue",
+          );
+        }
+      }
+
+      const [row, extras, content] = await Promise.all([
+        repo.findManagedEvent(eventId),
+        repo.getOverviewExtras(eventId, current.venueId),
+        loadContentFlags(current.cmsEventId),
+      ]);
+      if (!row) throw new NotFoundError("Event not found");
+      if (content === null) throw cmsUnavailable();
+
+      const checklist = getPublishChecklist({
+        eventId,
+        hasVenue: current.venueId !== null,
+        hallCount: extras.hallNames.length,
+        content,
+        sessions: {
+          total: row.sessionsTotal,
+          scheduled: row.sessionsScheduled,
+          cancelled: row.sessionsCancelled,
+        },
+      });
+      if (!checklist.canPublish) {
+        throw new ConflictError(
+          "EVENT_NOT_READY",
+          checklist.summary ?? "The event is not ready to publish",
+          { missing: checklist.missing },
+        );
+      }
+
+      // Updates already keep sessions inside the dates and the venue; this is the last look
+      // before attendees can see them.
+      const [outside, otherVenue] = await Promise.all([
+        repo.countSessionsOutside(eventId, current.startAt, current.endAt),
+        repo.countSessionsInOtherVenue(eventId, current.venueId),
+      ]);
+      if (outside > 0) {
+        throw new ConflictError(
+          "SESSIONS_OUTSIDE_DATES",
+          "Some sessions fall outside the event's dates. Move them first",
+        );
+      }
+      if (otherVenue > 0) {
+        throw new ConflictError(
+          "SESSIONS_IN_OTHER_VENUE",
+          "Some sessions are in a hall of another venue. Move them first",
+        );
+      }
+
+      const published = await repo.publishEvent(eventId, at);
+      if (published) return toEventDto(published);
+
+      // It stopped being a draft between the read and the write.
+      const latest = await repo.findEventRecord(eventId);
+      if (!latest) throw new NotFoundError("Event not found");
+      if (latest.status === "published") return toEventDto(latest);
+      throw new ConflictError(
+        "EVENT_NOT_DRAFT",
+        "This event can't be published any more",
+      );
     },
 
     //* The event's page in Strapi: its text content and images

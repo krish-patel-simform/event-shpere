@@ -23,6 +23,14 @@ export const eventQueryKeys = {
 };
 
 /**
+ * The root of every query of the sessions feature (its `sessionQueryKeys.all`). Cancelling an event
+ * cancels all its sessions on the server, so every sessions list and detail must reload; the events
+ * feature cannot import the sessions feature (sessions already imports events), so the root key
+ * is repeated here and a test in the sessions feature checks the two are the same.
+ */
+export const SESSIONS_QUERY_ROOT = ["sessions"] as const;
+
+/**
  * Keys that name a running mutation, so a screen can ask "is anything of this kind running?"
  * (useIsMutating) without the components passing state to each other.
  */

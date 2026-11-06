@@ -825,6 +825,20 @@ export const eventRepository = {
   },
 
   /**
+   * Publishes a draft: status and publish time in one UPDATE. The status is part of the WHERE, so
+   * only a draft is published and two requests at once cannot both win: null = it was not a draft
+   * any more (published or cancelled a moment ago).
+   */
+  async publishEvent(eventId: string, at: Date): Promise<EventRecord | null> {
+    const [event] = await db
+      .update(eventsTable)
+      .set({ status: "published", publishedAt: at })
+      .where(and(eq(eventsTable.id, eventId), eq(eventsTable.status, "draft")))
+      .returning();
+    return event ?? null;
+  },
+
+  /**
    * The whole event row, for the access check: who owns it, whether it is cancelled, where its
    * CMS page is, and every other column an action then needs, so it does not read the row twice.
    * It is more than an `EventRef` (which stays as the small type helpers ask for), so everything

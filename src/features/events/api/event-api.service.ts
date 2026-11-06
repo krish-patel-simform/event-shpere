@@ -156,6 +156,17 @@ export const eventApiService = {
     );
   },
 
+  /**
+   * Publishes the organizer's own draft. 409 EVENT_NOT_READY (with `details.missing`) when
+   * something is still missing; 409 when it is cancelled or has ended.
+   */
+  publish(eventId: string): Promise<EventDto> {
+    return apiRequest(
+      { method: "POST", url: `/events/${eventId}/publish` },
+      eventResponseSchema,
+    );
+  },
+
   /** The event page's text and images (Strapi). */
   getContent(eventId: string): Promise<EventContentDto> {
     return apiRequest(
