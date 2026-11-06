@@ -182,6 +182,11 @@ export function setupEventService() {
           cancelledAt: at,
         }),
       ),
+    // Deleting a draft: no sessions with a Strapi entry, and the delete succeeds.
+    listSessionCmsIds: jest.fn().mockResolvedValue([]),
+    deleteDraftEvent: jest
+      .fn()
+      .mockResolvedValue({ event: eventRecord, sessionCmsIds: [] }),
     // Like the database: the draft, published at the given time.
     publishEvent: jest
       .fn()
@@ -211,6 +216,11 @@ export function setupEventService() {
     findEventPagesByIds: jest.fn().mockResolvedValue([]),
     updateEventPage: jest.fn().mockResolvedValue(emptyPage),
   };
+  // The sessions' Session Detail entries: none has a cover until a test gives it one.
+  const sessionStrapi = {
+    findSessionDetailById: jest.fn().mockResolvedValue(null),
+    deleteSessionDetail: jest.fn().mockResolvedValue(undefined),
+  };
   const media = {
     uploadFiles: jest.fn().mockResolvedValue({ ok: true, files: [] }),
     deleteFile: jest.fn().mockResolvedValue(undefined),
@@ -232,6 +242,7 @@ export function setupEventService() {
   const deps: EventServiceDeps = {
     eventRepository: repo,
     strapiClient: strapi,
+    sessionStrapiClient: sessionStrapi,
     mediaClient: media,
     organizerVerification: verification,
     now: () => NOW,
@@ -239,6 +250,7 @@ export function setupEventService() {
   return {
     repo,
     strapi,
+    sessionStrapi,
     media,
     verification,
     service: createEventService(deps),

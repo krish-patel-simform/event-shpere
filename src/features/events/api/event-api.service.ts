@@ -157,6 +157,16 @@ export const eventApiService = {
   },
 
   /**
+   * Deletes the organizer's own draft for good (204, no body): the event, its sessions, and its
+   * page, session entries and images in the CMS. 409 `EVENT_NOT_DRAFT` when it is published or
+   * cancelled, 404 when it is not theirs or already gone, 503 `CMS_UNAVAILABLE` (nothing deleted)
+   * when the CMS cannot be read first.
+   */
+  remove(eventId: string): Promise<void> {
+    return apiRequest({ method: "DELETE", url: `/events/${eventId}` });
+  },
+
+  /**
    * Publishes the organizer's own draft. 409 EVENT_NOT_READY (with `details.missing`) when
    * something is still missing; 409 when it is cancelled or has ended.
    */

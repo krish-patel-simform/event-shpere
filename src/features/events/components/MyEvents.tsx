@@ -6,6 +6,7 @@ import { useLayoutEffect, useState } from "react";
 import { useDebouncedValue } from "@/src/core/hooks/use-debounced-value";
 import { Alert, Button, buttonStyles, tabId, Tabs } from "@/src/core/ui";
 import { useCancelEvent } from "../hooks/useCancelEvent";
+import { useDeleteEvent } from "../hooks/useDeleteEvent";
 import { useGetMyEventCounts } from "../hooks/useGetMyEventCounts";
 import { useGetMyEventList } from "../hooks/useGetMyEventList";
 import { EVENT_ROUTES } from "../routes";
@@ -18,7 +19,7 @@ import {
   TAB_DESCRIPTIONS,
   type EventFilters as Filters,
 } from "../utils/event-display";
-import { CancelEventDialog } from "./EventDialogs";
+import { CancelEventDialog, DeleteDraftDialog } from "./EventDialogs";
 import { EventFilters } from "./EventFilters";
 import { EventsTable } from "./EventsTable";
 
@@ -57,6 +58,20 @@ export function MyEvents() {
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
   // would still be open when the organizer comes back. Close it as the page is hidden.
   useLayoutEffect(() => () => setCancelling(null), []);
+
+  // The draft whose "Delete draft" dialog is open; null = closed. Same shape as cancelling.
+  const [deleting, setDeleting] = useState<ManagedEvent | null>(null);
+  const remove = useDeleteEvent();
+  useLayoutEffect(() => () => setDeleting(null), []);
+
+  function askToDelete(event: ManagedEvent) {
+    remove.reset();
+    setDeleting(event);
+  }
+  function confirmDelete(event: ManagedEvent) {
+    if (remove.isPending) return;
+    remove.mutate(event.id, { onSettled: () => setDeleting(null) });
+  }
 
   function askToCancel(event: ManagedEvent) {
     cancel.reset();
@@ -118,6 +133,16 @@ export function MyEvents() {
           {cancel.error.message}
         </Alert>
       )}
+      {remove.isSuccess && (
+        <Alert tone="success" title="The draft was deleted">
+          Its sessions, description and images were removed too.
+        </Alert>
+      )}
+      {remove.isError && (
+        <Alert tone="error" title="We couldn't delete the draft">
+          {remove.error.message}
+        </Alert>
+      )}
 
       <Tabs
         label="Filter events by status"
@@ -170,6 +195,7 @@ export function MyEvents() {
             isFiltered={isFiltering(tab, { ...filters, search: term })}
             onClearFilters={clearFilters}
             onCancel={askToCancel}
+            onDelete={askToDelete}
           />
         )}
       </div>
@@ -179,6 +205,12 @@ export function MyEvents() {
         isPending={cancel.isPending}
         onClose={() => setCancelling(null)}
         onConfirm={confirmCancel}
+      />
+      <DeleteDraftDialog
+        event={deleting}
+        isPending={remove.isPending}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
       />
     </div>
   );

@@ -13,7 +13,6 @@ import {
   Card,
   cn,
   DescriptionList,
-  SourceBadge,
   type DescriptionItem,
 } from "@/src/core/ui";
 import type { EventOverviewData } from "../types/event-manage.types";
@@ -365,31 +364,25 @@ export function DangerZoneCard({
 }: {
   status: "draft" | "published";
   onCancel: () => void;
-  /** Deletes the draft. Without it the button stays off: there is no delete endpoint yet. */
-  onDelete?: () => void;
+  /** Asks to delete the draft (the page confirms first). */
+  onDelete: () => void;
 }) {
   return (
     <Card title="Danger zone">
       {status === "draft" ? (
         <div className="space-y-3">
           <p className="text-muted">
-            Removes this draft. This can’t be undone.
+            Removes this draft with its sessions, description and images. This
+            can’t be undone.
           </p>
           <Button
             variant="secondary"
             onClick={onDelete}
-            disabled={!onDelete}
             className="text-danger"
           >
             <Trash2 aria-hidden="true" className="size-4" />
             Delete draft
           </Button>
-          {!onDelete && (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
-              <SourceBadge source="static" />
-              Deleting a draft is not available yet.
-            </p>
-          )}
         </div>
       ) : (
         <div className="space-y-3">

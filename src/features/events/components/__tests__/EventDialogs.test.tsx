@@ -9,8 +9,7 @@ import {
 } from "../../__fixtures__/event-manage";
 import { CancelEventDialog, DeleteDraftDialog } from "../EventDialogs";
 
-// The dialogs for cancelling and deleting. My events opens the cancel one; the delete one waits for
-// its endpoint.
+// The dialogs for cancelling and deleting. My events and the overview open both.
 
 const summit = SAMPLE_EVENTS.find((event) => event.id === SUMMIT_ID)!;
 const fintech = SAMPLE_EVENTS.find((event) => event.id === FINTECH_ID)!;
@@ -230,5 +229,33 @@ describe("DeleteDraftDialog", () => {
 
     await user.click(screen.getByRole("button", { name: "Delete draft" }));
     expect(onConfirm).toHaveBeenCalledWith(fintech);
+  });
+
+  it("says its description and images are deleted too", () => {
+    render(
+      <DeleteDraftDialog
+        event={fintech}
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Its description and all its images are deleted too."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows it is working, and cannot be kept or confirmed again meanwhile", () => {
+    render(
+      <DeleteDraftDialog
+        event={fintech}
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+        isPending
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Keep draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
   });
 });

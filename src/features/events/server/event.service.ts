@@ -20,8 +20,10 @@ import {
   createImageUploader,
   strapiEventClient,
   strapiMediaClient,
+  strapiSessionClient,
   type StrapiEventClient,
   type StrapiMediaClient,
+  type StrapiSessionClient,
 } from "../../cms/server";
 import {
   organizerService,
@@ -89,6 +91,8 @@ export type EventServiceDeps = {
     | "countSessionsInOtherVenue"
     | "updateEvent"
     | "cancelEvent"
+    | "listSessionCmsIds"
+    | "deleteDraftEvent"
     | "publishEvent"
     | "listPublicEvents"
     | "findPublicEventBySlug"
@@ -103,7 +107,16 @@ export type EventServiceDeps = {
     | "findEventPagesByIds"
     | "updateEventPage"
   >;
-  /** Strapi's media library: the image uploads and removing replaced files. */
+  /**
+   * The sessions' Session Detail entries in Strapi: read for their cover file and removed when a
+   * draft event is deleted. (The sessions feature imports events, so the events service uses the
+   * Strapi client itself, not the sessions service.)
+   */
+  sessionStrapiClient: Pick<
+    StrapiSessionClient,
+    "findSessionDetailById" | "deleteSessionDetail"
+  >;
+  /** Strapi's media library: the image uploads and removing replaced or deleted files. */
   mediaClient: Pick<StrapiMediaClient, "uploadFiles" | "deleteFile">;
   /** An organizer may manage events only while an admin's approval stands. */
   organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
@@ -115,6 +128,12 @@ const cmsUnavailable = () =>
   new ServiceUnavailableError(
     "CMS_UNAVAILABLE",
     "The event content is not available right now. Please try again.",
+  );
+
+const notDraft = () =>
+  new ConflictError(
+    "EVENT_NOT_DRAFT",
+    "Only a draft event can be deleted. Cancel a published event instead.",
   );
 
 const invalidImage = () =>
@@ -248,6 +267,76 @@ export function createEventService(deps: EventServiceDeps) {
         error instanceof Error ? error.message : error,
       );
     }
+  }
+
+  /**
+   * The ids of every media file a draft event uses in Strapi: the page's cover and gallery and
+   * each session's cover. Strapi does NOT remove a file when the entry that uses it is deleted,
+   * and the ids exist only inside the entries, so they are read BEFORE the delete. Any Strapi
+   * failure is a 503 and nothing is deleted: without the ids the files could never be found again.
+   */
+  async function collectCmsFileIds(
+    event: EventRef,
+    sessionCmsIds: string[],
+  ): Promise<number[]> {
+    return requireCms("read before delete", async () => {
+      const [page, details] = await Promise.all([
+        event.cmsEventId
+          ? deps.strapiClient.findEventPageById(event.cmsEventId)
+          : null,
+        Promise.all(
+          sessionCmsIds.map((id) =>
+            deps.sessionStrapiClient.findSessionDetailById(id),
+          ),
+        ),
+      ]);
+      const ids = [
+        page?.coverImage?.id,
+        ...(page?.gallery ?? []).map((image) => image.id),
+        ...details.map((detail) => detail?.coverImage?.id),
+      ];
+      return [...new Set(ids.filter((id): id is number => id !== undefined))];
+    });
+  }
+
+  /**
+   * Removes a deleted draft's content from Strapi: its page, its sessions' entries and every
+   * media file. Best effort, each step on its own: the event is already gone from Postgres, so
+   * the organizer's delete has succeeded, and a Strapi failure only leaves something nothing
+   * points to. It is logged by id (no event data) so it can be removed by hand.
+   */
+  async function removeDeletedEventFromCms(
+    pageId: string | null,
+    sessionCmsIds: string[],
+    fileIds: number[],
+  ) {
+    const attempt = async (what: string, remove: () => Promise<void>) => {
+      try {
+        await remove();
+      } catch (error) {
+        console.error(
+          `[events] orphan Strapi ${what} not deleted:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    };
+    await Promise.all([
+      ...(pageId
+        ? [
+            attempt(`event page ${pageId}`, () =>
+              deps.strapiClient.deleteEventPage(pageId),
+            ),
+          ]
+        : []),
+      ...sessionCmsIds.map((id) =>
+        attempt(`session detail ${id}`, () =>
+          deps.sessionStrapiClient.deleteSessionDetail(id),
+        ),
+      ),
+      ...fileIds.map((id) =>
+        attempt(`media file ${id}`, () => deps.mediaClient.deleteFile(id)),
+      ),
+    ]);
   }
 
   /**
@@ -739,6 +828,52 @@ export function createEventService(deps: EventServiceDeps) {
     },
 
     /**
+     * Deletes the organizer's OWN draft for good: the event and its sessions in Postgres, and its
+     * page, its sessions' entries and every media file (cover, gallery, session covers) in Strapi.
+     * Only a draft can be deleted (a published event is cancelled): anything else is 409
+     * EVENT_NOT_DRAFT. Only the organizer who owns it may do it: the route requires
+     * EVENT_MANAGE_OWN, the service refuses anyone who is not an organizer (an admin deletes
+     * nothing), and someone else's event is a 404.
+     *
+     * Order: check → read the media ids from Strapi (503 and nothing deleted if it cannot answer)
+     * → delete in Postgres in one transaction (the source of truth) → remove the content from
+     * Strapi, best effort. Deleting twice is a 404 the second time: the event is gone.
+     */
+    async deleteEvent(eventId: string, actor: EventActor): Promise<void> {
+      if (actor.role !== "organizer") {
+        throw new ForbiddenError("Only the organizer can delete an event");
+      }
+      const current = await access.getEventIfOrgOwns(eventId, actor, {
+        write: false,
+      });
+      if (current.status !== "draft") throw notDraft();
+
+      const fileIds = await collectCmsFileIds(
+        current,
+        await repo.listSessionCmsIds(eventId),
+      );
+
+      const deleted = await repo.deleteDraftEvent(eventId);
+      if (deleted === "in_use") {
+        throw new ConflictError(
+          "EVENT_HAS_REGISTRATIONS",
+          "This event has registrations and cannot be deleted",
+        );
+      }
+      if (!deleted) {
+        // Not a draft any more (published a moment ago), or deleted by another request.
+        const latest = await repo.findEventRecord(eventId);
+        throw latest ? notDraft() : new NotFoundError("Event not found");
+      }
+
+      await removeDeletedEventFromCms(
+        deleted.event.cmsEventId,
+        deleted.sessionCmsIds,
+        fileIds,
+      );
+    },
+
+    /**
      * Publishes the organizer's OWN draft, so attendees can find it and register.
      *
      * Who: only the organizer who owns the event (EVENT_PUBLISH_OWN, checked by the route). An
@@ -998,6 +1133,7 @@ export const eventAccess = createEventAccess({
 export const eventService = createEventService({
   eventRepository,
   strapiClient: strapiEventClient,
+  sessionStrapiClient: strapiSessionClient,
   mediaClient: strapiMediaClient,
   organizerVerification: organizerService,
 });

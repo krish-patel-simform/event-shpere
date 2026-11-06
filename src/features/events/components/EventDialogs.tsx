@@ -74,11 +74,15 @@ export function CancelEventDialog({
   );
 }
 
-/** Deleting removes a draft for good, with its sessions. Only a draft can be deleted. */
+/**
+ * Deleting removes a draft for good: the event, its sessions, and everything written or uploaded
+ * for them in the CMS (descriptions and images). Only a draft can be deleted.
+ */
 export function DeleteDraftDialog({
   event,
   onClose,
   onConfirm,
+  isPending = false,
 }: EventDialogProps) {
   return (
     <Dialog open={event !== null} onClose={onClose} title="Delete this draft?">
@@ -91,14 +95,19 @@ export function DeleteDraftDialog({
                 ? ` and its ${plural(event.sessions.total, "session")} are removed.`
                 : " is removed."}
             </p>
+            <p>Its description and all its images are deleted too.</p>
             <p className="text-muted">This can&apos;t be undone.</p>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={onClose}>
+            <Button variant="secondary" onClick={onClose} disabled={isPending}>
               Keep draft
             </Button>
-            <Button variant="danger" onClick={() => onConfirm(event)}>
-              Delete draft
+            <Button
+              variant="danger"
+              isPending={isPending}
+              onClick={() => onConfirm(event)}
+            >
+              {isPending ? "Deleting…" : "Delete draft"}
             </Button>
           </DialogFooter>
         </>

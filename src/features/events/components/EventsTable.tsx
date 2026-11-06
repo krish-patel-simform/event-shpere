@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, ExternalLink, Pencil } from "lucide-react";
+import { Ban, CalendarDays, ExternalLink, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { formatCount } from "@/src/core/format/format-number";
 import {
@@ -43,16 +43,19 @@ type EventsTableProps = {
   onClearFilters: () => void;
   /** The organizer chose "Cancel event" on a row; the page asks to confirm. */
   onCancel: (event: ManagedEvent) => void;
+  /** The organizer chose "Delete draft" on a row; the page asks to confirm. */
+  onDelete: (event: ManagedEvent) => void;
 };
 
 /**
  * What a row's menu offers: open it, edit it (a completed or cancelled event is read-only), see
- * its public page and, for a published event only, cancel it (last, in red). A draft is deleted,
- * not cancelled: that comes with its endpoint.
+ * its public page (not for a draft: it has none yet), and last, in red, the way out: a published
+ * event is cancelled, a draft is deleted.
  */
 function rowActions(
   event: ManagedEvent,
   onCancel: (event: ManagedEvent) => void,
+  onDelete: (event: ManagedEvent) => void,
 ): ActionMenuItem[] {
   const items: ActionMenuItem[] = [
     { label: "Manage event", href: eventHref(event.id), icon: CalendarDays },
@@ -64,11 +67,13 @@ function rowActions(
       icon: Pencil,
     });
   }
-  items.push({
-    label: "View public page",
-    href: publicEventHref(event.slug),
-    icon: ExternalLink,
-  });
+  if (event.status !== "draft") {
+    items.push({
+      label: "View public page",
+      href: publicEventHref(event.slug),
+      icon: ExternalLink,
+    });
+  }
   if (event.status === "published") {
     items.push({
       label: "Cancel event",
@@ -76,6 +81,15 @@ function rowActions(
       tone: "danger",
       separatorBefore: true,
       onSelect: () => onCancel(event),
+    });
+  }
+  if (event.status === "draft") {
+    items.push({
+      label: "Delete draft",
+      icon: Trash2,
+      tone: "danger",
+      separatorBefore: true,
+      onSelect: () => onDelete(event),
     });
   }
   return items;
@@ -91,6 +105,7 @@ export function EventsTable({
   isFiltered,
   onClearFilters,
   onCancel,
+  onDelete,
 }: EventsTableProps) {
   if (events.length === 0) {
     return isFiltered ? (
@@ -212,7 +227,7 @@ export function EventsTable({
                   <td className="px-4 py-3 text-right">
                     <ActionMenu
                       label={`Actions for ${event.title}`}
-                      items={rowActions(event, onCancel)}
+                      items={rowActions(event, onCancel, onDelete)}
                     />
                   </td>
                 </ClickableRow>

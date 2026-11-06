@@ -173,6 +173,15 @@ describe("eventApiService", () => {
     );
   });
 
+  it("remove sends DELETE to the event, with no body and no response to parse", () => {
+    eventApiService.remove(eventId);
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      method: "DELETE",
+      url: `/events/${eventId}`,
+    });
+  });
+
   it("publish posts to the event's publish endpoint, with no body", () => {
     eventApiService.publish(eventId);
 

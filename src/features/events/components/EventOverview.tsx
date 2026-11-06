@@ -2,13 +2,20 @@
 
 import { Ban, ExternalLink, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLayoutEffect, useState } from "react";
 import { Alert, Button, buttonStyles } from "@/src/core/ui";
 import { useHasPermission } from "@/src/features/auth";
 import { useCancelEvent } from "../hooks/useCancelEvent";
+import { useDeleteEvent } from "../hooks/useDeleteEvent";
 import { useGetEventContent } from "../hooks/useGetEventContent";
 import { usePublishEvent } from "../hooks/usePublishEvent";
-import { eventEditHref, eventSessionNewHref, publicEventHref } from "../routes";
+import {
+  eventEditHref,
+  eventSessionNewHref,
+  EVENT_ROUTES,
+  publicEventHref,
+} from "../routes";
 import type {
   EventOverviewData,
   ManagedEvent,
@@ -22,7 +29,7 @@ import {
   EventContentOverview,
   QuickActionsCard,
 } from "./EventContentCards";
-import { CancelEventDialog } from "./EventDialogs";
+import { CancelEventDialog, DeleteDraftDialog } from "./EventDialogs";
 import {
   AttentionCard,
   DangerZoneCard,
@@ -70,6 +77,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const cancel = useCancelEvent();
   useLayoutEffect(() => () => setCancelling(null), []);
 
+  // "Delete draft" asks first, the same way. When it worked the event is gone, so the page leaves
+  // for the events list (a client navigation: no reload); the dialog closes either way.
+  const router = useRouter();
+  const [deleting, setDeleting] = useState<ManagedEvent | null>(null);
+  const remove = useDeleteEvent();
+  useLayoutEffect(() => () => setDeleting(null), []);
+
   // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else.
   const canPublish = useHasPermission("EVENT_PUBLISH_OWN");
   const publish = usePublishEvent();
@@ -82,6 +96,17 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
     if (cancel.isPending) return;
     cancel.mutate(target.id, { onSettled: () => setCancelling(null) });
   }
+  function askToDelete() {
+    remove.reset();
+    setDeleting(event);
+  }
+  function confirmDelete(target: ManagedEvent) {
+    if (remove.isPending) return;
+    remove.mutate(target.id, {
+      onSuccess: () => router.push(EVENT_ROUTES.list),
+      onSettled: () => setDeleting(null),
+    });
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -90,13 +115,16 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         current="overview"
         actions={
           <>
-            <Link
-              href={publicEventHref(event.slug)}
-              className={buttonStyles({ variant: "secondary" })}
-            >
-              <ExternalLink aria-hidden="true" className="size-4" />
-              View public page
-            </Link>
+            {/* A draft has no public page yet (it would be a 404): the link comes with publishing. */}
+            {event.status !== "draft" && (
+              <Link
+                href={publicEventHref(event.slug)}
+                className={buttonStyles({ variant: "secondary" })}
+              >
+                <ExternalLink aria-hidden="true" className="size-4" />
+                View public page
+              </Link>
+            )}
             {editable && canCreateSession && (
               <Link
                 href={eventSessionNewHref(event.id)}
@@ -142,6 +170,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
       {publish.isSuccess && (
         <Alert tone="success" title={`${publish.data.title} was published`}>
           Attendees can now find it and register.
+          <Link
+            href={publicEventHref(publish.data.slug)}
+            className={buttonStyles({ variant: "secondary" }) + " mt-3"}
+          >
+            <ExternalLink aria-hidden="true" className="size-4" />
+            View public page
+          </Link>
         </Alert>
       )}
       {publish.isError && (
@@ -155,6 +190,11 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
       {cancel.isError && (
         <Alert tone="error" title="We couldn't cancel the event">
           {cancel.error.message}
+        </Alert>
+      )}
+      {remove.isError && (
+        <Alert tone="error" title="We couldn't delete the draft">
+          {remove.error.message}
         </Alert>
       )}
 
@@ -203,7 +243,11 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           />
           {event.status !== "cancelled" && <QuickActionsCard />}
           {(event.status === "draft" || event.status === "published") && (
-            <DangerZoneCard status={event.status} onCancel={askToCancel} />
+            <DangerZoneCard
+              status={event.status}
+              onCancel={askToCancel}
+              onDelete={askToDelete}
+            />
           )}
         </div>
       </div>
@@ -213,6 +257,12 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         isPending={cancel.isPending}
         onClose={() => setCancelling(null)}
         onConfirm={confirmCancel}
+      />
+      <DeleteDraftDialog
+        event={deleting}
+        isPending={remove.isPending}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
       />
     </div>
   );

@@ -29,6 +29,7 @@ jest.mock("../../api/event-api.service", () => ({
     create: jest.fn(),
     update: jest.fn(),
     cancel: jest.fn(),
+    remove: jest.fn(),
   },
 }));
 const api = jest.mocked(eventApiService);
@@ -330,7 +331,7 @@ describe("MyEvents: empty, error", () => {
 });
 
 describe("a row's menu", () => {
-  it("offers manage, edit and the public page for a draft", async () => {
+  it("offers manage and edit for a draft, then Delete draft last: no public page, it has none yet", async () => {
     const user = userEvent.setup();
     renderWithClient(<MyEvents />);
     await screen.findByRole("table");
@@ -346,8 +347,11 @@ describe("a row's menu", () => {
       menu.getByRole("menuitem", { name: "Edit details" }),
     ).toHaveAttribute("href", eventEditHref(draft.id));
     expect(
-      menu.getByRole("menuitem", { name: "View public page" }),
-    ).toHaveAttribute("href", publicEventHref(draft.slug));
+      menu.queryByRole("menuitem", { name: "View public page" }),
+    ).not.toBeInTheDocument();
+    expect(
+      menu.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Manage event", "Edit details", "Delete draft"]);
   });
 
   it("offers Cancel event last for a published event", async () => {
@@ -369,20 +373,33 @@ describe("a row's menu", () => {
     ]);
   });
 
-  it("does not offer cancelling a draft, and deleting one has no endpoint yet", async () => {
+  it("offers Delete draft, not Cancel, for a draft; and Cancel, not Delete, for a published event", async () => {
     const user = userEvent.setup();
     renderWithClient(<MyEvents />);
     await screen.findByRole("table");
 
     await openMenu(user, "Fintech Product Forum");
+    const draftMenu = within(screen.getByRole("menu"));
+    expect(
+      draftMenu.getByRole("menuitem", { name: "Delete draft" }),
+    ).toBeInTheDocument();
+    expect(
+      draftMenu.queryByRole("menuitem", { name: "Cancel event" }),
+    ).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
-    const menu = within(screen.getByRole("menu"));
+    await openMenu(user, "Design Systems Engineering Day");
+    const publishedMenu = within(screen.getByRole("menu"));
     expect(
-      menu.queryByRole("menuitem", { name: "Delete draft" }),
+      publishedMenu.queryByRole("menuitem", { name: "Delete draft" }),
     ).not.toBeInTheDocument();
+    // A published event has a public page.
+    const published = SAMPLE_EVENTS.find(
+      (event) => event.id === DESIGN_DAY_ID,
+    )!;
     expect(
-      menu.queryByRole("menuitem", { name: "Cancel event" }),
-    ).not.toBeInTheDocument();
+      publishedMenu.getByRole("menuitem", { name: "View public page" }),
+    ).toHaveAttribute("href", publicEventHref(published.slug));
   });
 
   it("only lets a completed or cancelled event be opened and viewed", async () => {
@@ -500,6 +517,91 @@ describe("cancelling an event", () => {
       "We couldn't cancel the event",
     );
     expect(screen.getByRole("alert")).toHaveTextContent("The event has ended");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("deleting a draft", () => {
+  const draft = SAMPLE_EVENTS.find((event) => event.status === "draft")!;
+
+  async function chooseDelete(user: ReturnType<typeof userEvent.setup>) {
+    renderWithClient(<MyEvents />);
+    await screen.findByRole("table");
+    await openMenu(user, draft.title);
+    await user.click(screen.getByRole("menuitem", { name: "Delete draft" }));
+  }
+
+  it("asks first, names the draft and says its description and images go too", async () => {
+    const user = userEvent.setup();
+    await chooseDelete(user);
+
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Delete this draft?")).toBeInTheDocument();
+    expect(dialog.getByText(draft.title)).toBeInTheDocument();
+    expect(
+      dialog.getByText("Its description and all its images are deleted too."),
+    ).toBeInTheDocument();
+    expect(api.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft when the organizer backs out", async () => {
+    const user = userEvent.setup();
+    await chooseDelete(user);
+
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Keep draft",
+      }),
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes once confirmed, reads the list and the counts again and says so", async () => {
+    const user = userEvent.setup();
+    api.remove.mockResolvedValue(undefined);
+    await chooseDelete(user);
+
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete draft",
+      }),
+    );
+
+    expect(
+      await screen.findByText("The draft was deleted"),
+    ).toBeInTheDocument();
+    expect(api.remove).toHaveBeenCalledWith(draft.id);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // The row is gone: the list and the counts are asked for again.
+    await waitFor(() => expect(api.listMine).toHaveBeenCalledTimes(2));
+    expect(api.countMine).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the server's message when the draft cannot be deleted", async () => {
+    const user = userEvent.setup();
+    api.remove.mockRejectedValue(
+      new ApiError(
+        409,
+        "EVENT_NOT_DRAFT",
+        "Only a draft event can be deleted.",
+      ),
+    );
+    await chooseDelete(user);
+
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete draft",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't delete the draft",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Only a draft event can be deleted.",
+    );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

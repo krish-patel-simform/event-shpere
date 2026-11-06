@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { useHasPermission } from "@/src/features/auth";
@@ -36,10 +36,15 @@ jest.mock("../../api/event-api.service", () => ({
     getOverview: jest.fn(),
     getContent: jest.fn(),
     cancel: jest.fn(),
+    remove: jest.fn(),
     publish: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
+}));
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 jest.mock("@/src/features/auth", () => ({
   ...jest.requireActual("@/src/features/auth"),
@@ -246,6 +251,10 @@ describe("EventOverview: a draft", () => {
     expect(
       await screen.findByText(`${draft.event.title} was published`),
     ).toBeInTheDocument();
+    // Now that it is public, the way to it is offered right in the notice.
+    expect(
+      screen.getByRole("link", { name: "View public page" }),
+    ).toHaveAttribute("href", publicEventHref(draft.event.slug));
   });
 
   it("shows the server's answer when it refuses to publish", async () => {
@@ -300,7 +309,7 @@ describe("EventOverview: a draft", () => {
     );
   });
 
-  it("offers editing and the public page, and a link for every section tab", async () => {
+  it("offers editing and a link for every section tab, but no public page (a draft has none)", async () => {
     await renderOverview(sample(FINTECH_ID));
 
     expect(screen.getByRole("link", { name: "Edit event" })).toHaveAttribute(
@@ -308,8 +317,8 @@ describe("EventOverview: a draft", () => {
       eventEditHref(FINTECH_ID),
     );
     expect(
-      screen.getByRole("link", { name: "View public page" }),
-    ).toHaveAttribute("href", publicEventHref("fintech-product-forum"));
+      screen.queryByRole("link", { name: "View public page" }),
+    ).not.toBeInTheDocument();
     const sections = within(
       screen.getByRole("navigation", { name: "Event sections" }),
     );
@@ -355,15 +364,12 @@ describe("EventOverview: a draft", () => {
     );
   });
 
-  it("shows Delete draft switched off, marked Static, and no Cancel button", async () => {
+  it("shows Delete draft, enabled, and no Cancel button", async () => {
     await renderOverview(sample(FINTECH_ID));
 
     const zone = within(screen.getByRole("region", { name: "Danger zone" }));
-    expect(zone.getByRole("button", { name: "Delete draft" })).toBeDisabled();
-    expect(
-      zone.getByText("Deleting a draft is not available yet."),
-    ).toBeInTheDocument();
-    expect(zone.getByText("Static")).toBeInTheDocument();
+    expect(zone.getByRole("button", { name: "Delete draft" })).toBeEnabled();
+    expect(zone.queryByText("Static")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Cancel event" }),
     ).not.toBeInTheDocument();
@@ -566,6 +572,86 @@ describe("EventOverview: cancelling a published event", () => {
       await screen.findByText("We couldn't cancel the event"),
     ).toBeInTheDocument();
     expect(screen.getByText("A draft event is deleted")).toBeInTheDocument();
+  });
+});
+
+describe("EventOverview: deleting a draft", () => {
+  const openDialog = async (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(
+      within(screen.getByRole("region", { name: "Danger zone" })).getByRole(
+        "button",
+        { name: "Delete draft" },
+      ),
+    );
+
+  it("asks first, says the description and images go too, and keeps the draft when backing out", async () => {
+    const user = userEvent.setup();
+    await renderOverview(sample(FINTECH_ID));
+
+    await openDialog(user);
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Delete this draft?")).toBeInTheDocument();
+    expect(
+      dialog.getByText("Its description and all its images are deleted too."),
+    ).toBeInTheDocument();
+    await user.click(dialog.getByRole("button", { name: "Keep draft" }));
+
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("deletes on confirm and goes back to the events list, without a reload", async () => {
+    const user = userEvent.setup();
+    api.remove.mockResolvedValue(undefined);
+    await renderOverview(sample(FINTECH_ID));
+
+    await openDialog(user);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete draft",
+      }),
+    );
+
+    expect(api.remove).toHaveBeenCalledWith(FINTECH_ID);
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(EVENT_ROUTES.list),
+    );
+  });
+
+  it("stays on the page and shows the server's message when it cannot be deleted", async () => {
+    const user = userEvent.setup();
+    api.remove.mockRejectedValue(
+      new ApiError(
+        503,
+        "CMS_UNAVAILABLE",
+        "The event content is not available right now.",
+      ),
+    );
+    await renderOverview(sample(FINTECH_ID));
+
+    await openDialog(user);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete draft",
+      }),
+    );
+
+    expect(
+      await screen.findByText("We couldn't delete the draft"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("The event content is not available right now."),
+    ).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("offers no delete for a published event", async () => {
+    await renderOverview(sample(SUMMIT_ID));
+
+    expect(
+      screen.queryByRole("button", { name: "Delete draft" }),
+    ).not.toBeInTheDocument();
   });
 });
 
