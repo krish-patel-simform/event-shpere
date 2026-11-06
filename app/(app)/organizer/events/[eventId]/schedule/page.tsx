@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PermissionGate } from "@/src/features/auth";
-import { EventSchedule } from "@/src/features/events";
+import { EventSchedule } from "@/src/features/sessions";
 
 export const metadata: Metadata = { title: "Schedule board" };
 
 // Same access as the event's overview: organizers (their own events) and admins (any event). The
-// board is sample data until the schedule API exists.
+// board shows the event's real sessions, and the API refuses a move that is not the caller's.
 export default function EventSchedulePage(
   props: PageProps<"/organizer/events/[eventId]/schedule">,
 ) {

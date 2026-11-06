@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, type ComponentProps, type KeyboardEvent } from "react";
+import {
+  Fragment,
+  useRef,
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { formatCount } from "../format/format-number";
 import { Badge } from "./Badge";
 import { cn } from "./cn";
@@ -26,6 +32,7 @@ export function Tabs<Key extends string>({
   value,
   onChange,
   panelId,
+  wrapTab,
 }: {
   /** What the tabs filter, for screen readers ("Filter users"). */
   label: string;
@@ -36,6 +43,11 @@ export function Tabs<Key extends string>({
   onChange: (key: Key) => void;
   /** The id of the element that shows the selected tab's content. */
   panelId: string;
+  /**
+   * Wraps a tab's button, for a tab that is also a drop target. The wrapper must not add a role
+   * the tablist does not allow: give it `role="presentation"`.
+   */
+  wrapTab?: (tab: Tab<Key>, button: ReactNode) => ReactNode;
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -70,7 +82,7 @@ export function Tabs<Key extends string>({
       {tabs.map((tab, index) => {
         const selected = tab.key === value;
         const count = counts[tab.key];
-        return (
+        const button = (
           <button
             key={tab.key}
             ref={(element) => {
@@ -98,6 +110,11 @@ export function Tabs<Key extends string>({
               </Badge>
             )}
           </button>
+        );
+        return wrapTab ? (
+          <Fragment key={tab.key}>{wrapTab(tab, button)}</Fragment>
+        ) : (
+          button
         );
       })}
     </div>

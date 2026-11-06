@@ -4,7 +4,6 @@ export { EventBrowse } from "./components/EventBrowse";
 export { EventFormPage } from "./components/EventFormPage";
 export { EventLoader } from "./components/EventLoader";
 export { EventOverview } from "./components/EventOverview";
-export { EventSchedule } from "./components/EventSchedule";
 export { EventPageHeader } from "./components/EventPageHeader";
 export { SearchBox } from "./components/SearchBox";
 export { MyEvents } from "./components/MyEvents";

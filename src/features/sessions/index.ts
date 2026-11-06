@@ -7,6 +7,7 @@ export {
 export { AddSession } from "./components/AddSession";
 export { EditSession } from "./components/EditSession";
 export { EventHalls } from "./components/EventHalls";
+export { EventSchedule } from "./components/EventSchedule";
 export { EventSpeakers } from "./components/EventSpeakers";
 export { EventSessions } from "./components/EventSessions";
 export { MySessions } from "./components/MySessions";
