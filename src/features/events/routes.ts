@@ -71,3 +71,12 @@ export function eventEditHref(id: string, step: EventStep = "details"): string {
 export function publicEventHref(slug: string): string {
   return `${EVENT_ROUTES.browse}/${slug}`;
 }
+
+/**
+ * The public page of one session of an event. `slug` = events.slug, `sessionId` = sessions.id.
+ * It is defined here, not in the sessions feature, because the event's programme links to it and
+ * the sessions feature already imports from events.
+ */
+export function publicSessionHref(slug: string, sessionId: string): string {
+  return `${publicEventHref(slug)}/sessions/${sessionId}`;
+}

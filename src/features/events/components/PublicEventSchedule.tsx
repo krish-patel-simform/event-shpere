@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge, tabId, Tabs } from "@/src/core/ui";
 import { speakerHref } from "@/src/features/speakers";
 import Link from "next/link";
+import { publicSessionHref } from "../routes";
 import type { PublicSessionDto } from "../schemas/event-public.schemas";
 import { formatTicketPrice } from "../utils/event-display";
 import {
@@ -18,9 +19,12 @@ const PANEL_ID = "schedule-panel";
 
 function SessionRow({
   session,
+  slug,
   timezone,
 }: {
   session: TimedSession;
+  /** The event's public link, for the link to the session's own page. */
+  slug: string;
   timezone: string;
 }) {
   const place = session.hallName ?? "Online";
@@ -34,7 +38,12 @@ function SessionRow({
       </div>
       <div className="min-w-0 flex-1 basis-72">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[15px] font-semibold">{session.title}</span>
+          <Link
+            href={publicSessionHref(slug, session.id)}
+            className="text-[15px] font-semibold hover:underline"
+          >
+            {session.title}
+          </Link>
           <Badge tone="neutral">
             {PUBLIC_SESSION_TYPE_LABELS[session.type]}
           </Badge>
@@ -67,9 +76,12 @@ function SessionRow({
  */
 export function PublicEventSchedule({
   sessions,
+  slug,
   timezone,
 }: {
   sessions: readonly PublicSessionDto[];
+  /** The event's public link: each session title links to /events/[slug]/sessions/[id]. */
+  slug: string;
   timezone: string;
 }) {
   const days = groupSessionsByDay(sessions, timezone);
@@ -109,6 +121,7 @@ export function PublicEventSchedule({
             <SessionRow
               key={session.id}
               session={session}
+              slug={slug}
               timezone={timezone}
             />
           ))}

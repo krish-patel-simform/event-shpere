@@ -105,6 +105,7 @@ function setup(eventRow: typeof event = event) {
     }),
     listSessionsByEvent: jest.fn().mockResolvedValue([]),
     findSessionInEvent: jest.fn().mockResolvedValue(null),
+    findPublicSession: jest.fn().mockResolvedValue(null),
     setCmsSessionId: jest.fn().mockResolvedValue(undefined),
     countActiveBookings: jest.fn().mockResolvedValue(0),
     // Like the database: the saved session with exactly the new speakers, in order.
@@ -2017,11 +2018,7 @@ describe("sessionService: the event's daily hours", () => {
     startAt: new Date("2026-12-03T12:30:00.000Z"),
     endAt: new Date("2026-12-04T04:30:00.000Z"),
   };
-  const create = (
-    eventRow: typeof event,
-    startAt: string,
-    endAt: string,
-  ) => {
+  const create = (eventRow: typeof event, startAt: string, endAt: string) => {
     const { service, repo } = setup(eventRow);
     return {
       repo,
@@ -2044,7 +2041,8 @@ describe("sessionService: the event's daily hours", () => {
 
       await expect(result).rejects.toMatchObject({
         status: 400,
-        message: "Sessions must take place between 09:00 and 17:00 on each day of the event",
+        message:
+          "Sessions must take place between 09:00 and 17:00 on each day of the event",
       });
       expect(repo.createSession).not.toHaveBeenCalled();
     });
@@ -2086,7 +2084,9 @@ describe("sessionService: the event's daily hours", () => {
         "2026-12-04T17:00:00+05:30",
       );
 
-      await expect(result).resolves.toMatchObject({ title: "Offline-first Event Apps" });
+      await expect(result).resolves.toMatchObject({
+        title: "Offline-first Event Apps",
+      });
     });
 
     it("accepts a session inside the hours of a day in the middle of the event", async () => {
@@ -2149,7 +2149,8 @@ describe("sessionService: the event's daily hours", () => {
 
       await expect(result).rejects.toMatchObject({
         status: 400,
-        message: "Sessions must take place between 09:00 and 17:00 on each day of the event",
+        message:
+          "Sessions must take place between 09:00 and 17:00 on each day of the event",
       });
       expect(repo.updateSession).not.toHaveBeenCalled();
     });

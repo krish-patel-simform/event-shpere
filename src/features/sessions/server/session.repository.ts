@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { db } from "../../../db/dbClient";
 import {
+  eventsTable,
   hallsTable,
   sessionRegistrationsTable,
   sessionsTable,
@@ -133,6 +134,36 @@ async function withSpeakers(
   }));
 }
 
+/** One scheduled session of a public event, with what its public page shows beyond the session. */
+export type PublicSessionRow = Pick<
+  EventSession,
+  | "id"
+  | "title"
+  | "type"
+  | "mode"
+  | "startAt"
+  | "endAt"
+  | "price"
+  | "requiresRegistration"
+> & {
+  /** Only to load the Strapi content: the public DTO never carries it. */
+  cmsSessionId: string | null;
+  hallName: string | null;
+  event: {
+    slug: string;
+    title: string;
+    status: "published" | "cancelled";
+    timezone: string;
+  };
+  /** In display order. A suspended speaker is left out: they have no public page. */
+  speakers: {
+    slug: string;
+    firstName: string;
+    lastName: string;
+    role: SpeakerRole;
+  }[];
+};
+
 export const sessionRepository = {
   /** Every session of an event, earliest first (one with no time yet comes last). */
   async listSessionsByEvent(eventId: string): Promise<SessionWithSpeakers[]> {
@@ -165,6 +196,83 @@ export const sessionRepository = {
     if (!row) return null;
     const [session] = await withSpeakers([row]);
     return session ?? null;
+  },
+
+  /**
+   * One session for its public page, found by the event's public link and the session's id. Only
+   * a SCHEDULED session of a published or cancelled event: a draft event, a draft or cancelled
+   * session, an unknown id and a session of another event are all "not found", the same answer.
+   */
+  async findPublicSession(
+    slug: string,
+    sessionId: string,
+  ): Promise<PublicSessionRow | null> {
+    const [row] = await db
+      .select({
+        id: sessionsTable.id,
+        title: sessionsTable.title,
+        type: sessionsTable.type,
+        mode: sessionsTable.mode,
+        startAt: sessionsTable.startAt,
+        endAt: sessionsTable.endAt,
+        price: sessionsTable.price,
+        requiresRegistration: sessionsTable.requiresRegistration,
+        cmsSessionId: sessionsTable.cmsSessionId,
+        hallName: hallsTable.name,
+        eventSlug: eventsTable.slug,
+        eventTitle: eventsTable.title,
+        eventStatus: eventsTable.status,
+        eventTimezone: eventsTable.timezone,
+      })
+      .from(sessionsTable)
+      .innerJoin(eventsTable, eq(eventsTable.id, sessionsTable.eventId))
+      .leftJoin(hallsTable, eq(hallsTable.id, sessionsTable.hallId))
+      .where(
+        and(
+          eq(sessionsTable.id, sessionId),
+          eq(sessionsTable.status, "scheduled"),
+          eq(eventsTable.slug, slug),
+          inArray(eventsTable.status, ["published", "cancelled"]),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+
+    const speakers = await db
+      .select({
+        slug: speakersProfilesTable.slug,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        role: sessionSpeakersTable.role,
+      })
+      .from(sessionSpeakersTable)
+      .innerJoin(
+        speakersProfilesTable,
+        eq(speakersProfilesTable.id, sessionSpeakersTable.speakerId),
+      )
+      .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
+      .where(
+        and(
+          eq(sessionSpeakersTable.sessionId, row.id),
+          // A suspended speaker has no public page, so they are not named either.
+          ne(usersTable.status, "suspended"),
+        ),
+      )
+      .orderBy(asc(sessionSpeakersTable.displayOrder));
+
+    const { eventSlug, eventTitle, eventStatus, eventTimezone, ...session } =
+      row;
+    return {
+      ...session,
+      event: {
+        slug: eventSlug,
+        title: eventTitle,
+        // The query only finds these two; a draft never gets here.
+        status: eventStatus === "cancelled" ? "cancelled" : "published",
+        timezone: eventTimezone,
+      },
+      speakers,
+    };
   },
 
   /** Seats booked for this session right now (cancelled bookings do not count). */

@@ -11,6 +11,8 @@ export { EventSchedule } from "./components/EventSchedule";
 export { EventSpeakers } from "./components/EventSpeakers";
 export { EventSessions } from "./components/EventSessions";
 export { MySessions } from "./components/MySessions";
+export { PublicSessionDetail } from "./components/PublicSessionDetail";
+export { PublicSessionDetailSkeleton } from "./components/PublicSessionDetailSkeleton";
 export { SessionDetail } from "./components/SessionDetail";
 export { SessionDetailSkeleton } from "./components/SessionDetailSkeleton";
 export { SessionListSkeleton } from "./components/SessionListSkeleton";
@@ -50,6 +52,13 @@ export {
   type UpdateSessionBody,
   type UpdateSessionRequest,
 } from "./schemas/sessions.schemas";
+export {
+  publicSessionContentSchema,
+  publicSessionDetailSchema,
+  publicSessionParams,
+  type PublicSessionContentDto,
+  type PublicSessionDetailDto,
+} from "./schemas/session-public.schemas";
 export {
   sessionSubmissionSchema,
   type SessionSubmission,

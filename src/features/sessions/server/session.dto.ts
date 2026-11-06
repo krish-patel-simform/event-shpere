@@ -1,11 +1,19 @@
 import "server-only";
 import { blocksToText, type CmsMedia, type CmsSessionDetail } from "../../cms";
+import { toPublicMediaDto } from "../../events/server";
 import type {
   SessionContentDto,
   SessionCoverDto,
 } from "../schemas/session-content.schemas";
+import type {
+  PublicSessionContentDto,
+  PublicSessionDetailDto,
+} from "../schemas/session-public.schemas";
 import type { SessionDto } from "../schemas/sessions.schemas";
-import type { SessionWithSpeakers } from "./session.repository";
+import type {
+  PublicSessionRow,
+  SessionWithSpeakers,
+} from "./session.repository";
 
 /**
  * The content form's values: the description as plain text, empty things as "" / [] / null.
@@ -67,5 +75,56 @@ export function toSessionDto(session: SessionWithSpeakers): SessionDto {
       role: speaker.role,
       displayOrder: speaker.displayOrder,
     })),
+  };
+}
+
+/**
+ * The written part of a session for the public: the description as plain text, resources that
+ * have an https link, and the cover without its Strapi file id. No entry yet (a session whose
+ * Strapi link is missing) is empty content, not an error.
+ */
+export function toPublicSessionContentDto(
+  detail: CmsSessionDetail | null,
+): PublicSessionContentDto {
+  return {
+    description: detail ? blocksToText(detail.description) : "",
+    prerequisites: detail?.prerequisites || null,
+    resources: (detail?.resources ?? []).flatMap((item) =>
+      // The organizer's form only accepts https links; a link edited in Strapi by hand is checked
+      // again here, because the page shows it as a clickable link.
+      item.url?.startsWith("https://")
+        ? [{ label: item.label, url: item.url }]
+        : [],
+    ),
+    coverImage: detail?.coverImage ? toPublicMediaDto(detail.coverImage) : null,
+  };
+}
+
+/**
+ * A session's public page: the facts from Postgres, the written content from the CMS (null =
+ * the CMS did not answer, so the facts still show). The columns one by one, so a new column
+ * (the join link!) is never made public by accident.
+ */
+export function toPublicSessionDetailDto(
+  row: PublicSessionRow,
+  content: PublicSessionContentDto | null,
+): PublicSessionDetailDto {
+  return {
+    id: row.id,
+    title: row.title,
+    type: row.type,
+    mode: row.mode,
+    startAt: row.startAt?.toISOString() ?? null,
+    endAt: row.endAt?.toISOString() ?? null,
+    hallName: row.hallName,
+    price: row.price,
+    requiresRegistration: row.requiresRegistration,
+    speakers: row.speakers.map((speaker) => ({
+      slug: speaker.slug,
+      name: `${speaker.firstName} ${speaker.lastName}`,
+      role: speaker.role,
+    })),
+    event: row.event,
+    content,
   };
 }

@@ -15,6 +15,11 @@ export const sessionQueryKeys = {
   /** The session's text and cover (Strapi): the content and cover steps. */
   content: (eventId: string, sessionId: string) =>
     ["sessions", "content", eventId, sessionId] as const,
+  /** Every session's public page: refreshed when any session or its text changes. */
+  publicDetails: ["sessions", "public"] as const,
+  /** One session's public page, by the event's link and the session's id. */
+  publicDetail: (slug: string, sessionId: string) =>
+    ["sessions", "public", slug, sessionId] as const,
 };
 
 /**
@@ -51,19 +56,26 @@ export function invalidateSession(
       : undefined,
     invalidateEvent(queryClient, eventId),
     queryClient.invalidateQueries({ queryKey: eventQueryKeys.publicDetails }),
+    queryClient.invalidateQueries({
+      queryKey: sessionQueryKeys.publicDetails,
+    }),
   ]);
 }
 
 /**
- * After a session's text or cover changed: only the content and cover steps show it. The list and
- * the event's pages read from Postgres, which did not change, so they are left alone.
+ * After a session's text or cover changed: the content and cover steps and the session's public
+ * page show it. The list and the event's pages read from Postgres, which did not change, so they
+ * are left alone.
  */
 export function invalidateSessionContent(
   queryClient: QueryClient,
   eventId: string,
   sessionId: string,
 ) {
-  return queryClient.invalidateQueries({
-    queryKey: sessionQueryKeys.content(eventId, sessionId),
-  });
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: sessionQueryKeys.content(eventId, sessionId),
+    }),
+    queryClient.invalidateQueries({ queryKey: sessionQueryKeys.publicDetails }),
+  ]);
 }

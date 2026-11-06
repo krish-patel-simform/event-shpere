@@ -252,6 +252,28 @@ describe("the schedule and speakers", () => {
     expect(next.queryByText("Opening Keynote")).not.toBeInTheDocument();
   });
 
+  it("links each session to its own page under the event's link", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<PublicEventDetail slug="summit" />);
+    await screen.findByRole("heading", { name: "Schedule" });
+
+    const day = within(screen.getByRole("tabpanel"));
+    expect(day.getByRole("link", { name: "Opening Keynote" })).toHaveAttribute(
+      "href",
+      `/events/product-engineering-summit-2026/sessions/${SESSION_ONE}`,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Fri 4" }));
+    expect(
+      within(screen.getByRole("tabpanel")).getByRole("link", {
+        name: "Hands-on Workshop",
+      }),
+    ).toHaveAttribute(
+      "href",
+      `/events/product-engineering-summit-2026/sessions/${SESSION_TWO}`,
+    );
+  });
+
   it("leaves a session without a time off the programme", async () => {
     renderWithClient(<PublicEventDetail slug="summit" />);
     await screen.findByRole("heading", { name: "Schedule" });

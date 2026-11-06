@@ -32,6 +32,7 @@ import type {
   SessionCoverDto,
   UpdateSessionContentBody,
 } from "../schemas/session-content.schemas";
+import type { PublicSessionDetailDto } from "../schemas/session-public.schemas";
 import type {
   CreateSessionBody,
   ReplaceSessionSpeakersBody,
@@ -45,6 +46,8 @@ import {
   type HallBookingService,
 } from "./hall-booking.service";
 import {
+  toPublicSessionContentDto,
+  toPublicSessionDetailDto,
   toSessionContentDto,
   toSessionCoverDto,
   toSessionDto,
@@ -72,6 +75,7 @@ export type SessionServiceDeps = {
     | "createSession"
     | "listSessionsByEvent"
     | "findSessionInEvent"
+    | "findPublicSession"
     | "setCmsSessionId"
     | "countActiveBookings"
     | "updateSession"
@@ -383,6 +387,31 @@ export function createSessionService(deps: SessionServiceDeps) {
       const session = await repo.findSessionInEvent(eventId, sessionId);
       if (!session) throw new NotFoundError("Session not found");
       return toSessionDto(session);
+    },
+
+    /**
+     * One session's public page, found by the event's public link and the session's id. Anyone
+     * may read it; a session that is not public (draft or unknown event, draft or cancelled
+     * session, a session of another event) is a 404. The facts come from Postgres, the written
+     * content from Strapi: if Strapi fails the page still has the facts, with `content: null`
+     * (the organizer's screens use requireCms instead, because saving an empty form would wipe
+     * the real content).
+     */
+    async getPublicSession(
+      slug: string,
+      sessionId: string,
+    ): Promise<PublicSessionDetailDto> {
+      const row = await repo.findPublicSession(slug, sessionId);
+      if (!row) throw new NotFoundError("Session not found");
+
+      let content: PublicSessionDetailDto["content"] = null;
+      try {
+        content = toPublicSessionContentDto(await loadDetail(row));
+      } catch (error) {
+        // loadDetail already logged the Strapi failure (as a 503); anything else is a real bug.
+        if (!(error instanceof ServiceUnavailableError)) throw error;
+      }
+      return toPublicSessionDetailDto(row, content);
     },
 
     /** The content form's current values (from Strapi). */

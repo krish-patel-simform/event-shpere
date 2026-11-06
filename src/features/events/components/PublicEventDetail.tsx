@@ -275,6 +275,7 @@ function EventDetail({ event }: { event: PublicEventDetailDto }) {
       {timedCount > 0 && (
         <PublicEventSchedule
           sessions={event.sessions}
+          slug={event.slug}
           timezone={event.timezone}
         />
       )}

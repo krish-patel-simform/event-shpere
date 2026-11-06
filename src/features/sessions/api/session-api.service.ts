@@ -12,6 +12,10 @@ import {
   type UpdateSessionContentRequest,
 } from "../schemas/session-content.schemas";
 import {
+  publicSessionDetailSchema,
+  type PublicSessionDetailDto,
+} from "../schemas/session-public.schemas";
+import {
   sessionListResponseSchema,
   sessionResponseSchema,
   type CreateSessionRequest,
@@ -38,6 +42,17 @@ export const sessionApiService = {
     return apiRequest(
       { method: "GET", url: sessionUrl(eventId, sessionId) },
       sessionResponseSchema,
+    );
+  },
+
+  /**
+   * One session's public page, by the event's public link and the session's id (open to guests).
+   * 404 when it is not public: a draft event, a draft or cancelled session, another event's.
+   */
+  getPublic(slug: string, sessionId: string): Promise<PublicSessionDetailDto> {
+    return apiRequest(
+      { method: "GET", url: `/events/slug/${slug}/sessions/${sessionId}` },
+      publicSessionDetailSchema,
     );
   },
 

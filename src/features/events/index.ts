@@ -26,6 +26,7 @@ export {
   EVENT_STEPS,
   parseEventStep,
   publicEventHref,
+  publicSessionHref,
   type EventStep,
 } from "./routes";
 // Cache keys and the "an event changed" refresh, for other features whose changes show on the
@@ -43,7 +44,12 @@ export {
   toIsoWithOffset,
 } from "./schemas/event-form.schemas";
 export {
+  paragraphs,
+  PUBLIC_SESSION_TYPE_LABELS,
+} from "./utils/public-event-display";
+export {
   formatEventDates,
+  formatEventTimes,
   formatTicketPrice,
   isEditable as isEventEditable,
   plural,
