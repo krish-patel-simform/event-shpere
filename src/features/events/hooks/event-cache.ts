@@ -20,6 +20,11 @@ export const eventQueryKeys = {
   publicList: (params: ListPublicEventsParams) =>
     ["events", "public", "list", params] as const,
   publicDetail: (slug: string) => ["events", "public", "detail", slug] as const,
+  /**
+   * Every event's public page. Its programme is the event's scheduled sessions, so a change to a
+   * session reloads them all (the sessions feature knows the event's id, not its public link).
+   */
+  publicDetails: ["events", "public", "detail"] as const,
 };
 
 /**

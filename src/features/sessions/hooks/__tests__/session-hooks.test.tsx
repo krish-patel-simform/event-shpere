@@ -102,6 +102,7 @@ function setup() {
   queryClient.setQueryData(eventQueryKeys.overview(otherEventId), {});
   queryClient.setQueryData(eventQueryKeys.lists, []);
   queryClient.setQueryData(eventQueryKeys.counts, {});
+  queryClient.setQueryData(eventQueryKeys.publicDetail("pune-tech"), {});
 
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -134,6 +135,8 @@ describe("what a change to a session refreshes", () => {
     expect(isStale(eventQueryKeys.overview(eventId))).toBe(true);
     expect(isStale(eventQueryKeys.counts)).toBe(true);
     expect(isStale(eventQueryKeys.lists)).toBe(true);
+    // The event's public page lists its scheduled sessions: title, time, hall, price, speakers.
+    expect(isStale(eventQueryKeys.publicDetail("pune-tech"))).toBe(true);
     // Another event, and a session of this event nobody touched, are not affected.
     expect(isStale(sessionQueryKeys.list(otherEventId))).toBe(false);
     expect(isStale(eventQueryKeys.overview(otherEventId))).toBe(false);
@@ -189,6 +192,7 @@ describe("what a change to a session refreshes", () => {
 
     expect(isStale(sessionQueryKeys.list(eventId))).toBe(false);
     expect(isStale(eventQueryKeys.overview(eventId))).toBe(false);
+    expect(isStale(eventQueryKeys.publicDetail("pune-tech"))).toBe(false);
   });
 
   it("editing refreshes the list, that session and the event's pages", async () => {
