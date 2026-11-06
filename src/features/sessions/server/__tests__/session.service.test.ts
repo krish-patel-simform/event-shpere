@@ -67,6 +67,7 @@ const event = {
   venueId,
   startAt: new Date("2026-12-12T04:00:00.000Z"),
   endAt: new Date("2026-12-12T12:00:00.000Z"),
+  timezone: "Asia/Kolkata",
 };
 
 /** The "now" of every service test, so nothing depends on the real clock. */
@@ -93,8 +94,8 @@ const inPerson: CreateSessionRequest = {
 const parse = (overrides: Partial<CreateSessionRequest> = {}) =>
   createSessionBodySchema.parse({ ...inPerson, ...overrides });
 
-function setup() {
-  const access = { getEventIfOrgOwns: jest.fn().mockResolvedValue(event) };
+function setup(eventRow: typeof event = event) {
+  const access = { getEventIfOrgOwns: jest.fn().mockResolvedValue(eventRow) };
   const repo = {
     findHall: jest.fn().mockResolvedValue({
       id: hallId,
@@ -1996,6 +1997,196 @@ describe("two saves for one hall at the same moment (the database constraint)", 
       await expect(
         service.updateSession(eventId, sessionId, moveBody, organizer),
       ).rejects.toBe(failure);
+    });
+  });
+});
+
+// A multi-day event is one range (start of the first day to end of the last), but its start and end
+// times also say when each day runs: 09:00-17:00 here, 3 to 5 Dec 2026. The service holds every
+// session to those daily hours, as long as the event does not run through the night.
+describe("sessionService: the event's daily hours", () => {
+  // 09:00 IST on 3 Dec to 17:00 IST on 5 Dec.
+  const multiDay = {
+    ...event,
+    startAt: new Date("2026-12-03T03:30:00.000Z"),
+    endAt: new Date("2026-12-05T11:30:00.000Z"),
+  };
+  // 18:00 IST on 3 Dec to 10:00 IST on 4 Dec: a night, with no daily hours.
+  const overnight = {
+    ...event,
+    startAt: new Date("2026-12-03T12:30:00.000Z"),
+    endAt: new Date("2026-12-04T04:30:00.000Z"),
+  };
+  const create = (
+    eventRow: typeof event,
+    startAt: string,
+    endAt: string,
+  ) => {
+    const { service, repo } = setup(eventRow);
+    return {
+      repo,
+      result: service.createSession(
+        eventId,
+        createSessionBodySchema.parse({ ...inPerson, startAt, endAt }),
+        organizer,
+      ),
+    };
+  };
+
+  describe("creating", () => {
+    it("refuses a session that ends after the event closes for the day (400)", async () => {
+      // 4 Dec is the middle day: inside the range, but after 17:00.
+      const { result, repo } = create(
+        multiDay,
+        "2026-12-04T16:00:00+05:30",
+        "2026-12-04T18:00:00+05:30",
+      );
+
+      await expect(result).rejects.toMatchObject({
+        status: 400,
+        message: "Sessions must take place between 09:00 and 17:00 on each day of the event",
+      });
+      expect(repo.createSession).not.toHaveBeenCalled();
+    });
+
+    it("refuses a session on the first day that ends after the event closes for the day", async () => {
+      const { result } = create(
+        multiDay,
+        "2026-12-03T16:00:00+05:30",
+        "2026-12-03T18:00:00+05:30",
+      );
+
+      await expect(result).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("refuses a session that starts before the event opens for the day (400)", async () => {
+      const { result } = create(
+        multiDay,
+        "2026-12-04T08:00:00+05:30",
+        "2026-12-04T10:00:00+05:30",
+      );
+
+      await expect(result).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("refuses a session that runs past midnight into the next day", async () => {
+      const { result } = create(
+        multiDay,
+        "2026-12-04T16:00:00+05:30",
+        "2026-12-05T01:00:00+05:30",
+      );
+
+      await expect(result).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("accepts a session that uses the whole day, from opening to closing", async () => {
+      const { result } = create(
+        multiDay,
+        "2026-12-04T09:00:00+05:30",
+        "2026-12-04T17:00:00+05:30",
+      );
+
+      await expect(result).resolves.toMatchObject({ title: "Offline-first Event Apps" });
+    });
+
+    it("accepts a session inside the hours of a day in the middle of the event", async () => {
+      const { result } = create(
+        multiDay,
+        "2026-12-04T13:00:00+05:30",
+        "2026-12-04T14:00:00+05:30",
+      );
+
+      await expect(result).resolves.toBeDefined();
+    });
+
+    it("has no daily hours for an event that runs through the night", async () => {
+      // 23:00 on 3 Dec to 01:00 on 4 Dec: late, and across midnight, but the event is overnight.
+      const { result } = create(
+        overnight,
+        "2026-12-03T23:00:00+05:30",
+        "2026-12-04T01:00:00+05:30",
+      );
+
+      await expect(result).resolves.toBeDefined();
+    });
+
+    it("still refuses a session outside an overnight event's own dates", async () => {
+      const { result } = create(
+        overnight,
+        "2026-12-04T09:00:00+05:30",
+        "2026-12-04T11:00:00+05:30", // after the event ends at 10:00
+      );
+
+      await expect(result).rejects.toBeInstanceOf(ValidationError);
+    });
+  });
+
+  describe("editing", () => {
+    const saved = {
+      ...sessionRow,
+      startAt: new Date("2026-12-04T05:30:00.000Z"), // 11:00 IST on 4 Dec
+      endAt: new Date("2026-12-04T06:30:00.000Z"),
+    };
+    function edit(body: UpdateSessionRequest) {
+      const { service, repo } = setup(multiDay);
+      repo.findSessionInEvent.mockResolvedValue(saved);
+      return {
+        repo,
+        result: service.updateSession(
+          eventId,
+          sessionId,
+          updateSessionBodySchema.parse(body),
+          organizer,
+        ),
+      };
+    }
+
+    it("refuses moving a session to after the event closes for the day (400)", async () => {
+      const { result, repo } = edit({
+        startAt: "2026-12-04T17:00:00+05:30",
+        endAt: "2026-12-04T18:00:00+05:30",
+      });
+
+      await expect(result).rejects.toMatchObject({
+        status: 400,
+        message: "Sessions must take place between 09:00 and 17:00 on each day of the event",
+      });
+      expect(repo.updateSession).not.toHaveBeenCalled();
+    });
+
+    it("refuses stretching only the end past closing time", async () => {
+      const { result } = edit({ endAt: "2026-12-04T18:00:00+05:30" });
+
+      await expect(result).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("lets a session move to another time inside the hours", async () => {
+      const { result, repo } = edit({
+        startAt: "2026-12-04T14:00:00+05:30",
+        endAt: "2026-12-04T15:00:00+05:30",
+      });
+
+      await expect(result).resolves.toBeDefined();
+      expect(repo.updateSession).toHaveBeenCalled();
+    });
+
+    it("does not hold an edit that leaves the time alone to the hours (a title change always works)", async () => {
+      // A session saved before the rule, outside the hours: renaming it must still work.
+      const { service, repo } = setup(multiDay);
+      repo.findSessionInEvent.mockResolvedValue({
+        ...saved,
+        startAt: new Date("2026-12-04T12:00:00.000Z"), // 17:30 IST
+        endAt: new Date("2026-12-04T13:00:00.000Z"),
+      });
+
+      await expect(
+        service.updateSession(
+          eventId,
+          sessionId,
+          updateSessionBodySchema.parse({ title: "A better title" }),
+          organizer,
+        ),
+      ).resolves.toBeDefined();
     });
   });
 });

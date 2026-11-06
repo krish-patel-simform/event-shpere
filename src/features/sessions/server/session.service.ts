@@ -38,7 +38,7 @@ import type {
   SessionDto,
   UpdateSessionBody,
 } from "../schemas/sessions.schemas";
-import { checkSessionShape } from "../utils/session-rules";
+import { checkEventHours, checkSessionShape } from "../utils/session-rules";
 import { isHallClashError } from "./hall-clash";
 import {
   hallBookingService,
@@ -518,6 +518,11 @@ export function createSessionService(deps: SessionServiceDeps) {
           "The session must take place within the event's dates",
         );
       }
+      // ...and to the hours the event keeps on each of its days.
+      const outsideHours = timeChanged
+        ? checkEventHours({ startAt, endAt }, event)
+        : null;
+      if (outsideHours) throw new ValidationError(outsideHours);
 
       let hall: HallRef | null = null;
       if (merged.hallId && (hallChanged || timeChanged)) {
@@ -699,6 +704,9 @@ export function createSessionService(deps: SessionServiceDeps) {
           "The session must take place within the event's dates",
         );
       }
+      // On a multi-day event the range is not enough: each day has its opening and closing time.
+      const outsideHours = checkEventHours(body, event);
+      if (outsideHours) throw new ValidationError(outsideHours);
 
       if (body.hallId) {
         await assertHallUsable(event, body.hallId, {
