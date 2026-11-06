@@ -12,9 +12,13 @@ import {
 import { eventApiService } from "../../../events/api/event-api.service";
 import { eventSessionsHref } from "../../../events";
 import { sessionApiService } from "../../api/session-api.service";
+import { venueApiService } from "@/src/features/venues/api/venue-api.service";
 import {
   cancelledKeynote,
+  HALL_A_ID,
+  HALL_B_ID,
   organizerSessions,
+  SPEAKER_ANANYA_ID,
   talk,
   workshop,
 } from "../../__fixtures__/organizer-sessions";
@@ -32,6 +36,10 @@ jest.mock("@/src/features/auth", () => ({
   ...jest.requireActual("@/src/features/auth"),
   useHasPermission: jest.fn(),
 }));
+jest.mock("@/src/features/venues/api/venue-api.service", () => ({
+  venueApiService: { get: jest.fn() },
+}));
+const venues = jest.mocked(venueApiService);
 const events = jest.mocked(eventApiService);
 const api = jest.mocked(sessionApiService);
 const hasPermission = jest.mocked(useHasPermission);
@@ -50,10 +58,36 @@ async function renderPage(eventId = SUMMIT_ID) {
   return view;
 }
 
+/** The venue's halls, as GET /api/venues/[id] answers: Lab 3 has no session in the samples. */
+const venueHalls = [
+  {
+    id: HALL_A_ID,
+    name: "Hall A",
+    capacity: 300,
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    id: HALL_B_ID,
+    name: "Hall B",
+    capacity: 120,
+    sortOrder: 2,
+    isActive: true,
+  },
+  {
+    id: "5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c99",
+    name: "Lab 3",
+    capacity: 60,
+    sortOrder: 3,
+    isActive: true,
+  },
+];
+
 beforeEach(() => {
   jest.resetAllMocks();
   hasPermission.mockReturnValue(true);
   api.listForEvent.mockResolvedValue([...organizerSessions]);
+  venues.get.mockResolvedValue({ halls: venueHalls } as never);
 });
 
 describe("EventSessions: loading and failing", () => {
@@ -238,22 +272,31 @@ describe("EventSessions: row actions", () => {
     const menu = within(screen.getByRole("menu"));
     const items = menu.getAllByRole("menuitem");
     expect(items.map((item) => item.textContent)).toEqual([
-      "Edit details",
-      "Edit speakers",
+      "Edit details & speakers",
       "Edit content",
       "Cover image",
       "Cancel session",
     ]);
     expect(
-      menu.getByRole("menuitem", { name: "Edit speakers" }),
-    ).toHaveAttribute(
-      "href",
-      eventSessionEditHref(SUMMIT_ID, talk.id, "speakers"),
-    );
+      menu.getByRole("menuitem", { name: "Edit details & speakers" }),
+    ).toHaveAttribute("href", eventSessionEditHref(SUMMIT_ID, talk.id));
     expect(menu.getByRole("menuitem", { name: "Cover image" })).toHaveAttribute(
       "href",
       eventSessionEditHref(SUMMIT_ID, talk.id, "cover"),
     );
+  });
+
+  it("shows a visible Cancel button on the row that opens the confirm dialog", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.click(
+      await screen.findByRole("button", { name: `Cancel ${talk.title}` }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Cancel this session?" }),
+    ).toBeInTheDocument();
   });
 
   it("gives a cancelled session no link and no menu", async () => {
@@ -267,6 +310,205 @@ describe("EventSessions: row actions", () => {
     expect(row.getByText("Cancelled")).toBeInTheDocument();
     expect(row.queryByRole("link")).not.toBeInTheDocument();
     expect(row.queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("EventSessions: one speaker's sessions (?speaker=)", () => {
+  async function renderForSpeaker(speakerId: string) {
+    events.getOverview.mockResolvedValue(sampleOverview(SUMMIT_ID));
+    renderWithClient(
+      <EventSessions eventId={SUMMIT_ID} speakerId={speakerId} />,
+    );
+    await screen.findByRole("heading", { level: 1 });
+  }
+
+  it("shows only that speaker's sessions, with their name and the way back to all", async () => {
+    await renderForSpeaker(SPEAKER_ANANYA_ID);
+
+    const table = within(await screen.findByRole("table"));
+    // Ananya presents the talk and the workshop; the cancelled keynote is Rohan's alone.
+    expect(table.getByText(talk.title)).toBeInTheDocument();
+    expect(table.getByText(workshop.title)).toBeInTheDocument();
+    expect(table.queryByText(cancelledKeynote.title)).not.toBeInTheDocument();
+    expect(screen.getByText("Sessions of")).toHaveTextContent(
+      "Sessions of Ananya Rao",
+    );
+    expect(
+      screen.getByRole("link", { name: "Show all sessions" }),
+    ).toHaveAttribute("href", eventSessionsHref(SUMMIT_ID));
+    expect(screen.getByText(/Showing 2 of 3 sessions/)).toBeInTheDocument();
+  });
+
+  it("says so when the speaker is on no session of this event", async () => {
+    await renderForSpeaker("6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4dff");
+
+    expect(
+      await screen.findByText(
+        "This speaker is not on any session of this event.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows every session without the filter", async () => {
+    await renderPage();
+
+    const table = within(await screen.findByRole("table"));
+    expect(table.getByText(cancelledKeynote.title)).toBeInTheDocument();
+    expect(screen.queryByText("Show all sessions")).not.toBeInTheDocument();
+  });
+});
+
+describe("EventSessions: filtering by hall", () => {
+  const hallFilter = () =>
+    screen.findByRole("combobox", { name: "Filter by hall" });
+
+  /** Opens the dropdown and clicks the row that starts with `name`. */
+  async function chooseHall(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string,
+  ) {
+    await user.click(await hallFilter());
+    await user.click(
+      await screen.findByRole("option", { name: new RegExp(`^${name}`) }),
+    );
+  }
+
+  it("offers the venue's halls in a dropdown, each with how many sessions it holds", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.click(await hallFilter());
+
+    expect(
+      screen.getByRole("option", { name: /^All halls/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Hall A.*1 session/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Hall B.*1 session/ }),
+    ).toBeInTheDocument();
+    // A hall of the venue with no session is offered too.
+    expect(
+      screen.getByRole("option", { name: /Lab 3.*0 sessions/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /No hall \(online\).*1 session/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("asks the event's venue for its halls", async () => {
+    await renderPage();
+    await hallFilter();
+
+    expect(venues.get).toHaveBeenCalledWith(
+      sampleOverview(SUMMIT_ID).event.venue?.id,
+    );
+  });
+
+  it("shows only the sessions in the chosen hall, in the browser, with no new request", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    const calls = api.listForEvent.mock.calls.length;
+
+    await chooseHall(user, "Hall A");
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText(talk.title)).toBeInTheDocument();
+    expect(table.queryByText(workshop.title)).not.toBeInTheDocument();
+    expect(table.queryByText(cancelledKeynote.title)).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 3 sessions")).toBeInTheDocument();
+    expect(api.listForEvent).toHaveBeenCalledTimes(calls);
+  });
+
+  it("can be searched by typing: the list narrows to the halls that match", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.type(await hallFilter(), "lab");
+
+    expect(screen.getByRole("option", { name: /Lab 3/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Hall A/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Hall B/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says there is no match when the search finds no hall", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.type(await hallFilter(), "zzz");
+
+    expect(screen.getByText("No hall matches your search")).toBeInTheDocument();
+  });
+
+  it("shows the sessions with no hall (online) on their own", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await chooseHall(user, "No hall");
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText(cancelledKeynote.title)).toBeInTheDocument();
+    expect(table.queryByText(talk.title)).not.toBeInTheDocument();
+  });
+
+  it("says no session is in a hall that holds none, and shows them all again on request", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await chooseHall(user, "Lab 3");
+
+    expect(screen.getByText("No session is in Lab 3.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show all sessions" }));
+
+    expect(
+      within(screen.getByRole("table")).getByText(talk.title),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Showing .* of/)).not.toBeInTheDocument();
+  });
+
+  it("goes back to every session with the 'All halls' row", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await chooseHall(user, "Hall A");
+
+    await chooseHall(user, "All halls");
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText(talk.title)).toBeInTheDocument();
+    expect(table.getByText(workshop.title)).toBeInTheDocument();
+  });
+
+  it("still offers the halls the sessions use when the venue's halls cannot load", async () => {
+    const user = userEvent.setup();
+    venues.get.mockRejectedValue(new ApiError(503, "UNAVAILABLE", "down"));
+    await renderPage();
+
+    await user.click(await hallFilter());
+
+    expect(
+      await screen.findByRole("option", { name: /Hall A/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Hall B/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Lab 3/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("has no filter while there is no session to filter", async () => {
+    api.listForEvent.mockResolvedValue([]);
+    await renderPage();
+
+    await screen.findByText("This event has no sessions yet.");
+    expect(
+      screen.queryByRole("combobox", { name: "Filter by hall" }),
+    ).not.toBeInTheDocument();
   });
 });
 

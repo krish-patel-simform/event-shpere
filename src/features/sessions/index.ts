@@ -5,6 +5,9 @@ export {
   SESSION_COVER_TYPES,
 } from "./constants";
 export { AddSession } from "./components/AddSession";
+export { EditSession } from "./components/EditSession";
+export { EventHalls } from "./components/EventHalls";
+export { EventSpeakers } from "./components/EventSpeakers";
 export { EventSessions } from "./components/EventSessions";
 export { MySessions } from "./components/MySessions";
 export { SessionDetail } from "./components/SessionDetail";
@@ -14,6 +17,7 @@ export { SubmitSession } from "./components/SubmitSession";
 export {
   eventSessionEditHref,
   eventSessionNewHref,
+  parseSessionSpeaker,
   parseSessionStep,
   SESSION_ROUTES,
   SESSION_STEPS,

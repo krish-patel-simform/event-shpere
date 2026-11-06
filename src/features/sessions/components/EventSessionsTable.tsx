@@ -2,7 +2,6 @@ import {
   FileText,
   Image as ImageIcon,
   Pencil,
-  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -10,6 +9,7 @@ import Link from "next/link";
 import {
   Badge,
   ActionMenu,
+  Button,
   ClickableRow,
   cn,
   type ActionMenuItem,
@@ -35,8 +35,7 @@ const EDIT_STEPS: {
   label: string;
   icon: LucideIcon;
 }[] = [
-  { step: "details", label: "Edit details", icon: Pencil },
-  { step: "speakers", label: "Edit speakers", icon: Users },
+  { step: "details", label: "Edit details & speakers", icon: Pencil },
   { step: "content", label: "Edit content", icon: FileText },
   { step: "cover", label: "Cover image", icon: ImageIcon },
 ];
@@ -163,10 +162,21 @@ export function EventSessionsTable({
                 </td>
                 <td className="px-4 py-3 text-right">
                   {editable && (
-                    <ActionMenu
-                      label={`Actions for ${session.title}`}
-                      items={rowActions(session)}
-                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="secondary"
+                        className="text-danger"
+                        aria-label={`Cancel ${session.title}`}
+                        onClick={() => onCancel(session)}
+                      >
+                        <X aria-hidden="true" className="size-4" />
+                        Cancel
+                      </Button>
+                      <ActionMenu
+                        label={`Actions for ${session.title}`}
+                        items={rowActions(session)}
+                      />
+                    </div>
                   )}
                 </td>
               </ClickableRow>

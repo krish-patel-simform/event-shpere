@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PermissionGate } from "@/src/features/auth";
-import { EventSessions } from "@/src/features/sessions";
+import { EventSessions, parseSessionSpeaker } from "@/src/features/sessions";
 
 export const metadata: Metadata = { title: "Event sessions" };
 
@@ -15,7 +15,10 @@ export default function EventSessionsPage(
     <PermissionGate permissions={["SESSION_MANAGE"]}>
       {/* params is request data: with cacheComponents it must be read inside Suspense. */}
       <Suspense fallback={null}>
-        <SessionsSection params={props.params} />
+        <SessionsSection
+          params={props.params}
+          searchParams={props.searchParams}
+        />
       </Suspense>
     </PermissionGate>
   );
@@ -23,7 +26,15 @@ export default function EventSessionsPage(
 
 async function SessionsSection({
   params,
-}: Pick<PageProps<"/organizer/events/[eventId]/sessions">, "params">) {
+  searchParams,
+}: Pick<
+  PageProps<"/organizer/events/[eventId]/sessions">,
+  "params" | "searchParams"
+>) {
   const { eventId } = await params;
-  return <EventSessions eventId={eventId} />;
+  // ?speaker=<id> shows only that speaker's sessions; anything else is no filter.
+  const { speaker } = await searchParams;
+  return (
+    <EventSessions eventId={eventId} speakerId={parseSessionSpeaker(speaker)} />
+  );
 }

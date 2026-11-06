@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PermissionGate } from "@/src/features/auth";
-import { EventSpeakers } from "@/src/features/events";
+import { EventSpeakers } from "@/src/features/sessions";
 
 export const metadata: Metadata = { title: "Event speakers" };
 
 // Same access as the event's overview: organizers (their own events) and admins (any event). The
-// rows are sample data until the event's speakers API exists.
+// rows are the speakers of this event's sessions.
 export default function EventSpeakersPage(
   props: PageProps<"/organizer/events/[eventId]/speakers">,
 ) {
