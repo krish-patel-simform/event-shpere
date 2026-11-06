@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import "@testing-library/jest-dom";
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
 import { useHasPermission } from "@/src/features/auth";
@@ -584,6 +584,55 @@ describe("EventOverview: the page content", () => {
     expect(strip.getByRole("link", { name: "Replace" })).toHaveAttribute(
       "href",
       eventEditHref(SUMMIT_ID, "media"),
+    );
+  });
+
+  it("holds the cover's place with a skeleton while the page content loads, then swaps it for the cover", async () => {
+    // The content is answered later: the place of the cover must already be reserved.
+    let answer: (content: ReturnType<typeof pageContent>) => void = () => {};
+    api.getContent.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    await renderOverview(sample(SUMMIT_ID));
+
+    expect(
+      screen.getByRole("status", { name: "Loading cover image" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Cover image" }),
+    ).not.toBeInTheDocument();
+
+    answer(pageContent());
+
+    expect(
+      await screen.findByRole("region", { name: "Cover image" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "Loading cover image" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a skeleton over the cover until the picture itself has loaded", async () => {
+    await renderOverview(sample(SUMMIT_ID));
+    const strip = within(
+      await screen.findByRole("region", { name: "Cover image" }),
+    );
+
+    const picture = strip.getByRole("img", { name: "Summit cover" });
+    expect(picture).toHaveClass("opacity-0");
+    expect(picture.closest("[data-state]")).toHaveAttribute(
+      "data-state",
+      "loading",
+    );
+
+    fireEvent.load(picture);
+
+    expect(picture).toHaveClass("opacity-100");
+    expect(picture.closest("[data-state]")).toHaveAttribute(
+      "data-state",
+      "loaded",
     );
   });
 

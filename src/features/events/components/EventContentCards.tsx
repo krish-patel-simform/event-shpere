@@ -11,6 +11,7 @@ import {
   buttonStyles,
   Card,
   cn,
+  LoadingImage,
   SourceBadge,
 } from "@/src/core/ui";
 import { EVENT_GALLERY_MAX_IMAGES, EVENT_IMAGE_MAX_BYTES } from "../constants";
@@ -74,17 +75,12 @@ export function CoverStrip({
       {/* A wide banner, as big as the public page shows it. */}
       <div className="h-48 w-full bg-brand-soft sm:h-64 lg:h-72">
         {cover && (
-          // A plain <img>: the picture comes from the CMS host, which next/image would have to be
-          // configured for. The API only sends http(s) URLs.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={cover.url}
-            alt={cover.alt ?? "Event cover"}
-            className="size-full object-cover"
-          />
+          // The box has its height, so the page does not shift when the picture arrives; the
+          // picture fades in over a skeleton.
+          <LoadingImage src={cover.url} alt={cover.alt ?? "Event cover"} />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-4 border-t border-line p-3">
+      <div className="flex min-h-16 flex-wrap items-center gap-4 border-t border-line p-3">
         <div className="min-w-0 flex-1">
           <p>
             <strong>Cover image</strong>
@@ -111,6 +107,25 @@ export function CoverStrip({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Holds the cover strip's place while the content loads, at the strip's own size: when the strip
+ * arrives, nothing below it moves.
+ */
+export function CoverStripSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading cover image"
+      className="overflow-hidden rounded-lg border border-line bg-surface"
+    >
+      <div className="h-48 w-full animate-pulse bg-skeleton motion-reduce:animate-none sm:h-64 lg:h-72" />
+      <div className="min-h-16 border-t border-line p-3">
+        <div className="h-4 w-40 animate-pulse rounded bg-skeleton motion-reduce:animate-none" />
+      </div>
+    </div>
   );
 }
 
@@ -200,14 +215,14 @@ function ContentSections({
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {content.gallery.slice(0, GALLERY_PREVIEW).map((image, index) => (
-              <li key={image.id}>
-                {/* A plain <img>, like the cover above. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+              <li
+                key={image.id}
+                className="aspect-video w-full overflow-hidden rounded-md"
+              >
+                <LoadingImage
                   src={image.url}
                   alt={image.alt ?? `Gallery photo ${index + 1}`}
                   loading="lazy"
-                  className="aspect-video w-full rounded-md object-cover"
                 />
               </li>
             ))}

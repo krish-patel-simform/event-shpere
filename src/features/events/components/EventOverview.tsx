@@ -18,6 +18,7 @@ import { isEditable } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import {
   CoverStrip,
+  CoverStripSkeleton,
   EventContentOverview,
   QuickActionsCard,
 } from "./EventContentCards";
@@ -157,6 +158,8 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         </Alert>
       )}
 
+      {/* The strip's place is held while the content loads, so the page below does not jump. */}
+      {content.isPending && <CoverStripSkeleton />}
       {content.isSuccess && (
         <CoverStrip
           eventId={event.id}
