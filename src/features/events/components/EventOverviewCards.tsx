@@ -147,10 +147,12 @@ function StatusIcon({ ok, icon }: { ok: boolean; icon?: LucideIcon }) {
 export function PublishChecklistCard({
   checklist,
   onPublish,
+  isPublishing = false,
 }: {
   checklist: PublishChecklist;
-  /** Publishes the event. Without it the button stays disabled (publishing is not available yet). */
+  /** Publishes the event. Without it (not the organizer's own event) the button stays disabled. */
   onPublish?: () => void;
+  isPublishing?: boolean;
 }) {
   return (
     <Card
@@ -193,8 +195,11 @@ export function PublishChecklistCard({
         </div>
         <Button
           onClick={onPublish}
+          isPending={isPublishing}
           disabled={!checklist.canPublish || !onPublish}
-          title={onPublish ? undefined : "Publishing is not available yet"}
+          title={
+            onPublish ? undefined : "Only the event's organizer can publish it"
+          }
         >
           Publish event
         </Button>

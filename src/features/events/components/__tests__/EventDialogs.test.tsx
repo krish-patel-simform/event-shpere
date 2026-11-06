@@ -61,6 +61,74 @@ describe("CancelEventDialog", () => {
     expect(screen.queryByText(/will be notified/)).not.toBeInTheDocument();
   });
 
+  it("says every session is cancelled with the event, and its halls are free again", () => {
+    render(
+      <CancelEventDialog
+        event={{
+          ...summit,
+          sessions: { total: 5, scheduled: 4, cancelled: 1 },
+        }}
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+      />,
+    );
+
+    // Only the sessions that are still on count: one was cancelled already.
+    expect(
+      screen.getByText(
+        "All 4 of its sessions are cancelled too, and their halls are free again.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says it in the singular for a single session", () => {
+    render(
+      <CancelEventDialog
+        event={{
+          ...summit,
+          sessions: { total: 1, scheduled: 1, cancelled: 0 },
+        }}
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Its only session is cancelled too, and its hall is free again.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about sessions when there is none left to cancel", () => {
+    render(
+      <CancelEventDialog
+        event={{
+          ...summit,
+          sessions: { total: 2, scheduled: 0, cancelled: 2 },
+        }}
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/cancelled too, and/)).not.toBeInTheDocument();
+  });
+
+  it("shows the request running: Cancelling…, and the event cannot be kept meanwhile", () => {
+    render(
+      <CancelEventDialog
+        event={summit}
+        isPending
+        onClose={jest.fn()}
+        onConfirm={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Cancelling…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep event" })).toBeDisabled();
+  });
+
   it("hands the event over when confirmed", async () => {
     const user = userEvent.setup();
     const onConfirm = jest.fn();

@@ -1,12 +1,13 @@
 "use client";
 
-import { ExternalLink, Pencil, Plus } from "lucide-react";
+import { Ban, ExternalLink, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
-import { Alert, buttonStyles } from "@/src/core/ui";
+import { Alert, Button, buttonStyles } from "@/src/core/ui";
 import { useHasPermission } from "@/src/features/auth";
 import { useCancelEvent } from "../hooks/useCancelEvent";
 import { useGetEventContent } from "../hooks/useGetEventContent";
+import { usePublishEvent } from "../hooks/usePublishEvent";
 import { eventEditHref, eventSessionNewHref, publicEventHref } from "../routes";
 import type {
   EventOverviewData,
@@ -68,6 +69,10 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const cancel = useCancelEvent();
   useLayoutEffect(() => () => setCancelling(null), []);
 
+  // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else.
+  const canPublish = useHasPermission("EVENT_PUBLISH_OWN");
+  const publish = usePublishEvent();
+
   function askToCancel() {
     cancel.reset();
     setCancelling(event);
@@ -100,6 +105,16 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
                 Create session
               </Link>
             )}
+            {event.status === "published" && (
+              <Button
+                variant="secondary"
+                className="text-danger"
+                onClick={askToCancel}
+              >
+                <Ban aria-hidden="true" className="size-4" />
+                Cancel event
+              </Button>
+            )}
             {editable && (
               <Link
                 href={eventEditHref(event.id)}
@@ -121,6 +136,16 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
       {event.status === "completed" && (
         <Alert tone="info" title="This event has ended">
           A completed event is read-only.
+        </Alert>
+      )}
+      {publish.isSuccess && (
+        <Alert tone="success" title={`${publish.data.title} was published`}>
+          Attendees can now find it and register.
+        </Alert>
+      )}
+      {publish.isError && (
+        <Alert tone="error" title="We couldn't publish the event">
+          {publish.error.message}
         </Alert>
       )}
       {cancel.isSuccess && (
@@ -145,7 +170,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-5">
           {event.status === "draft" && (
-            <PublishChecklistCard checklist={checklist} />
+            <PublishChecklistCard
+              checklist={checklist}
+              onPublish={
+                canPublish ? () => publish.mutate(event.id) : undefined
+              }
+              isPublishing={publish.isPending}
+            />
           )}
           {event.status === "published" && (
             <>
@@ -176,6 +207,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
 
       <CancelEventDialog
         event={cancelling}
+        isPending={cancel.isPending}
         onClose={() => setCancelling(null)}
         onConfirm={confirmCancel}
       />

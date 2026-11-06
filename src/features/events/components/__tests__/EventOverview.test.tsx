@@ -36,6 +36,7 @@ jest.mock("../../api/event-api.service", () => ({
     getOverview: jest.fn(),
     getContent: jest.fn(),
     cancel: jest.fn(),
+    publish: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -227,13 +228,54 @@ describe("EventOverview: a draft", () => {
     expect(card.getAllByRole("link")).toHaveLength(2);
   });
 
-  it("keeps Publish disabled even when nothing is missing: publishing has no endpoint yet", async () => {
-    await renderOverview(readyDraft());
+  it("enables Publish when nothing is missing, and publishes on click", async () => {
+    const user = userEvent.setup();
+    const draft = readyDraft();
+    api.publish.mockResolvedValue({
+      ...draft.event,
+      status: "published",
+    } as never);
+    await renderOverview(draft);
 
     expect(screen.getByText("Ready to publish")).toBeInTheDocument();
     const publish = screen.getByRole("button", { name: "Publish event" });
+    expect(publish).toBeEnabled();
+    await user.click(publish);
+
+    expect(api.publish).toHaveBeenCalledWith(FINTECH_ID);
+    expect(
+      await screen.findByText(`${draft.event.title} was published`),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the server's answer when it refuses to publish", async () => {
+    const user = userEvent.setup();
+    api.publish.mockRejectedValue(
+      new ApiError(409, "EVENT_NOT_READY", "Missing: content"),
+    );
+    await renderOverview(readyDraft());
+
+    await user.click(screen.getByRole("button", { name: "Publish event" }));
+
+    expect(
+      await screen.findByText("We couldn't publish the event"),
+    ).toBeInTheDocument();
+    // The checklist also says "Missing: content", so look inside the alert.
+    expect(
+      within(screen.getByRole("alert")).getByText("Missing: content"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Publish disabled for someone without the publish permission (an admin)", async () => {
+    hasPermission.mockImplementation((code) => code !== "EVENT_PUBLISH_OWN");
+    await renderOverview(readyDraft());
+
+    const publish = screen.getByRole("button", { name: "Publish event" });
     expect(publish).toBeDisabled();
-    expect(publish).toHaveAttribute("title", "Publishing is not available yet");
+    expect(publish).toHaveAttribute(
+      "title",
+      "Only the event's organizer can publish it",
+    );
   });
 
   it("says the content could not be checked, and does not let it publish on a guess", async () => {
@@ -442,11 +484,30 @@ describe("EventOverview: a published event", () => {
 });
 
 describe("EventOverview: cancelling a published event", () => {
+  it("shows Cancel event in the page header too, and it opens the same dialog", async () => {
+    const user = userEvent.setup();
+    await renderOverview(sample(SUMMIT_ID));
+
+    const header = screen.getByRole("banner");
+    await user.click(
+      within(header).getByRole("button", { name: "Cancel event" }),
+    );
+
+    expect(
+      within(screen.getByRole("dialog")).getByText("Cancel this event?"),
+    ).toBeInTheDocument();
+  });
+
   it("asks first, and keeps the event when the organizer backs out", async () => {
     const user = userEvent.setup();
     await renderOverview(sample(SUMMIT_ID));
 
-    await user.click(screen.getByRole("button", { name: "Cancel event" }));
+    await user.click(
+      within(screen.getByRole("region", { name: "Danger zone" })).getByRole(
+        "button",
+        { name: "Cancel event" },
+      ),
+    );
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText("Cancel this event?")).toBeInTheDocument();
     await user.click(dialog.getByRole("button", { name: "Keep event" }));
@@ -464,7 +525,12 @@ describe("EventOverview: cancelling a published event", () => {
     } as never);
     await renderOverview(summit);
 
-    await user.click(screen.getByRole("button", { name: "Cancel event" }));
+    await user.click(
+      within(screen.getByRole("region", { name: "Danger zone" })).getByRole(
+        "button",
+        { name: "Cancel event" },
+      ),
+    );
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel event",
@@ -484,7 +550,12 @@ describe("EventOverview: cancelling a published event", () => {
     );
     await renderOverview(sample(SUMMIT_ID));
 
-    await user.click(screen.getByRole("button", { name: "Cancel event" }));
+    await user.click(
+      within(screen.getByRole("region", { name: "Danger zone" })).getByRole(
+        "button",
+        { name: "Cancel event" },
+      ),
+    );
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", {
         name: "Cancel event",

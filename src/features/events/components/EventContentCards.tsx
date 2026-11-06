@@ -69,9 +69,10 @@ export function CoverStrip({
   return (
     <section
       aria-label="Cover image"
-      className="flex flex-wrap items-center gap-4 rounded-lg border border-line bg-surface p-3"
+      className="overflow-hidden rounded-lg border border-line bg-surface"
     >
-      <div className="h-20 w-40 shrink-0 overflow-hidden rounded-md bg-brand-soft">
+      {/* A wide banner, as big as the public page shows it. */}
+      <div className="h-48 w-full bg-brand-soft sm:h-64 lg:h-72">
         {cover && (
           // A plain <img>: the picture comes from the CMS host, which next/image would have to be
           // configured for. The API only sends http(s) URLs.
@@ -83,30 +84,32 @@ export function CoverStrip({
           />
         )}
       </div>
-      <div className="min-w-0 flex-1">
-        <p>
-          <strong>Cover image</strong>
-          {cover && cover.width && cover.height && (
-            <span className="text-muted">
-              {" "}
-              · {cover.width} × {cover.height}
-            </span>
-          )}
-        </p>
-        {!cover && (
-          <p className="text-muted">
-            None yet (optional). A placeholder is shown on the public page.
+      <div className="flex flex-wrap items-center gap-4 border-t border-line p-3">
+        <div className="min-w-0 flex-1">
+          <p>
+            <strong>Cover image</strong>
+            {cover && cover.width && cover.height && (
+              <span className="text-muted">
+                {" "}
+                · {cover.width} × {cover.height}
+              </span>
+            )}
           </p>
+          {!cover && (
+            <p className="text-muted">
+              None yet (optional). A placeholder is shown on the public page.
+            </p>
+          )}
+        </div>
+        {editable && (
+          <Link
+            href={eventEditHref(eventId, "media")}
+            className={buttonStyles({ variant: "secondary" })}
+          >
+            {cover ? "Replace" : "Add cover image"}
+          </Link>
         )}
       </div>
-      {editable && (
-        <Link
-          href={eventEditHref(eventId, "media")}
-          className={buttonStyles({ variant: "secondary" })}
-        >
-          {cover ? "Replace" : "Add cover image"}
-        </Link>
-      )}
     </section>
   );
 }

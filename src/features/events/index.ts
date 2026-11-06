@@ -4,10 +4,9 @@ export { EventBrowse } from "./components/EventBrowse";
 export { EventFormPage } from "./components/EventFormPage";
 export { EventLoader } from "./components/EventLoader";
 export { EventOverview } from "./components/EventOverview";
-export { EventHalls } from "./components/EventHalls";
 export { EventSchedule } from "./components/EventSchedule";
-export { EventSpeakers } from "./components/EventSpeakers";
 export { EventPageHeader } from "./components/EventPageHeader";
+export { SearchBox } from "./components/SearchBox";
 export { MyEvents } from "./components/MyEvents";
 export { PublicEventDetail } from "./components/PublicEventDetail";
 export { PublicEventDetailSkeleton } from "./components/PublicEventDetailSkeleton";
@@ -21,6 +20,7 @@ export {
 export {
   eventEditHref,
   eventHref,
+  eventScheduleHref,
   eventSessionNewHref,
   eventSessionsHref,
   EVENT_ROUTES,
@@ -31,7 +31,11 @@ export {
 } from "./routes";
 // Cache keys and the "an event changed" refresh, for other features whose changes show on the
 // event's pages (a session added or cancelled changes the event's session counts and checklist).
-export { eventQueryKeys, invalidateEvent } from "./hooks/event-cache";
+export {
+  eventQueryKeys,
+  invalidateEvent,
+  SESSIONS_QUERY_ROOT,
+} from "./hooks/event-cache";
 // Pure helpers other features reuse instead of copying: an event's times are typed and shown in
 // its own zone (India for now), and prices are typed in rupees and sent in paise.
 export {

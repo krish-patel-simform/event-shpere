@@ -176,6 +176,7 @@ export function MyEvents() {
 
       <CancelEventDialog
         event={cancelling}
+        isPending={cancel.isPending}
         onClose={() => setCancelling(null)}
         onConfirm={confirmCancel}
       />
