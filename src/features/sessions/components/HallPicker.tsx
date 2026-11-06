@@ -16,6 +16,7 @@ export function HallPicker({
   venueId,
   range,
   timezone,
+  ownHallId = null,
   value,
   onChange,
   onBlur,
@@ -27,6 +28,8 @@ export function HallPicker({
   range: HallAvailabilityRequest | null;
   /** The venue's zone: booked times are shown in it. */
   timezone: string;
+  /** The hall the saved session already holds (when editing), to say so on that hall. */
+  ownHallId?: string | null;
   /** The chosen hall's id, or "". */
   value: string;
   onChange: (hallId: string) => void;
@@ -46,10 +49,15 @@ export function HallPicker({
         .map((hall) => ({
           value: hall.id,
           label: hall.name,
-          hint: hall.busy ? "Booked at this time" : `${hall.capacity} seats`,
+          hint:
+            hall.id === ownHallId
+              ? `Booked by this session · ${hall.capacity} seats`
+              : hall.busy
+                ? "Booked at this time"
+                : `${hall.capacity} seats`,
         }))
     );
-  }, [halls.data, value]);
+  }, [halls.data, value, ownHallId]);
 
   const placeholder =
     range === null

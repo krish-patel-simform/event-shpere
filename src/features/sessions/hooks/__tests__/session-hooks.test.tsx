@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { ApiError } from "../../../../core/api-client/base-api.service";
-import { eventQueryKeys } from "../../../events";
+import { eventQueryKeys, SESSIONS_QUERY_ROOT } from "../../../events";
 import { sessionApiService } from "../../api/session-api.service";
 import type { SessionContentDto } from "../../schemas/session-content.schemas";
 import type {
@@ -151,6 +151,31 @@ describe("what a change to a session refreshes", () => {
 
     expect(api.create).toHaveBeenCalledWith(eventId, newSession);
     expectSessionAndEventRefreshed(isStale);
+  });
+
+  it("shares its root key with the events feature, which reloads every sessions query when an event is cancelled", () => {
+    expect(sessionQueryKeys.all).toEqual(SESSIONS_QUERY_ROOT);
+  });
+
+  it("creating puts the new session where its edit page looks, so that page opens with its name at once", async () => {
+    const created = { ...session, id: otherSessionId, title: "Brand new" };
+    api.create.mockResolvedValue(created);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useCreateSession(eventId), { wrapper });
+
+    await act(() => result.current.mutateAsync(newSession));
+
+    expect(
+      queryClient.getQueryData(sessionQueryKeys.detail(eventId, created.id)),
+    ).toEqual(created);
   });
 
   it("creating refreshes nothing when it fails (e.g. the hall is busy)", async () => {

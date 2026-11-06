@@ -16,6 +16,7 @@ import {
   type EventOverviewData,
 } from "../../events";
 import { useCreateSession } from "../hooks/useCreateSession";
+import { eventSessionEditHref } from "../routes";
 import {
   createSessionFormSchema,
   emptySessionForm,
@@ -23,13 +24,14 @@ import {
   type CreateSessionFormValues,
 } from "../schemas/session-form.schemas";
 import { SessionDetailsFields } from "./SessionDetailsFields";
+import { SessionStepper } from "./SessionStepper";
 import { SpeakerPicker } from "./SpeakerPicker";
 
 /**
  * The page that adds a session to an event: its details and who presents it, saved together (one
  * request, so a session never exists without a speaker). Loads the event first (its dates limit
- * the date, its venue gives the halls). A new session is on the schedule at once; its content and
- * cover image come after, in the edit steps.
+ * the date, its venue gives the halls). A new session is on the schedule at once; saving opens its
+ * Content step, and the cover image is the step after it.
  */
 export function AddSession({ eventId }: { eventId: string }) {
   return (
@@ -60,7 +62,11 @@ function AddSessionPage({ overview }: { overview: EventOverviewData }) {
       </header>
 
       {isEventEditable(event.status) ? (
-        <AddSessionForm event={event} />
+        <>
+          {/* The same steps as editing a session; content and cover open once it is added. */}
+          <SessionStepper eventId={event.id} current="details" />
+          <AddSessionForm event={event} />
+        </>
       ) : (
         <div className="space-y-4">
           <Alert tone="info" title="Sessions are read-only">
@@ -106,8 +112,11 @@ function AddSessionForm({ event }: { event: EventOverviewData["event"] }) {
       onSubmit={(values) =>
         create.mutate(toCreateSessionRequest(values, values.speakers), {
           // The session exists now (and the list and the event's counts were refreshed by the
-          // hook): back to the list, replacing this page so Back does not return to the form.
-          onSuccess: () => router.replace(eventSessionsHref(event.id)),
+          // hook): on to its content, replacing this page so Back does not return to the form.
+          onSuccess: (session) =>
+            router.replace(
+              eventSessionEditHref(event.id, session.id, "content"),
+            ),
         })
       }
     />
@@ -194,8 +203,9 @@ function SessionForm({
         <aside className="space-y-4 lg:sticky lg:top-4">
           <Card title="Status">
             <p className="text-muted">
-              A new session is on the schedule as soon as it is saved. You can
-              write its content and add a cover image afterwards.
+              A new session is on the schedule as soon as it is saved. Its
+              content and cover image open right after: the next step is the
+              content.
             </p>
           </Card>
           <div className="space-y-2.5 rounded-lg border border-line bg-surface p-4">

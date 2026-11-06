@@ -14,6 +14,7 @@ import { eventApiService } from "../../../events/api/event-api.service";
 import { eventEditHref, eventSessionsHref } from "../../../events";
 import { ananya, meera } from "../../../speakers/__fixtures__/speakers";
 import { sessionApiService } from "../../api/session-api.service";
+import { eventSessionEditHref } from "../../routes";
 import {
   HALL_A_ID,
   HALL_B_ID,
@@ -116,6 +117,54 @@ beforeEach(() => {
   speakers.list.mockResolvedValue({
     items: [ananya, meera],
     meta: { page: 1, pageSize: 50, total: 2 },
+  });
+});
+
+describe("AddSession: the steps", () => {
+  it("shows the same steps as editing, with the content and the cover locked until the session is added", async () => {
+    await renderPage();
+
+    const steps = within(
+      screen.getByRole("navigation", { name: "Session steps" }),
+    );
+    expect(steps.getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      steps.getByText("Details").closest("[aria-current]"),
+    ).toHaveAttribute("aria-current", "step");
+    for (const label of ["Content", "Cover"]) {
+      expect(steps.getByText(label).closest("[aria-disabled]")).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    }
+  });
+
+  it("has no Speakers step: the speakers card is part of the details form", async () => {
+    await renderPage();
+
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Session steps" }),
+      ).queryByText("Speakers"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Speakers" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the content comes next, and shows no steps for an event that cannot change", async () => {
+    await renderPage();
+    expect(
+      screen.getByText(/the next step is the content/),
+    ).toBeInTheDocument();
+  });
+
+  it("has no steps when the event is cancelled: nothing can be added", async () => {
+    await renderPage(overviewOf(MEETUP_ID));
+
+    expect(
+      screen.queryByRole("navigation", { name: "Session steps" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -248,8 +297,11 @@ describe("AddSession: saving", () => {
       price: 0,
       speakers: [{ speakerId: ananya.id, role: "speaker" }],
     });
+    // On to the new session's Content step (not back to the list).
     await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith(eventSessionsHref(SUMMIT_ID)),
+      expect(mockReplace).toHaveBeenCalledWith(
+        eventSessionEditHref(SUMMIT_ID, talk.id, "content"),
+      ),
     );
   });
 

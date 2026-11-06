@@ -34,9 +34,15 @@ export type SessionEventInfo = {
 export function SessionDetailsFields({
   event,
   isPending,
+  editing,
 }: {
   event: SessionEventInfo;
   isPending: boolean;
+  /**
+   * Set when a saved session is edited: its own booking is left out of the halls' availability
+   * (or its hall would look taken by itself), and its hall is marked "Booked by this session".
+   */
+  editing?: { sessionId: string; hallId: string | null };
 }) {
   const {
     register,
@@ -49,10 +55,11 @@ export function SessionDetailsFields({
     control,
     name: ["mode", "date", "startTime", "endTime"],
   });
-  const range = useMemo(
-    () => toSessionHallRange({ date, startTime, endTime }),
-    [date, startTime, endTime],
-  );
+  const editingId = editing?.sessionId;
+  const range = useMemo(() => {
+    const slot = toSessionHallRange({ date, startTime, endTime });
+    return slot && editingId ? { ...slot, exceptSessionId: editingId } : slot;
+  }, [date, startTime, endTime, editingId]);
   const firstDay = toFormDateTime(event.startAt, event.timezone).date;
   const lastDay = toFormDateTime(event.endAt, event.timezone).date;
   const needsHall = mode !== "online";
@@ -152,6 +159,7 @@ export function SessionDetailsFields({
                     venueId={event.venue?.id ?? ""}
                     range={range}
                     timezone={event.timezone}
+                    ownHallId={editing?.hallId ?? null}
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
