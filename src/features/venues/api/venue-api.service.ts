@@ -18,6 +18,8 @@ import {
   type CreateVenueDto,
   type SetHallsStatusBody,
   type SetVenueStatusBody,
+  type UpdateHallBody,
+  type UpdateVenueBody,
   type VenueDetailDto,
   type VenueSort,
   type VenueStatusFilter,
@@ -119,6 +121,35 @@ export const venueApiService = {
         params: range,
       },
       hallAvailabilityResponseSchema,
+    );
+  },
+
+  /** Changes the venue's details; send only the fields that changed. 409 VENUE_EXISTS (name taken in that city). */
+  update(venueId: string, body: UpdateVenueBody): Promise<VenueDetailDto> {
+    return apiRequest(
+      { method: "PATCH", url: `/venues/${venueId}`, data: body },
+      venueDetailResponseSchema,
+    );
+  },
+
+  /** Deletes a venue that was never used (no 200: the server answers 204). 409 VENUE_IN_USE when an event or a session ever used it. */
+  delete(venueId: string): Promise<void> {
+    return apiRequest({ method: "DELETE", url: `/venues/${venueId}` });
+  },
+
+  /** Renames a hall and/or changes its seats; send only what changed. 409 HALL_EXISTS (name taken) or HALL_HAS_SESSIONS (a session that is not over yet uses the hall: nothing can be edited). */
+  updateHall(
+    venueId: string,
+    hallId: string,
+    body: UpdateHallBody,
+  ): Promise<VenueDetailDto> {
+    return apiRequest(
+      {
+        method: "PATCH",
+        url: `/venues/${venueId}/halls/${hallId}`,
+        data: body,
+      },
+      venueDetailResponseSchema,
     );
   },
 

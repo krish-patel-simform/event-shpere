@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, cn } from "@/src/core/ui";
 import { useSetHallsStatus } from "../hooks/useSetHallsStatus";
@@ -12,6 +12,7 @@ import {
 } from "../utils/venue-display";
 import { AddHallDialog } from "./AddHallDialog";
 import { DeleteHallDialog, type HallRef } from "./DeleteHallDialog";
+import { EditHallDialog, type EditableHall } from "./EditHallDialog";
 
 const ACTIVATE_VENUE_FIRST = "Activate the venue first";
 const KEEP_ONE = "A venue must keep at least one hall";
@@ -30,6 +31,7 @@ export function HallsCard({ venue }: { venue: VenueDetailDto }) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [isAdding, setIsAdding] = useState(false);
   const [deleting, setDeleting] = useState<HallRef | null>(null);
+  const [editing, setEditing] = useState<EditableHall | null>(null);
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
   // would still be open when the admin comes back. Close them as the page is hidden.
@@ -37,6 +39,7 @@ export function HallsCard({ venue }: { venue: VenueDetailDto }) {
     () => () => {
       setIsAdding(false);
       setDeleting(null);
+      setEditing(null);
       setSelected(new Set());
     },
     [],
@@ -243,6 +246,21 @@ export function HallsCard({ venue }: { venue: VenueDetailDto }) {
                       </Button>{" "}
                       <button
                         type="button"
+                        aria-label={`Edit ${hall.name}`}
+                        title={`Edit ${hall.name}`}
+                        onClick={() =>
+                          setEditing({
+                            id: hall.id,
+                            name: hall.name,
+                            capacity: hall.capacity,
+                          })
+                        }
+                        className="inline-flex size-8 items-center justify-center rounded-md align-middle text-muted hover:bg-surface-subtle hover:text-foreground"
+                      >
+                        <Pencil aria-hidden="true" className="size-4" />
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`Delete ${hall.name}`}
                         disabled={halls.length === 1}
                         title={
@@ -277,6 +295,11 @@ export function HallsCard({ venue }: { venue: VenueDetailDto }) {
             : null
         }
         onClose={() => setIsAdding(false)}
+      />
+      <EditHallDialog
+        venueId={venue.id}
+        hall={editing}
+        onClose={() => setEditing(null)}
       />
       <DeleteHallDialog
         venueId={venue.id}

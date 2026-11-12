@@ -2,7 +2,7 @@
 
 import { Controller, type Control } from "react-hook-form";
 import { StateSelect, useGetStateList } from "@/src/features/locations";
-import type { CreateVenueFormValues } from "../schemas/venue-form.schemas";
+import type { VenueDetailsFormValues } from "../schemas/venue-form.schemas";
 
 /**
  * The state field of the venue form: a searchable list of state names, loaded once from
@@ -13,7 +13,7 @@ export function StateField({
   error,
   readOnly,
 }: {
-  control: Control<CreateVenueFormValues>;
+  control: Control<VenueDetailsFormValues>;
   error?: string;
   /** While the form is saving: the field cannot change. */
   readOnly?: boolean;

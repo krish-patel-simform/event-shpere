@@ -19,6 +19,7 @@ import {
 import { db } from "../../../db/dbClient";
 import { escapeLike } from "../../../db/escape-like";
 import {
+  eventsTable,
   hallsTable,
   sessionsTable,
   statesTable,
@@ -29,6 +30,8 @@ import {
 import type {
   CreateHallBody,
   CreateVenueBody,
+  UpdateHallBody,
+  UpdateVenueBody,
   VenueSort,
   VenueStatusFilter,
 } from "../schemas/venue.schemas";
@@ -160,6 +163,44 @@ export type DeleteHallResult =
       // HALL_IN_USE: a session still points at the hall.
       reason:
         "VENUE_NOT_FOUND" | "HALL_NOT_FOUND" | "LAST_HALL" | "HALL_IN_USE";
+    };
+
+export type UpdateVenueResult =
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
+  | {
+      ok: false;
+      // VENUE_EXISTS: another venue has that name in that city (case-insensitive).
+      // STATE_NOT_FOUND: no state has the chosen name.
+      reason: "VENUE_NOT_FOUND" | "STATE_NOT_FOUND" | "VENUE_EXISTS";
+    };
+
+/** A session that keeps a hall from being edited, with its event: what the admin has to move. */
+export type HallSessionRef = {
+  title: string;
+  eventTitle: string;
+  startAt: Date | null;
+};
+
+export type UpdateHallResult =
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
+  | {
+      ok: false;
+      // HALL_EXISTS: another hall of the venue has that name (case-insensitive).
+      reason: "VENUE_NOT_FOUND" | "HALL_NOT_FOUND" | "HALL_EXISTS";
+    }
+  // A session that is not over yet still uses the hall: nothing about it can change. `sessions`
+  // lists the first few, in time order (one more than the UI names, so it can say "and more").
+  | { ok: false; reason: "HALL_HAS_SESSIONS"; sessions: HallSessionRef[] };
+
+/** How many blocking sessions are returned: the service names the first 3 and says "and more". */
+const HALL_BLOCKING_SESSIONS_LIMIT = 4;
+
+export type DeleteVenueResult =
+  | { ok: true }
+  | {
+      ok: false;
+      // VENUE_IN_USE: an event or a session (of any date or status) still points at the venue.
+      reason: "VENUE_NOT_FOUND" | "VENUE_IN_USE";
     };
 
 export const venueRepository = {
@@ -597,6 +638,194 @@ export const venueRepository = {
       // not lock the venue): the foreign key still refuses it.
       if (isForeignKeyViolation(error))
         return { ok: false, reason: "HALL_IN_USE" };
+      throw error;
+    }
+  },
+
+  /**
+   * Change the details of a venue. Only the fields present in `input` are written; the others
+   * keep their stored value. The state arrives as a name and is turned into its id, like in
+   * createVenue. Works on an inactive venue too. The venue row is locked, so an edit does not
+   * interleave with a deactivation or a delete.
+   */
+  async updateVenue(
+    venueId: string,
+    input: UpdateVenueBody,
+  ): Promise<UpdateVenueResult> {
+    // Only what was sent goes into the patch. null is a real value here: it clears the column.
+    const patch: Partial<typeof venuesTable.$inferInsert> = {};
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.addressLine !== undefined) patch.addressLine = input.addressLine;
+    if (input.city !== undefined) patch.city = input.city;
+    if (input.postalCode !== undefined) patch.postalCode = input.postalCode;
+    if (input.country !== undefined) patch.country = input.country;
+    if (input.timezone !== undefined) patch.timezone = input.timezone;
+    // numeric columns take strings in Drizzle.
+    if (input.latitude !== undefined)
+      patch.latitude = input.latitude === null ? null : String(input.latitude);
+    if (input.longitude !== undefined)
+      patch.longitude =
+        input.longitude === null ? null : String(input.longitude);
+
+    if (input.state !== undefined) {
+      const [state] = await db
+        .select({ id: statesTable.id })
+        .from(statesTable)
+        .where(sql`lower(${statesTable.name}) = ${input.state.toLowerCase()}`);
+      if (!state) return { ok: false, reason: "STATE_NOT_FOUND" };
+      patch.stateId = state.id;
+    }
+
+    try {
+      return await db.transaction(async (tx): Promise<UpdateVenueResult> => {
+        const [locked] = await tx
+          .select({ id: venuesTable.id })
+          .from(venuesTable)
+          .where(eq(venuesTable.id, venueId))
+          .for("update");
+        if (!locked) return { ok: false, reason: "VENUE_NOT_FOUND" };
+
+        const [venue] = await tx
+          .update(venuesTable)
+          .set(patch)
+          .where(eq(venuesTable.id, venueId))
+          .returning();
+        if (!venue) return { ok: false, reason: "VENUE_NOT_FOUND" };
+
+        const halls = await tx
+          .select()
+          .from(hallsTable)
+          .where(eq(hallsTable.venueId, venueId))
+          .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
+
+        return { ok: true, venue: await withStateName(venue), halls };
+      });
+    } catch (error) {
+      // Renamed to a venue that already exists in that city: the unique index decides.
+      if (violatedUniqueConstraint(error) === "venues_name_city_unique")
+        return { ok: false, reason: "VENUE_EXISTS" };
+      if (violatedForeignKey(error) === "venues_state_id_states_id_fk")
+        return { ok: false, reason: "STATE_NOT_FOUND" };
+      throw error;
+    }
+  },
+
+  /**
+   * Rename a hall and/or change its seats; only the fields present in `input` are written. Refused
+   * (HALL_HAS_SESSIONS, with the sessions in the way) while any session that is not over yet uses
+   * the hall: the same "in use" rule as deactivating. The venue row is locked first, like in the
+   * other hall writes. Works on an inactive venue or hall too.
+   */
+  async updateHall(
+    venueId: string,
+    hallId: string,
+    input: UpdateHallBody,
+  ): Promise<UpdateHallResult> {
+    const patch: Partial<typeof hallsTable.$inferInsert> = {};
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.capacity !== undefined) patch.capacity = input.capacity;
+
+    try {
+      return await db.transaction(async (tx): Promise<UpdateHallResult> => {
+        const [venue] = await tx
+          .select()
+          .from(venuesTable)
+          .where(eq(venuesTable.id, venueId))
+          .for("update");
+        if (!venue) return { ok: false, reason: "VENUE_NOT_FOUND" };
+
+        // A hall id from another venue is "not found" too.
+        const [hall] = await tx
+          .select({ id: hallsTable.id })
+          .from(hallsTable)
+          .where(
+            and(eq(hallsTable.id, hallId), eq(hallsTable.venueId, venueId)),
+          );
+        if (!hall) return { ok: false, reason: "HALL_NOT_FOUND" };
+
+        // Emails, tickets and the public pages show the hall's name, and a session was planned
+        // for its seats: while one that is not over yet (drafts too) uses the hall, nothing about
+        // it changes. Past and cancelled sessions do not count.
+        const blocking = await tx
+          .select({
+            title: sessionsTable.title,
+            eventTitle: eventsTable.title,
+            startAt: sessionsTable.startAt,
+          })
+          .from(sessionsTable)
+          .innerJoin(eventsTable, eq(eventsTable.id, sessionsTable.eventId))
+          .where(
+            and(
+              eq(sessionsTable.hallId, hallId),
+              ne(sessionsTable.status, "cancelled"),
+              or(
+                isNull(sessionsTable.endAt),
+                gt(sessionsTable.endAt, sql`now()`),
+              ),
+            ),
+          )
+          .orderBy(asc(sessionsTable.startAt), asc(sessionsTable.id))
+          .limit(HALL_BLOCKING_SESSIONS_LIMIT);
+        if (blocking.length > 0)
+          return { ok: false, reason: "HALL_HAS_SESSIONS", sessions: blocking };
+
+        await tx.update(hallsTable).set(patch).where(eq(hallsTable.id, hallId));
+
+        const halls = await tx
+          .select()
+          .from(hallsTable)
+          .where(eq(hallsTable.venueId, venueId))
+          .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
+
+        return { ok: true, venue: await withStateName(venue), halls };
+      });
+    } catch (error) {
+      if (violatedUniqueConstraint(error) === "halls_venue_name_unique")
+        return { ok: false, reason: "HALL_EXISTS" };
+      throw error;
+    }
+  },
+
+  /**
+   * Permanently delete a venue that was never used: no event points at it and no session was ever
+   * placed in one of its halls (any date, any status). events.venue_id and sessions.hall_id are
+   * ON DELETE RESTRICT, so the database would refuse anyway; checking first gives a clear answer.
+   * Its halls go with it (ON DELETE CASCADE). The venue row is locked, so the check and the
+   * delete see the same state.
+   */
+  async deleteVenue(venueId: string): Promise<DeleteVenueResult> {
+    try {
+      return await db.transaction(async (tx): Promise<DeleteVenueResult> => {
+        const [venue] = await tx
+          .select({ id: venuesTable.id })
+          .from(venuesTable)
+          .where(eq(venuesTable.id, venueId))
+          .for("update");
+        if (!venue) return { ok: false, reason: "VENUE_NOT_FOUND" };
+
+        const [event] = await tx
+          .select({ id: eventsTable.id })
+          .from(eventsTable)
+          .where(eq(eventsTable.venueId, venueId))
+          .limit(1);
+        if (event) return { ok: false, reason: "VENUE_IN_USE" };
+
+        const [session] = await tx
+          .select({ id: sessionsTable.id })
+          .from(sessionsTable)
+          .innerJoin(hallsTable, eq(hallsTable.id, sessionsTable.hallId))
+          .where(eq(hallsTable.venueId, venueId))
+          .limit(1);
+        if (session) return { ok: false, reason: "VENUE_IN_USE" };
+
+        await tx.delete(venuesTable).where(eq(venuesTable.id, venueId));
+        return { ok: true };
+      });
+    } catch (error) {
+      // An event or session was attached after the checks (events and sessions do not lock the
+      // venue): the foreign keys still refuse the delete.
+      if (isForeignKeyViolation(error))
+        return { ok: false, reason: "VENUE_IN_USE" };
       throw error;
     }
   },

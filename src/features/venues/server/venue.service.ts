@@ -9,6 +9,8 @@ import type {
   HallDetailDto,
   SetHallsStatusBody,
   SetVenueStatusBody,
+  UpdateHallBody,
+  UpdateVenueBody,
   VenueDetailDto,
   VenueListItemDto,
   VenueListQuery,
@@ -32,6 +34,9 @@ export type VenueServiceDeps = {
     | "setHallsActive"
     | "addHall"
     | "deleteHall"
+    | "updateVenue"
+    | "updateHall"
+    | "deleteVenue"
   >;
 };
 
@@ -43,6 +48,20 @@ function busyHallsMessage(halls: { name: string }[]): string {
   const names = halls.map((hall) => hall.name).join(", ");
   const verb = halls.length === 1 ? "has" : "have";
   return `${names} ${verb} sessions that are not over yet. Move or cancel them first`;
+}
+
+/** How many blocking sessions the message names before it says "and more". */
+const NAMED_SESSIONS = 3;
+
+/** `"Design Tokens" (Design Systems Day), "Panel" (Summit) and more`: what is in the way. */
+function busySessionsText(
+  sessions: { title: string; eventTitle: string }[],
+): string {
+  const named = sessions
+    .slice(0, NAMED_SESSIONS)
+    .map((session) => `"${session.title}" (${session.eventTitle})`)
+    .join(", ");
+  return sessions.length > NAMED_SESSIONS ? `${named} and more` : named;
 }
 
 export function createVenueService({ venueRepository }: VenueServiceDeps) {
@@ -260,6 +279,84 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       }
 
       return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /** Edit a venue's details (VENUE_MANAGE). Only the fields in the body change. */
+    async updateVenue(
+      venueId: string,
+      body: UpdateVenueBody,
+    ): Promise<VenueDetailDto> {
+      const result = await venueRepository.updateVenue(venueId, body);
+
+      if (!result.ok) {
+        switch (result.reason) {
+          case "VENUE_NOT_FOUND":
+            throw new NotFoundError("Venue not found");
+          case "STATE_NOT_FOUND":
+            throw new NotFoundError("State not found");
+          case "VENUE_EXISTS":
+            throw new ConflictError(
+              "VENUE_EXISTS",
+              "Another venue with this name already exists in this city",
+            );
+        }
+      }
+
+      return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /** Rename a hall and/or change its seats (HALL_MANAGE). Returns the venue with its halls. */
+    async updateHall(
+      venueId: string,
+      hallId: string,
+      body: UpdateHallBody,
+    ): Promise<VenueDetailDto> {
+      const result = await venueRepository.updateHall(venueId, hallId, body);
+
+      if (!result.ok) {
+        switch (result.reason) {
+          case "VENUE_NOT_FOUND":
+            throw new NotFoundError("Venue not found");
+          case "HALL_NOT_FOUND":
+            throw new NotFoundError("Hall not found");
+          case "HALL_EXISTS":
+            throw new ConflictError(
+              "HALL_EXISTS",
+              "This venue already has a hall with this name",
+            );
+          case "HALL_HAS_SESSIONS":
+            throw new ConflictError(
+              "HALL_HAS_SESSIONS",
+              `This hall cannot be edited while it has sessions that are not over yet: ${busySessionsText(result.sessions)}. Move or cancel them first`,
+              {
+                sessions: result.sessions.map((session) => ({
+                  title: session.title,
+                  eventTitle: session.eventTitle,
+                  startAt: session.startAt?.toISOString() ?? null,
+                })),
+              },
+            );
+        }
+      }
+
+      return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /**
+     * Permanently delete a venue (VENUE_MANAGE), only if it was never used. A venue with an event
+     * or a session in one of its halls, past or not, is a 409: deactivate it instead.
+     */
+    async deleteVenue(venueId: string): Promise<void> {
+      const result = await venueRepository.deleteVenue(venueId);
+
+      if (!result.ok) {
+        if (result.reason === "VENUE_NOT_FOUND")
+          throw new NotFoundError("Venue not found");
+        throw new ConflictError(
+          "VENUE_IN_USE",
+          "This venue has events or sessions, so it cannot be deleted. Deactivate it instead",
+        );
+      }
     },
   };
 }

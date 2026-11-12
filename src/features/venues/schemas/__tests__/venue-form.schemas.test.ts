@@ -1,9 +1,14 @@
+import { giftCity } from "../../__fixtures__/venues";
 import {
   createVenueFormSchema,
+  editVenueFormSchema,
   emptyVenueForm,
   hallFormSchema,
   toCreateVenueBody,
   toCreateHallBody,
+  toUpdateHallBody,
+  toUpdateVenueBody,
+  toVenueFormValues,
   type CreateVenueFormValues,
 } from "../venue-form.schemas";
 
@@ -173,5 +178,90 @@ describe("hall form (the Add hall dialog)", () => {
     expect(hallFormSchema.safeParse({ name: "", capacity: "" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("edit venue form (the Edit venue page)", () => {
+  const current = toVenueFormValues(giftCity);
+
+  it("starts with the venue's values, and a missing pin or postal code is empty text", () => {
+    expect(current).toMatchObject({
+      name: giftCity.name,
+      state: "Gujarat",
+      postalCode: "382355",
+      latitude: "23.16",
+      longitude: "72.68",
+    });
+    expect(
+      toVenueFormValues({
+        ...giftCity,
+        state: null,
+        postalCode: null,
+        latitude: null,
+        longitude: null,
+      }),
+    ).toMatchObject({ state: "", postalCode: "", latitude: "", longitude: "" });
+  });
+
+  it("checks the same rules as the add form, without halls", () => {
+    expect(editVenueFormSchema.safeParse(current).success).toBe(true);
+    expect(
+      editVenueFormSchema.safeParse({ ...current, name: " " }).success,
+    ).toBe(false);
+    // A pin needs both coordinates or neither.
+    expect(
+      editVenueFormSchema.safeParse({ ...current, longitude: "" }).success,
+    ).toBe(false);
+  });
+
+  it("sends nothing when nothing changed", () => {
+    expect(toUpdateVenueBody(current, giftCity)).toEqual({});
+  });
+
+  it("sends only the fields that changed", () => {
+    expect(
+      toUpdateVenueBody(
+        { ...current, city: "Surat", postalCode: "395007" },
+        giftCity,
+      ),
+    ).toEqual({ city: "Surat", postalCode: "395007" });
+  });
+
+  it("clears the postal code with null", () => {
+    expect(toUpdateVenueBody({ ...current, postalCode: "" }, giftCity)).toEqual({
+      postalCode: null,
+    });
+  });
+
+  it("sends the map pin as a pair, set or cleared", () => {
+    expect(
+      toUpdateVenueBody({ ...current, latitude: "21.17" }, giftCity),
+    ).toEqual({ latitude: 21.17, longitude: 72.68 });
+    expect(
+      toUpdateVenueBody({ ...current, latitude: "", longitude: "" }, giftCity),
+    ).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("does not resend an unchanged pin written differently", () => {
+    expect(
+      toUpdateVenueBody({ ...current, latitude: "23.160" }, giftCity),
+    ).toEqual({});
+  });
+});
+
+describe("toUpdateHallBody (the Edit hall dialog)", () => {
+  const hall = { name: "Main Auditorium", capacity: 300 };
+
+  it("sends nothing when nothing changed", () => {
+    expect(toUpdateHallBody({ name: "Main Auditorium", capacity: "300" }, hall)).toEqual({});
+  });
+
+  it("sends only the name, or only the seats, that changed", () => {
+    expect(toUpdateHallBody({ name: "Grand Hall", capacity: "300" }, hall)).toEqual({
+      name: "Grand Hall",
+    });
+    expect(
+      toUpdateHallBody({ name: "Main Auditorium", capacity: "250" }, hall),
+    ).toEqual({ capacity: 250 });
   });
 });

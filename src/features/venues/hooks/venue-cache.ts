@@ -50,6 +50,18 @@ export function applyVenueUpdate(
 }
 
 /**
+ * After a delete the venue is gone: drop its detail entry (so nothing can show it again, and the
+ * page that was showing it does not refetch a 404) and reload the lists.
+ */
+export function removeVenueFromCache(
+  queryClient: QueryClient,
+  venueId: string,
+) {
+  queryClient.removeQueries({ queryKey: venueQueryKeys.detail(venueId) });
+  return queryClient.invalidateQueries({ queryKey: venueQueryKeys.lists });
+}
+
+/**
  * The venue's row in a list that is already loaded (the page the visitor came from), or
  * undefined. Reads the cache only, never requests: it lets a detail page show the venue's name
  * and address at once while its own request (with the halls) is still running.

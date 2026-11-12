@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Power, PowerOff } from "lucide-react";
+import { Pencil, Power, PowerOff, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
@@ -15,11 +15,12 @@ import {
 } from "@/src/core/ui";
 import { useGetVenueDetail } from "../hooks/useGetVenueDetail";
 import { findListedVenue } from "../hooks/venue-cache";
-import { VENUE_ROUTES } from "../routes";
+import { adminVenueEditHref, VENUE_ROUTES } from "../routes";
 import type { VenueDetailDto } from "../schemas/venue.schemas";
 import { googleMapsUrl, statusLabel } from "../utils/venue-display";
 import { ActivateVenueDialog } from "./ActivateVenueDialog";
 import { DeactivateVenueDialog } from "./DeactivateVenueDialog";
+import { DeleteVenueDialog } from "./DeleteVenueDialog";
 import { HallsCard } from "./HallsCard";
 import { MapLink } from "./MapLink";
 import { VenueDetailsCard } from "./VenueDetailsCard";
@@ -150,7 +151,9 @@ function VenueHeading({
 }
 
 function VenueView({ venue }: { venue: VenueDetailDto }) {
-  const [dialog, setDialog] = useState<"deactivate" | "activate" | null>(null);
+  const [dialog, setDialog] = useState<
+    "deactivate" | "activate" | "delete" | null
+  >(null);
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it: close the dialog.
   useLayoutEffect(() => () => setDialog(null), []);
@@ -167,21 +170,30 @@ function VenueView({ venue }: { venue: VenueDetailDto }) {
         address={`${venue.addressLine}, ${venue.city}`}
         mapUrl={googleMapsUrl(venue)}
       >
-        {venue.isActive ? (
-          <Button
-            variant="secondary"
-            className="border-danger/40 text-danger"
-            onClick={() => setDialog("deactivate")}
+        <div className="flex flex-wrap gap-2.5">
+          <Link
+            href={adminVenueEditHref(venue.id)}
+            className={buttonStyles({ variant: "secondary" })}
           >
-            <PowerOff aria-hidden="true" className="size-4" />
-            Deactivate venue
-          </Button>
-        ) : (
-          <Button onClick={() => setDialog("activate")}>
-            <Power aria-hidden="true" className="size-4" />
-            Activate venue
-          </Button>
-        )}
+            <Pencil aria-hidden="true" className="size-4" />
+            Edit venue
+          </Link>
+          {venue.isActive ? (
+            <Button
+              variant="secondary"
+              className="border-danger/40 text-danger"
+              onClick={() => setDialog("deactivate")}
+            >
+              <PowerOff aria-hidden="true" className="size-4" />
+              Deactivate venue
+            </Button>
+          ) : (
+            <Button onClick={() => setDialog("activate")}>
+              <Power aria-hidden="true" className="size-4" />
+              Activate venue
+            </Button>
+          )}
+        </div>
       </VenueHeading>
 
       {!venue.isActive && (
@@ -201,6 +213,35 @@ function VenueView({ venue }: { venue: VenueDetailDto }) {
         </div>
       </div>
 
+      <section
+        aria-labelledby="delete-venue-heading"
+        className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-danger/40 p-5"
+      >
+        <div className="max-w-xl">
+          <h2 id="delete-venue-heading" className="font-semibold">
+            Delete this venue
+          </h2>
+          <p className="text-sm text-muted">
+            Removes the venue and its halls for good. Only a venue that was
+            never used by an event or a session can be deleted; otherwise
+            deactivate it.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          className="border-danger/40 text-danger"
+          onClick={() => setDialog("delete")}
+        >
+          <Trash2 aria-hidden="true" className="size-4" />
+          Delete venue
+        </Button>
+      </section>
+
+      <DeleteVenueDialog
+        venue={dialog === "delete" ? ref : null}
+        isActive={venue.isActive}
+        onClose={() => setDialog(null)}
+      />
       <DeactivateVenueDialog
         venue={dialog === "deactivate" ? ref : null}
         onClose={() => setDialog(null)}

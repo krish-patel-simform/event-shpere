@@ -28,9 +28,17 @@ jest.mock("../../api/venue-api.service", () => ({
     setHallsStatus: jest.fn(),
     addHall: jest.fn(),
     deleteHall: jest.fn(),
+    update: jest.fn(),
+    updateHall: jest.fn(),
+    delete: jest.fn(),
   },
 }));
 const api = jest.mocked(venueApiService);
+
+const push = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
 
 /**
  * A fake server holding one venue: each change updates it and answers with the venue as it is
@@ -93,6 +101,16 @@ function serve(initial: VenueDetailDto = giftCity) {
     };
     return answer();
   });
+  api.updateHall.mockImplementation(async (_id, hallId, body) => {
+    current = {
+      ...current,
+      halls: current.halls.map((hall) =>
+        hall.id === hallId ? { ...hall, ...body } : hall,
+      ),
+    };
+    return answer();
+  });
+  api.delete.mockResolvedValue(undefined);
 }
 
 /** `client` lets a test start with a cache, e.g. the Venues list the admin came from. */
@@ -719,5 +737,270 @@ describe("AdminVenueDetail: deactivating and activating the venue", () => {
     expect(
       screen.queryByText("This venue is inactive"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("AdminVenueDetail: editing a hall", () => {
+  const openEditor = async (hallName: string) => {
+    await userEvent.click(
+      screen.getByRole("button", { name: `Edit ${hallName}` }),
+    );
+    return screen.getByRole("dialog", { name: `Edit ${hallName}` });
+  };
+
+  it("starts with the hall's name and seats, and sends only the seats that changed", async () => {
+    await renderLoaded();
+
+    const dialog = await openEditor("Main Auditorium");
+    expect(within(dialog).getByLabelText("Hall name")).toHaveValue(
+      "Main Auditorium",
+    );
+    expect(within(dialog).getByLabelText("Seats")).toHaveValue("300");
+
+    await userEvent.clear(within(dialog).getByLabelText("Seats"));
+    await userEvent.type(within(dialog).getByLabelText("Seats"), "250");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    expect(api.updateHall).toHaveBeenCalledWith(venueId, hallIds.main, {
+      capacity: 250,
+    });
+    await waitFor(() =>
+      expect(row("Main Auditorium")).toHaveTextContent("250"),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Edit Main Auditorium" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends only the name when only the name changed", async () => {
+    await renderLoaded();
+
+    const dialog = await openEditor("Workshop Room 1");
+    await userEvent.clear(within(dialog).getByLabelText("Hall name"));
+    await userEvent.type(within(dialog).getByLabelText("Hall name"), "Lab");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    expect(api.updateHall).toHaveBeenCalledWith(venueId, hallIds.workshop, {
+      name: "Lab",
+    });
+    await waitFor(() => expect(row("Lab")).toBeInTheDocument());
+  });
+
+  it("closes without asking the server when nothing changed", async () => {
+    await renderLoaded();
+
+    const dialog = await openEditor("Main Auditorium");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Edit Main Auditorium" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(api.updateHall).not.toHaveBeenCalled();
+  });
+
+  it("checks the fields before asking the server", async () => {
+    await renderLoaded();
+
+    const dialog = await openEditor("Main Auditorium");
+    await userEvent.clear(within(dialog).getByLabelText("Hall name"));
+    await userEvent.clear(within(dialog).getByLabelText("Seats"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    expect(
+      await within(dialog).findByText("Hall name is required"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Seats are required")).toBeInTheDocument();
+    expect(api.updateHall).not.toHaveBeenCalled();
+  });
+
+  it("shows a taken name under the name field and keeps the dialog open", async () => {
+    await renderLoaded();
+    api.updateHall.mockRejectedValue(
+      new ApiError(
+        409,
+        "HALL_EXISTS",
+        "This venue already has a hall with this name",
+      ),
+    );
+
+    const dialog = await openEditor("Main Auditorium");
+    await userEvent.clear(within(dialog).getByLabelText("Hall name"));
+    await userEvent.type(
+      within(dialog).getByLabelText("Hall name"),
+      "workshop room 1",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    expect(
+      await within(dialog).findByText(
+        "This venue already has a hall with this name",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Hall name")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
+  it("explains up front when a hall can be edited", async () => {
+    await renderLoaded();
+
+    const dialog = await openEditor("Main Auditorium");
+
+    expect(
+      within(dialog).getByText(/only be edited when it has no sessions/),
+    ).toBeInTheDocument();
+  });
+
+  it("says the hall is in use, naming the sessions, when sessions that are not over yet use it", async () => {
+    await renderLoaded();
+    api.updateHall.mockRejectedValue(
+      new ApiError(
+        409,
+        "HALL_HAS_SESSIONS",
+        'This hall cannot be edited while it has sessions that are not over yet: "Design Tokens at Scale" (Design Systems Day). Move or cancel them first',
+      ),
+    );
+
+    const dialog = await openEditor("Main Auditorium");
+    await userEvent.clear(within(dialog).getByLabelText("Seats"));
+    await userEvent.type(within(dialog).getByLabelText("Seats"), "10");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Save hall" }),
+    );
+
+    expect(
+      await within(dialog).findByText("This hall is in use"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        /"Design Tokens at Scale" \(Design Systems Day\)/,
+      ),
+    ).toBeInTheDocument();
+    // It is about the whole hall, not one field: neither input is marked invalid, the dialog stays open.
+    expect(within(dialog).getByLabelText("Seats")).not.toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Edit Main Auditorium" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminVenueDetail: editing and deleting the venue", () => {
+  it("links to the edit page", async () => {
+    await renderLoaded();
+
+    expect(screen.getByRole("link", { name: "Edit venue" })).toHaveAttribute(
+      "href",
+      `/admin/venues/${venueId}/edit`,
+    );
+  });
+
+  it("deletes a venue after asking, then goes back to the list", async () => {
+    await renderLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete venue" }));
+    const dialog = screen.getByRole("dialog", {
+      name: `Delete ${giftCity.name}?`,
+    });
+    expect(within(dialog).getByText(/never used/)).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete venue" }),
+    );
+
+    expect(api.delete).toHaveBeenCalledWith(venueId);
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/admin/venues"));
+  });
+
+  it("explains that a venue that was used cannot be deleted, and offers to deactivate it", async () => {
+    await renderLoaded();
+    api.delete.mockRejectedValue(
+      new ApiError(409, "VENUE_IN_USE", "This venue has events or sessions"),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete venue" }));
+    const dialog = screen.getByRole("dialog", {
+      name: `Delete ${giftCity.name}?`,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete venue" }),
+    );
+
+    expect(
+      await within(dialog).findByText(/so it cannot be deleted/),
+    ).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Deactivate instead" }),
+    );
+
+    expect(api.setStatus).toHaveBeenCalledWith(venueId, {
+      isActive: false,
+      activateHalls: "none",
+    });
+    await waitFor(() =>
+      expect(screen.getByText("This venue is inactive")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not offer 'Deactivate instead' for a venue that is already inactive", async () => {
+    await renderLoaded({
+      ...giftCity,
+      isActive: false,
+      halls: giftCity.halls.map((hall) => ({ ...hall, isActive: false })),
+    });
+    api.delete.mockRejectedValue(
+      new ApiError(409, "VENUE_IN_USE", "This venue has events or sessions"),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete venue" }));
+    const dialog = screen.getByRole("dialog", {
+      name: `Delete ${giftCity.name}?`,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete venue" }),
+    );
+
+    expect(
+      await within(dialog).findByText(/already inactive/),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: "Deactivate instead" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows any other failure and stays on the page", async () => {
+    await renderLoaded();
+    api.delete.mockRejectedValue(
+      new ApiError(500, "INTERNAL", "Something broke"),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete venue" }));
+    const dialog = screen.getByRole("dialog", {
+      name: `Delete ${giftCity.name}?`,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete venue" }),
+    );
+
+    expect(
+      await within(dialog).findByText("We couldn't delete this venue"),
+    ).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
   });
 });

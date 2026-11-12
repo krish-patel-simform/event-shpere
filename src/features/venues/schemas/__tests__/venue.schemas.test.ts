@@ -2,6 +2,8 @@ import {
   createVenueBodySchema,
   setHallsStatusBodySchema,
   setVenueStatusBodySchema,
+  updateHallBodySchema,
+  updateVenueBodySchema,
   venueListQuerySchema,
 } from "../venue.schemas";
 
@@ -231,6 +233,84 @@ describe("venueListQuerySchema", () => {
       { search: "x".repeat(101) },
     ]) {
       expect(venueListQuerySchema.safeParse(query).success).toBe(false);
+    }
+  });
+});
+
+describe("updateVenueBodySchema", () => {
+  it("accepts a single field and keeps the others out of the result", () => {
+    expect(updateVenueBodySchema.parse({ name: "  New name " })).toEqual({
+      name: "New name",
+    });
+  });
+
+  it("refuses an empty body", () => {
+    expect(updateVenueBodySchema.safeParse({}).success).toBe(false);
+  });
+
+  it("refuses a blank name, address, city or state", () => {
+    for (const field of ["name", "addressLine", "city", "state"]) {
+      expect(updateVenueBodySchema.safeParse({ [field]: "  " }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("clears the postal code with null", () => {
+    expect(updateVenueBodySchema.parse({ postalCode: null })).toEqual({
+      postalCode: null,
+    });
+  });
+
+  it("needs both coordinates together, set or cleared", () => {
+    expect(updateVenueBodySchema.safeParse({ latitude: 23.1 }).success).toBe(
+      false,
+    );
+    expect(
+      updateVenueBodySchema.safeParse({ latitude: 23.1, longitude: null })
+        .success,
+    ).toBe(false);
+    expect(
+      updateVenueBodySchema.parse({ latitude: 23.1, longitude: 72.6 }),
+    ).toEqual({ latitude: 23.1, longitude: 72.6 });
+    expect(
+      updateVenueBodySchema.parse({ latitude: null, longitude: null }),
+    ).toEqual({ latitude: null, longitude: null });
+  });
+
+  it("rejects an unknown time zone and a bad country code", () => {
+    expect(
+      updateVenueBodySchema.safeParse({ timezone: "Mars/Olympus" }).success,
+    ).toBe(false);
+    expect(updateVenueBodySchema.safeParse({ country: "IND" }).success).toBe(
+      false,
+    );
+    expect(updateVenueBodySchema.parse({ country: " in " }).country).toBe("IN");
+  });
+});
+
+describe("updateHallBodySchema", () => {
+  it("accepts a name, a capacity, or both", () => {
+    expect(updateHallBodySchema.parse({ name: " Main " })).toEqual({
+      name: "Main",
+    });
+    expect(updateHallBodySchema.parse({ capacity: 50 })).toEqual({
+      capacity: 50,
+    });
+    expect(updateHallBodySchema.parse({ name: "A", capacity: 5 })).toEqual({
+      name: "A",
+      capacity: 5,
+    });
+  });
+
+  it("refuses an empty body, a blank name and capacity of 0 or a fraction", () => {
+    for (const body of [
+      {},
+      { name: " " },
+      { capacity: 0 },
+      { capacity: 1.5 },
+    ]) {
+      expect(updateHallBodySchema.safeParse(body).success).toBe(false);
     }
   });
 });

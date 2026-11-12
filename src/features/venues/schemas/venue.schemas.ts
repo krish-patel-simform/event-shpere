@@ -132,6 +132,64 @@ export const venueDetailResponseSchema = venueResponseSchema.extend({
 
 export type VenueDetailDto = z.infer<typeof venueDetailResponseSchema>;
 
+//* PATCH /api/venues/[venueId]: an admin edits the venue's details (not its halls or status).
+// Every field is optional: only the ones sent are changed. For the map pin, `null` clears a
+// coordinate and a missing field leaves it as it is; both must end up set or both empty.
+export const updateVenueBodySchema = z
+  .object({
+    name: createVenueBodySchema.shape.name,
+    addressLine: createVenueBodySchema.shape.addressLine,
+    city: createVenueBodySchema.shape.city,
+    state: createVenueBodySchema.shape.state,
+    // null = clear the postal code.
+    postalCode: z.string().trim().max(20).nullable(),
+    country: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(COUNTRY_REGEX, "Use a 2-letter country code"),
+    latitude: z.number().min(-90).max(90).nullable(),
+    longitude: z.number().min(-180).max(180).nullable(),
+    timezone: timezoneSchema,
+  })
+  .partial()
+  .superRefine((body, ctx) => {
+    if (Object.keys(body).length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Send at least one field to change",
+      });
+    }
+    // Sending only one coordinate is ambiguous (the other one may already be stored).
+    if ((body.latitude === undefined) !== (body.longitude === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [body.latitude === undefined ? "latitude" : "longitude"],
+        message: "Send latitude and longitude together",
+      });
+    }
+    // One coordinate cleared and the other set would leave half a pin.
+    if ((body.latitude === null) !== (body.longitude === null)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["latitude"],
+        message: "Provide both latitude and longitude, or neither",
+      });
+    }
+  });
+
+export type UpdateVenueBody = z.infer<typeof updateVenueBodySchema>;
+
+//* PATCH /api/venues/[venueId]/halls/[hallId]: rename a hall or change its seats.
+export const updateHallBodySchema = createHallSchema
+  .partial()
+  .refine(
+    (body) => body.name !== undefined || body.capacity !== undefined,
+    "Send a name or a capacity",
+  );
+
+export type UpdateHallBody = z.infer<typeof updateHallBodySchema>;
+
 //* PATCH /api/venues/[venueId]/status: activate or deactivate a venue.
 // Deactivating always deactivates all its halls. Activating activates none of them unless
 // `activateHalls` is "all" (the default "none": an admin then activates the halls one by one).
