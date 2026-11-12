@@ -16,6 +16,7 @@ jest.mock("../../api/speakers-api.service", () => ({
     get: jest.fn(),
     create: jest.fn(),
     resendInvite: jest.fn(),
+    listSessions: jest.fn(),
   },
 }));
 jest.mock("@/src/features/auth", () => ({
@@ -39,6 +40,11 @@ function renderPage(slug = ananyaProfile.slug) {
 beforeEach(() => {
   jest.resetAllMocks();
   api.get.mockResolvedValue(ananyaProfile);
+  // These tests are about the profile: the sessions card has its own tests.
+  api.listSessions.mockResolvedValue({
+    items: [],
+    meta: { page: 1, pageSize: 5, total: 0, totalSessions: 0 },
+  });
   hasPermission.mockReturnValue(false);
 });
 

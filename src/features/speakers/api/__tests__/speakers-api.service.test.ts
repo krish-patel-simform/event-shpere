@@ -10,6 +10,10 @@ import {
   speakerPhotoResponseSchema,
   speakerProfileResponseSchema,
 } from "../../schemas/speaker.schemas";
+import {
+  speakerSessionsMetaSchema,
+  speakerSessionsResponseSchema,
+} from "../../schemas/speaker-sessions.schemas";
 import { speakersApiService } from "../speakers-api.service";
 
 jest.mock("../../../../core/api-client/base-api.service", () => ({
@@ -54,6 +58,38 @@ describe("speakersApiService.list", () => {
 
     const [config] = jest.mocked(apiRequestPage).mock.calls[0];
     expect(config.params).not.toHaveProperty("search");
+  });
+});
+
+describe("speakersApiService.listSessions", () => {
+  it("asks for one category of the speaker's sessions, parsed with the response and meta schemas", () => {
+    speakersApiService.listSessions("ananya-rao-3f9a1c", {
+      timeline: "past",
+      page: 2,
+    });
+
+    expect(apiRequestPage).toHaveBeenCalledWith(
+      {
+        method: "GET",
+        url: "/speakers/ananya-rao-3f9a1c/sessions",
+        params: { timeline: "past", page: 2 },
+      },
+      speakerSessionsResponseSchema,
+      speakerSessionsMetaSchema,
+    );
+  });
+
+  it("starts at page 1, and sends the page size only when it is set", () => {
+    speakersApiService.listSessions("a", { timeline: "upcoming" });
+    speakersApiService.listSessions("a", { timeline: "upcoming", pageSize: 3 });
+
+    const calls = jest.mocked(apiRequestPage).mock.calls;
+    expect(calls[0]?.[0].params).toEqual({ timeline: "upcoming", page: 1 });
+    expect(calls[1]?.[0].params).toEqual({
+      timeline: "upcoming",
+      page: 1,
+      pageSize: 3,
+    });
   });
 });
 

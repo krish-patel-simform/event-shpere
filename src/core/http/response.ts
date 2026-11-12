@@ -6,7 +6,11 @@ export function ok<T>(data: T, init?: ResponseInit): Response {
   return Response.json({ data }, { status: 200, ...init });
 }
 
-export function paginated<T>(data: T[], meta: PageMeta): Response {
+/** `meta` may carry more than the paging fields (e.g. a total of a different kind). */
+export function paginated<T, M extends PageMeta = PageMeta>(
+  data: T[],
+  meta: M,
+): Response {
   return Response.json({ data, meta }, { status: 200 });
 }
 

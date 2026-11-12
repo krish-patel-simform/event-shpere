@@ -48,6 +48,7 @@ export {
   PUBLIC_SESSION_TYPE_LABELS,
 } from "./utils/public-event-display";
 export {
+  FEW_SEATS_LEFT,
   formatEventDates,
   formatEventTimes,
   formatTicketPrice,

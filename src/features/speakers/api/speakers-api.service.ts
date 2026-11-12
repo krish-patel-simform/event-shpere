@@ -11,6 +11,11 @@ import {
 } from "../../auth";
 import { SPEAKER_PHOTO_FORM_FIELD } from "../constants";
 import {
+  speakerSessionsMetaSchema,
+  speakerSessionsResponseSchema,
+  type ListSpeakerSessionsQuery,
+} from "../schemas/speaker-sessions.schemas";
+import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
   ownSpeakerProfileResponseSchema,
@@ -28,7 +33,34 @@ import {
 export type ListSpeakersParams = Pick<ListSpeakersQuery, "pageSize"> &
   Partial<Pick<ListSpeakersQuery, "page" | "search" | "ids">>;
 
+export type ListSpeakerSessionsParams = Pick<
+  ListSpeakerSessionsQuery,
+  "timeline"
+> &
+  Partial<Pick<ListSpeakerSessionsQuery, "page" | "pageSize">>;
+
 export const speakersApiService = {
+  /**
+   * One category of a speaker's sessions (`timeline`: now, upcoming or past), grouped by event,
+   * one page of events. `meta.total` = events and `meta.totalSessions` = sessions in the category.
+   * 404 if the speaker is unknown.
+   */
+  listSessions(
+    slug: string,
+    { timeline, page = 1, pageSize }: ListSpeakerSessionsParams,
+  ) {
+    return apiRequestPage(
+      {
+        method: "GET",
+        url: `/speakers/${slug}/sessions`,
+        // pageSize is left out when not set, so the server uses its default.
+        params: { timeline, page, ...(pageSize ? { pageSize } : {}) },
+      },
+      speakerSessionsResponseSchema,
+      speakerSessionsMetaSchema,
+    );
+  },
+
   /**
    * One page of speakers (A–Z), filtered by name by the server, and how many match in total.
    * `ids` limits the list to those speakers (1 to 50).

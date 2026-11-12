@@ -30,6 +30,18 @@ export {
   type UpdateOwnSpeakerProfileInput,
 } from "./schemas/speaker.schemas";
 export {
+  listSpeakerSessionsQuerySchema,
+  speakerSessionParams,
+  speakerSessionsMetaSchema,
+  speakerSessionsResponseSchema,
+  speakerSessionTimelines,
+  type ListSpeakerSessionsQuery,
+  type SpeakerSessionDto,
+  type SpeakerSessionGroupDto,
+  type SpeakerSessionsMeta,
+  type SpeakerSessionTimeline,
+} from "./schemas/speaker-sessions.schemas";
+export {
   SPEAKER_PHOTO_FORM_FIELD,
   SPEAKER_PHOTO_MAX_BYTES,
   SPEAKER_PHOTO_TYPES,

@@ -25,6 +25,7 @@ import {
 import { InviteNotice, type InviteResult } from "./InviteNotice";
 import { SpeakerDetailSkeleton } from "./SpeakerDetailSkeleton";
 import { SpeakerPhoto } from "./SpeakerPhoto";
+import { SpeakerSessions } from "./SpeakerSessions";
 
 const SPEAKERS_CRUMB = { label: "Speakers", href: SPEAKER_ROUTES.list };
 
@@ -186,6 +187,9 @@ function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
           This speaker&apos;s profile is not available right now.
         </Alert>
       )}
+
+      {/* From Postgres, so it shows even when the CMS has nothing. */}
+      <SpeakerSessions slug={speaker.slug} />
     </PageFrame>
   );
 }
