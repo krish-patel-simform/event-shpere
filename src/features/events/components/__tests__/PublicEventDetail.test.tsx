@@ -237,6 +237,11 @@ describe("the schedule and speakers", () => {
     renderWithClient(<PublicEventDetail slug="summit" />);
     await screen.findByRole("heading", { name: "Schedule" });
 
+    // The date of the day shown sits above its sessions, and follows the chosen tab.
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Thu 3 Dec 2026" }),
+    ).toBeInTheDocument();
+
     const day = within(screen.getByRole("tabpanel"));
     expect(day.getByText("Opening Keynote")).toBeInTheDocument();
     expect(day.getByText("09:30")).toBeInTheDocument();
@@ -246,6 +251,9 @@ describe("the schedule and speakers", () => {
 
     await user.click(screen.getByRole("tab", { name: "Fri 4" }));
 
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Fri 4 Dec 2026" }),
+    ).toBeInTheDocument();
     const next = within(screen.getByRole("tabpanel"));
     expect(next.getByText("Hands-on Workshop")).toBeInTheDocument();
     expect(next.getByText("+ ₹500")).toBeInTheDocument();

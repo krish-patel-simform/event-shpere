@@ -57,6 +57,25 @@ describe("groupSessionsByDay", () => {
     ]);
   });
 
+  it("gives each day its whole date, in the event's zone", () => {
+    const days = groupSessionsByDay(
+      [
+        session(),
+        session({
+          // 00:30 IST on 4 Dec is still 3 Dec in UTC: the date follows the event's zone.
+          startAt: "2026-12-03T19:00:00.000Z",
+          endAt: "2026-12-03T20:00:00.000Z",
+        }),
+      ],
+      ZONE,
+    );
+
+    expect(days.map((day) => day.date)).toEqual([
+      "Thu 3 Dec 2026",
+      "Fri 4 Dec 2026",
+    ]);
+  });
+
   it("puts a late-evening session on the day it starts in the event's zone, not in UTC", () => {
     // 23:30 IST on 3 Dec is 18:00 UTC on 3 Dec; 00:30 IST on 4 Dec is 19:00 UTC on 3 Dec.
     const days = groupSessionsByDay(

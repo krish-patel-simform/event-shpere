@@ -110,22 +110,28 @@ export function PublicEventSchedule({
         )}
       </div>
       {current ? (
-        <ul
-          id={PANEL_ID}
-          role={days.length > 1 ? "tabpanel" : undefined}
-          aria-labelledby={
-            days.length > 1 ? tabId(PANEL_ID, current.key) : undefined
-          }
-        >
-          {current.sessions.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              slug={slug}
-              timezone={timezone}
-            />
-          ))}
-        </ul>
+        <>
+          {/* The date of the sessions below: with one day there are no tabs to say it. */}
+          <h3 className="border-t border-line bg-surface-subtle px-5 py-2.5 text-sm font-semibold">
+            {current.date}
+          </h3>
+          <ul
+            id={PANEL_ID}
+            role={days.length > 1 ? "tabpanel" : undefined}
+            aria-labelledby={
+              days.length > 1 ? tabId(PANEL_ID, current.key) : undefined
+            }
+          >
+            {current.sessions.map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
+                slug={slug}
+                timezone={timezone}
+              />
+            ))}
+          </ul>
+        </>
       ) : (
         <p className="border-t border-line px-5 py-8 text-center text-muted">
           The programme has not been published yet.

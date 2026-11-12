@@ -2,7 +2,7 @@ import type {
   PublicEventDetailDto,
   PublicSessionDto,
 } from "../schemas/event-public.schemas";
-import { toFormDateTime } from "./event-display";
+import { formatEventDates, toFormDateTime } from "./event-display";
 
 //* Labels
 
@@ -33,6 +33,8 @@ export type ScheduleDay = {
   key: string;
   /** "Thu 3". */
   label: string;
+  /** The whole date, for the heading above the day's sessions: "Thu 3 Dec 2026". */
+  date: string;
   sessions: TimedSession[];
 };
 
@@ -66,6 +68,9 @@ export function groupSessionsByDay(
     const day = days.get(key) ?? {
       key,
       label: dayLabel(session.startAt, timezone),
+      date: formatEventDates(session.startAt, session.startAt, timezone, {
+        weekday: true,
+      }),
       sessions: [],
     };
     day.sessions.push(session);
