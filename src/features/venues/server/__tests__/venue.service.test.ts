@@ -196,6 +196,7 @@ const hallB = "b0000000-0000-4000-8000-000000000002";
 describe("venueService.setVenueStatus", () => {
   it("passes the hall choice to the repository and returns the venue with its halls", async () => {
     const setVenueActive = jest.fn().mockResolvedValue({
+      ok: true,
       venue: venueRow,
       halls: [
         hallRow(hallA, "Hall A", 200, 0),
@@ -214,13 +215,55 @@ describe("venueService.setVenueStatus", () => {
   });
 
   it("is a 404 when the venue does not exist", async () => {
-    const setVenueActive = jest.fn().mockResolvedValue(null);
+    const setVenueActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "VENUE_NOT_FOUND" });
 
     const error = await makeService(undefined, { setVenueActive })
       .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(NotFoundError);
+  });
+
+  it("is a 409 VENUE_HAS_SESSIONS naming the halls that still have sessions", async () => {
+    const busy = [
+      { id: hallA, name: "Hall A" },
+      { id: hallB, name: "Hall B" },
+    ];
+    const setVenueActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "HALLS_IN_USE", halls: busy });
+
+    const error = await makeService(undefined, { setVenueActive })
+      .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "VENUE_HAS_SESSIONS",
+      details: { halls: busy },
+    });
+    expect((error as Error).message).toContain(
+      "Hall A, Hall B have sessions that are not over yet",
+    );
+  });
+
+  it("says 'has' for a single busy hall", async () => {
+    const setVenueActive = jest.fn().mockResolvedValue({
+      ok: false,
+      reason: "HALLS_IN_USE",
+      halls: [{ id: hallA, name: "Hall A" }],
+    });
+
+    const error = await makeService(undefined, { setVenueActive })
+      .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
+      .catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain(
+      "Hall A has sessions that are not over yet",
+    );
   });
 });
 
@@ -271,6 +314,28 @@ describe("venueService.setHallsStatus", () => {
       expect(error).toMatchObject({ status });
     },
   );
+
+  it("is a 409 HALL_HAS_SESSIONS naming the halls that cannot be turned off", async () => {
+    const busy = [{ id: hallA, name: "Hall A" }];
+    const setHallsActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "HALLS_IN_USE", halls: busy });
+
+    const error = await makeService(undefined, { setHallsActive })
+      .setHallsStatus(venueRow.id, { isActive: false, halls: [hallA, hallB] })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "HALL_HAS_SESSIONS",
+      details: { halls: busy },
+    });
+    expect((error as Error).message).toContain("Nothing was deactivated");
+    expect((error as Error).message).toContain(
+      "Hall A has sessions that are not over yet",
+    );
+  });
 });
 
 describe("venueService.addHall", () => {

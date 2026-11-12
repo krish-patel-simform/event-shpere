@@ -6,9 +6,13 @@ import {
   desc,
   DrizzleQueryError,
   eq,
+  exists,
+  gt,
   ilike,
   inArray,
+  isNull,
   max,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -58,6 +62,45 @@ function violatedForeignKey(error: unknown): string | null {
     : null;
 }
 
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * The active halls of a venue (only `hallIds` when given) that a session still needs, so they must
+ * not be turned off. A session holds its hall until it is over, or cancelled: past sessions and
+ * cancelled ones are not counted. A session with no end time counts. Ordered like the board.
+ */
+async function findHallsInUse(
+  tx: DbTransaction,
+  venueId: string,
+  hallIds?: string[],
+): Promise<HallRef[]> {
+  const holdsHall = exists(
+    tx
+      .select({ one: sql`1` })
+      .from(sessionsTable)
+      .where(
+        and(
+          eq(sessionsTable.hallId, hallsTable.id),
+          ne(sessionsTable.status, "cancelled"),
+          or(isNull(sessionsTable.endAt), gt(sessionsTable.endAt, sql`now()`)),
+        ),
+      ),
+  );
+
+  return tx
+    .select({ id: hallsTable.id, name: hallsTable.name })
+    .from(hallsTable)
+    .where(
+      and(
+        eq(hallsTable.venueId, venueId),
+        eq(hallsTable.isActive, true),
+        hallIds ? inArray(hallsTable.id, hallIds) : undefined,
+        holdsHall,
+      ),
+    )
+    .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
+}
+
 /** A venue row plus the name of its state (the table stores only the state's id). */
 export type VenueWithState = Venue & { stateName: string | null };
 
@@ -83,12 +126,23 @@ export type CreateVenueResult =
   /** No state has the chosen name. */
   | { ok: false; reason: "STATE_NOT_FOUND" };
 
+/** A hall by id and name: enough to tell the admin which hall is in the way. */
+export type HallRef = { id: string; name: string };
+
+export type SetVenueActiveResult =
+  | { ok: true; venue: VenueWithState; halls: Hall[] }
+  | { ok: false; reason: "VENUE_NOT_FOUND" }
+  // Some of its active halls still have a session that is not over: they stay as they are.
+  | { ok: false; reason: "HALLS_IN_USE"; halls: HallRef[] };
+
 export type SetHallsActiveResult =
   | { ok: true; venue: VenueWithState; halls: Hall[] }
   | {
       ok: false;
       reason: "VENUE_NOT_FOUND" | "VENUE_INACTIVE" | "HALL_NOT_FOUND";
-    };
+    }
+  // Some of the halls being turned off still have a session that is not over: none is changed.
+  | { ok: false; reason: "HALLS_IN_USE"; halls: HallRef[] };
 
 export type AddHallResult =
   | { ok: true; venue: VenueWithState; halls: Hall[] }
@@ -314,48 +368,75 @@ export const venueRepository = {
   },
 
   /**
-   * Activate or deactivate a venue. Returns null when the venue does not exist.
+   * Activate or deactivate a venue (VENUE_NOT_FOUND when it does not exist).
    * Deactivating also deactivates all its halls in the same transaction, so "venue inactive but
-   * a hall still active" can never be stored. Activating activates no halls by default (the table
-   * cannot tell which halls were deactivated on purpose, e.g. for renovation): pass
-   * `activateHalls: "all"` to activate them all, or use setHallsActive for specific ones.
+   * a hall still active" can never be stored. It is refused (HALLS_IN_USE, nothing changes) while
+   * any of its active halls still has a session that is not over. Activating activates no halls
+   * by default (the table cannot tell which halls were deactivated on purpose, e.g. for
+   * renovation): pass `activateHalls: "all"` to activate them all, or use setHallsActive for
+   * specific ones. The venue row is locked first, like in setHallsActive.
    */
   async setVenueActive(
     venueId: string,
     isActive: boolean,
     activateHalls: "all" | "none",
-  ): Promise<{ venue: VenueWithState; halls: Hall[] } | null> {
-    const result = await db.transaction(async (tx) => {
-      const [venue] = await tx
-        .update(venuesTable)
-        .set({ isActive })
-        .where(eq(venuesTable.id, venueId))
-        .returning();
-      if (!venue) return null;
+  ): Promise<SetVenueActiveResult> {
+    const result = await db.transaction(
+      async (
+        tx,
+      ): Promise<
+        | { ok: true; venue: Venue; halls: Hall[] }
+        | Extract<SetVenueActiveResult, { ok: false }>
+      > => {
+        const [locked] = await tx
+          .select({ id: venuesTable.id })
+          .from(venuesTable)
+          .where(eq(venuesTable.id, venueId))
+          .for("update");
+        if (!locked) return { ok: false, reason: "VENUE_NOT_FOUND" };
 
-      if (!isActive || activateHalls === "all") {
-        await tx
-          .update(hallsTable)
+        if (!isActive) {
+          const busy = await findHallsInUse(tx, venueId);
+          if (busy.length > 0)
+            return { ok: false, reason: "HALLS_IN_USE", halls: busy };
+        }
+
+        const [venue] = await tx
+          .update(venuesTable)
           .set({ isActive })
-          .where(eq(hallsTable.venueId, venueId));
-      }
+          .where(eq(venuesTable.id, venueId))
+          .returning();
+        if (!venue) return { ok: false, reason: "VENUE_NOT_FOUND" };
 
-      const halls = await tx
-        .select()
-        .from(hallsTable)
-        .where(eq(hallsTable.venueId, venueId))
-        .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
+        if (!isActive || activateHalls === "all") {
+          await tx
+            .update(hallsTable)
+            .set({ isActive })
+            .where(eq(hallsTable.venueId, venueId));
+        }
 
-      return { venue, halls };
-    });
-    if (!result) return null;
-    return { halls: result.halls, venue: await withStateName(result.venue) };
+        const halls = await tx
+          .select()
+          .from(hallsTable)
+          .where(eq(hallsTable.venueId, venueId))
+          .orderBy(asc(hallsTable.sortOrder), asc(hallsTable.name));
+
+        return { ok: true, venue, halls };
+      },
+    );
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      halls: result.halls,
+      venue: await withStateName(result.venue),
+    };
   },
 
   /**
    * Turn halls of one venue on or off: every hall ("all") or the listed ids (one id = one hall).
    * The venue row is locked first, so a hall cannot be turned on while another request is
-   * retiring the venue. A hall can only be turned on while its venue is active.
+   * retiring the venue. A hall can only be turned on while its venue is active, and only be
+   * turned off when no session that is not over yet uses it (HALLS_IN_USE lists the ones that do).
    */
   async setHallsActive(
     venueId: string,
@@ -385,6 +466,18 @@ export const venueRepository = {
           );
         if (found.length !== target.length)
           return { ok: false, reason: "HALL_NOT_FOUND" };
+      }
+
+      // Turning halls off: one that still has a session that is not over cannot go. All or
+      // nothing, so the admin never gets half of the halls switched off.
+      if (!isActive) {
+        const busy = await findHallsInUse(
+          tx,
+          venueId,
+          target === "all" ? undefined : target,
+        );
+        if (busy.length > 0)
+          return { ok: false, reason: "HALLS_IN_USE", halls: busy };
       }
 
       await tx

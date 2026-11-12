@@ -38,6 +38,13 @@ export type VenueServiceDeps = {
 /** Who is asking: `canManage` is true for an admin holding the manage permission. */
 export type ViewerAccess = { canManage: boolean };
 
+/** Names the halls that stop a deactivation, and says what to do about it. */
+function busyHallsMessage(halls: { name: string }[]): string {
+  const names = halls.map((hall) => hall.name).join(", ");
+  const verb = halls.length === 1 ? "has" : "have";
+  return `${names} ${verb} sessions that are not over yet. Move or cancel them first`;
+}
+
 export function createVenueService({ venueRepository }: VenueServiceDeps) {
   return {
     /**
@@ -138,7 +145,10 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       return toHallDetailDto(result.hall, result.venue);
     },
 
-    /** Activate or deactivate a venue (VENUE_MANAGE). Deactivating deactivates all its halls too. */
+    /**
+     * Activate or deactivate a venue (VENUE_MANAGE). Deactivating deactivates all its halls too,
+     * so it is a 409 VENUE_HAS_SESSIONS while one of them still has a session that is not over.
+     */
     async setVenueStatus(
       venueId: string,
       body: SetVenueStatusBody,
@@ -148,7 +158,16 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
         body.isActive,
         body.activateHalls,
       );
-      if (!result) throw new NotFoundError("Venue not found");
+
+      if (!result.ok) {
+        if (result.reason === "VENUE_NOT_FOUND")
+          throw new NotFoundError("Venue not found");
+        throw new ConflictError(
+          "VENUE_HAS_SESSIONS",
+          `This venue cannot be deactivated. ${busyHallsMessage(result.halls)}`,
+          { halls: result.halls },
+        );
+      }
 
       return toVenueDetailDto(result.venue, result.halls);
     },
@@ -177,6 +196,12 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
             throw new ConflictError(
               "VENUE_INACTIVE",
               "Activate the venue before activating its halls",
+            );
+          case "HALLS_IN_USE":
+            throw new ConflictError(
+              "HALL_HAS_SESSIONS",
+              `Nothing was deactivated. ${busyHallsMessage(result.halls)}`,
+              { halls: result.halls },
             );
         }
       }

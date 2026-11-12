@@ -337,6 +337,32 @@ describe("AdminVenueDetail: activating and deactivating halls", () => {
       screen.getByText("Activate the venue before activating its halls"),
     ).toBeInTheDocument();
   });
+
+  it("says which hall still has sessions when it cannot be turned off, and leaves it active", async () => {
+    await renderLoaded();
+    api.setHallsStatus.mockRejectedValue(
+      new ApiError(
+        409,
+        "HALL_HAS_SESSIONS",
+        "Nothing was deactivated. Workshop Room 1 has sessions that are not over yet. Move or cancel them first",
+      ),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Deactivate Workshop Room 1" }),
+    );
+
+    expect(
+      await screen.findByText("We couldn't update those halls"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Workshop Room 1 has sessions that are not over yet/),
+    ).toBeInTheDocument();
+    // The list still shows the hall as it was: the server changed nothing.
+    expect(
+      screen.getByRole("button", { name: "Deactivate Workshop Room 1" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("AdminVenueDetail: adding a hall", () => {
@@ -475,6 +501,44 @@ describe("AdminVenueDetail: deleting a hall", () => {
     await waitFor(() =>
       expect(row("Workshop Room 1")).toHaveTextContent("Inactive"),
     );
+  });
+
+  it("shows why 'Deactivate instead' is refused while the hall still has sessions that are not over", async () => {
+    await renderLoaded();
+    api.deleteHall.mockRejectedValue(
+      new ApiError(409, "HALL_IN_USE", "Sessions are scheduled in this hall"),
+    );
+    api.setHallsStatus.mockRejectedValue(
+      new ApiError(
+        409,
+        "HALL_HAS_SESSIONS",
+        "Nothing was deactivated. Workshop Room 1 has sessions that are not over yet. Move or cancel them first",
+      ),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete Workshop Room 1" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Delete Workshop Room 1?",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete hall" }),
+    );
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "Deactivate instead" }),
+    );
+
+    expect(
+      await within(dialog).findByText("We couldn't deactivate this hall"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        /Workshop Room 1 has sessions that are not over yet/,
+      ),
+    ).toBeInTheDocument();
+    // The dialog stays open and the hall is still active.
+    expect(row("Workshop Room 1")).toHaveTextContent("Active");
   });
 
   it("explains that the last hall cannot be deleted when the server says so", async () => {
@@ -617,5 +681,43 @@ describe("AdminVenueDetail: deactivating and activating the venue", () => {
     expect(
       await within(dialog).findByText("We couldn't deactivate this venue"),
     ).toBeInTheDocument();
+  });
+
+  it("names the halls that still have sessions when the venue cannot be deactivated", async () => {
+    await renderLoaded();
+    api.setStatus.mockRejectedValue(
+      new ApiError(
+        409,
+        "VENUE_HAS_SESSIONS",
+        "This venue cannot be deactivated. Main Auditorium, Workshop Room 1 have sessions that are not over yet. Move or cancel them first",
+      ),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Deactivate venue" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: `Deactivate ${giftCity.name}?`,
+    });
+    // The rule is explained before the admin even asks.
+    expect(
+      within(dialog).getByText(/cannot be deactivated while one of its halls/),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Deactivate venue" }),
+    );
+
+    expect(
+      await within(dialog).findByText("We couldn't deactivate this venue"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        /Main Auditorium, Workshop Room 1 have sessions that are not over yet/,
+      ),
+    ).toBeInTheDocument();
+    // The venue is still active: its header button is the same as before.
+    expect(
+      screen.queryByText("This venue is inactive"),
+    ).not.toBeInTheDocument();
   });
 });

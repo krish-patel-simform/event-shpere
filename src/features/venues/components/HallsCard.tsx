@@ -263,9 +263,10 @@ export function HallsCard({ venue }: { venue: VenueDetailDto }) {
           </table>
         </div>
         <p className="border-t border-line px-5 py-3 text-sm text-muted">
-          An inactive hall cannot be given new sessions. A venue always keeps at
-          least one hall, and a hall that already has sessions can be
-          deactivated but not deleted.
+          An inactive hall cannot be given new sessions. A hall with sessions
+          that are not over yet cannot be deactivated: move or cancel them
+          first. A venue always keeps at least one hall, and a hall that has
+          ever had sessions cannot be deleted.
         </p>
       </Card>
 
