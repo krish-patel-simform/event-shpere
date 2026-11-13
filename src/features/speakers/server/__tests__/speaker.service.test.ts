@@ -195,7 +195,7 @@ describe("speakerService.createSpeaker", () => {
       to: "ankit@speaker.test",
       firstName: "Ankit",
       passwordSetupUrl:
-        "http://localhost:3000/set-password?token=raw-token%2Fwith%2Bchars",
+        "http://localhost:3000/set-password#token=raw-token%2Fwith%2Bchars",
       loginUrl: "http://localhost:3000/login",
       expiresInHours: 24,
     });

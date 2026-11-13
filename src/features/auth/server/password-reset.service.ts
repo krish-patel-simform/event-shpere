@@ -85,7 +85,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
     return deps.sendPasswordResetEmail({
       to: user.email,
       firstName: user.firstName,
-      resetUrl: `${deps.appUrl}/reset-password?token=${encodeURIComponent(token)}`,
+      // In the fragment (#), not the query (?): a browser never sends it to a server, so the
+      // token stays out of access logs and the Referer header.
+      resetUrl: `${deps.appUrl}/reset-password#token=${encodeURIComponent(token)}`,
       expiresInMinutes: deps.tokenTtlMinutes,
       // Only set for an admin's link, so the person's own email is built exactly as before.
       ...(sentByAdmin ? { sentByAdmin: true } : {}),

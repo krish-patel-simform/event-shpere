@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Badge, buttonStyles } from "@/src/core/ui";
 import { PASSWORD_RESET_TOKEN_TTL_MINUTES } from "../../constants";
+import { useFragmentToken } from "../../hooks/useFragmentToken";
 import { AUTH_ROUTES } from "../../routes";
 import { ResetPasswordForm } from "../forms/ResetPasswordForm";
 import { AuthHeading } from "../shell/AuthHeading";
@@ -15,12 +16,17 @@ import { StatusPanel } from "../states/StatusPanel";
 type Phase = "form" | "done" | "invalid";
 
 /**
- * Opened from the password reset email (/reset-password?token=...): choose a new password, then
- * log in. Without a token the link is already known to be bad; a token the server rejects ends
- * in the same "expired" state.
+ * Opened from the password reset email (/reset-password#token=...): choose a new password, then
+ * log in. The token is in the URL fragment, which only the browser can read. Without a token
+ * the link is already known to be bad; a token the server rejects ends in the same "expired"
+ * state.
  */
-export function ResetPasswordScreen({ token }: { token: string | null }) {
+export function ResetPasswordScreen() {
+  const { token, ready } = useFragmentToken();
   const [phase, setPhase] = useState<Phase>("form");
+
+  // Until the browser has read the fragment, nothing is known: show nothing, not "expired".
+  if (!ready) return null;
 
   return (
     <AuthShell

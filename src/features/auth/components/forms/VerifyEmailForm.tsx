@@ -13,7 +13,7 @@ import {
 import { AuthAlert } from "../states/AuthAlert";
 
 type VerifyEmailFormProps = {
-  /** The one-time token from the emailed link (?token=...). */
+  /** The one-time token from the emailed link (#token=...). */
   token: string;
   /** Called once the code is accepted. */
   onVerified: () => void;

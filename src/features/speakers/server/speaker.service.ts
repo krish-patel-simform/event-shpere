@@ -346,7 +346,8 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
         await deps.enqueueAccountSetupEmail({
           to: result.user.email,
           firstName: result.user.firstName,
-          passwordSetupUrl: `${deps.appUrl}/set-password?token=${encodeURIComponent(setupToken.token)}`,
+          // In the fragment (#), not the query (?): a browser never sends it to a server.
+          passwordSetupUrl: `${deps.appUrl}/set-password#token=${encodeURIComponent(setupToken.token)}`,
           loginUrl: `${deps.appUrl}/login`,
           expiresInHours: ACCOUNT_SETUP_TOKEN_TTL_HOURS,
         });

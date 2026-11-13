@@ -108,7 +108,7 @@ export type SendResetLinkResponseDto = z.infer<
 >;
 
 // Verify-email page (opened from the signup email): `token` comes from the link's
-// ?token=…, `otp` is the 6-digit code the user types. The email is not sent: the server
+// #token=… (the URL fragment), `otp` is the 6-digit code the user types. The email is not sent: the server
 // takes it from the token's user, so a code can only be tried against its own account.
 export const verifyEmailBodySchema = z.object({
   token: z.string().min(1, "Missing link token").max(200),

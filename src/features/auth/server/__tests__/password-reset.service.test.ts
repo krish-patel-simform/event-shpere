@@ -93,7 +93,10 @@ function setup(
 /** The raw token is only in the email link: read it from there, like the user's browser would. */
 function tokenFromEmail(sendMock: jest.Mock): string {
   const { resetUrl } = sendMock.mock.calls[0][0] as { resetUrl: string };
-  const token = new URL(resetUrl).searchParams.get("token");
+  // The token is in the fragment (#token=...), not the query string.
+  const token = new URLSearchParams(new URL(resetUrl).hash.slice(1)).get(
+    "token",
+  );
   if (!token) throw new Error("no token in the link");
   return token;
 }
@@ -179,7 +182,7 @@ describe("passwordResetService.requestReset", () => {
     expect(mail.firstName).toBe("Olga");
     expect(mail.expiresInMinutes).toBe(10);
     expect(
-      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+      mail.resetUrl.startsWith("https://app.test/reset-password#token="),
     ).toBe(true);
   });
 
@@ -343,7 +346,7 @@ describe("passwordResetService.sendResetLinkToUser (an admin sends the link)", (
     expect(mail.expiresInMinutes).toBe(10);
     expect(mail.sentByAdmin).toBe(true);
     expect(
-      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+      mail.resetUrl.startsWith("https://app.test/reset-password#token="),
     ).toBe(true);
   });
 
@@ -400,13 +403,15 @@ describe("passwordResetService.sendResetLinkToUser (an admin sends the link)", (
     );
     expect(log).toHaveBeenCalledTimes(1);
     const logged = JSON.stringify(log.mock.calls);
-    const raw = new URL(
-      (deps.sendPasswordResetEmail.mock.calls[0][0] as { resetUrl: string })
-        .resetUrl,
-    ).searchParams.get("token");
+    const raw = new URLSearchParams(
+      new URL(
+        (deps.sendPasswordResetEmail.mock.calls[0][0] as { resetUrl: string })
+          .resetUrl,
+      ).hash.slice(1),
+    ).get("token");
     expect(logged).toContain("Resend is down");
     expect(logged).not.toContain(raw);
-    expect(logged).not.toContain("reset-password?token");
+    expect(logged).not.toContain("reset-password#token");
   });
 
   it('does not change "forgot password": that email has no admin wording', async () => {
