@@ -1,4 +1,5 @@
 import {
+  ExternalLink,
   FileText,
   Image as ImageIcon,
   Pencil,
@@ -14,9 +15,11 @@ import {
   cn,
   type ActionMenuItem,
 } from "@/src/core/ui";
+import { publicSessionHref, type EventDisplayStatus } from "../../events";
 import { eventSessionEditHref, type SessionStep } from "../routes";
 import type { SessionDto } from "../schemas/sessions.schemas";
 import {
+  hasPublicPage,
   sessionDay,
   sessionPlace,
   sessionPrice,
@@ -43,16 +46,23 @@ const EDIT_STEPS: {
 /**
  * The organizer's sessions of one event, one row each; a click on the row opens its edit page.
  * A cancelled session, or any session of an event that can no longer change, is read-only: no
- * link and no menu.
+ * edit link and no cancel. Its menu still offers "View public page" when that page exists (an
+ * event that has ended keeps its public pages).
  */
 export function EventSessionsTable({
   eventId,
+  eventSlug,
+  eventStatus,
   sessions,
   timezone,
   canEdit,
   onCancel,
 }: {
   eventId: string;
+  /** The event's public link, for "View public page". */
+  eventSlug: string;
+  /** A draft event has no public pages yet. */
+  eventStatus: EventDisplayStatus;
   sessions: readonly SessionDto[];
   /** The event's own zone: times are shown in it, not in the viewer's. */
   timezone: string;
@@ -60,19 +70,36 @@ export function EventSessionsTable({
   canEdit: boolean;
   onCancel: (session: SessionDto) => void;
 }) {
-  function rowActions(session: SessionDto): ActionMenuItem[] {
-    const items: ActionMenuItem[] = EDIT_STEPS.map(({ step, label, icon }) => ({
-      label,
-      icon,
-      href: eventSessionEditHref(eventId, session.id, step),
-    }));
-    items.push({
-      label: "Cancel session",
-      icon: X,
-      tone: "danger",
-      separatorBefore: true,
-      onSelect: () => onCancel(session),
-    });
+  /** What the row's "⋮" menu offers; empty = no menu. */
+  function rowActions(
+    session: SessionDto,
+    editable: boolean,
+  ): ActionMenuItem[] {
+    const items: ActionMenuItem[] = editable
+      ? EDIT_STEPS.map(({ step, label, icon }) => ({
+          label,
+          icon,
+          href: eventSessionEditHref(eventId, session.id, step),
+        }))
+      : [];
+    if (hasPublicPage(session, eventStatus)) {
+      items.push({
+        label: "View public page",
+        icon: ExternalLink,
+        href: publicSessionHref(eventSlug, session.id),
+        newTab: true,
+        separatorBefore: editable,
+      });
+    }
+    if (editable) {
+      items.push({
+        label: "Cancel session",
+        icon: X,
+        tone: "danger",
+        separatorBefore: true,
+        onSelect: () => onCancel(session),
+      });
+    }
     return items;
   }
 
@@ -111,6 +138,7 @@ export function EventSessionsTable({
             const editable = canEdit && session.status !== "cancelled";
             const day = sessionDay(session, timezone);
             const times = sessionTimes(session, timezone);
+            const actions = rowActions(session, editable);
             return (
               <ClickableRow
                 key={session.id}
@@ -161,21 +189,25 @@ export function EventSessionsTable({
                   </Badge>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {editable && (
+                  {(editable || actions.length > 0) && (
                     <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        className="text-danger"
-                        aria-label={`Cancel ${session.title}`}
-                        onClick={() => onCancel(session)}
-                      >
-                        <X aria-hidden="true" className="size-4" />
-                        Cancel
-                      </Button>
-                      <ActionMenu
-                        label={`Actions for ${session.title}`}
-                        items={rowActions(session)}
-                      />
+                      {editable && (
+                        <Button
+                          variant="secondary"
+                          className="text-danger"
+                          aria-label={`Cancel ${session.title}`}
+                          onClick={() => onCancel(session)}
+                        >
+                          <X aria-hidden="true" className="size-4" />
+                          Cancel
+                        </Button>
+                      )}
+                      {actions.length > 0 && (
+                        <ActionMenu
+                          label={`Actions for ${session.title}`}
+                          items={actions}
+                        />
+                      )}
                     </div>
                   )}
                 </td>

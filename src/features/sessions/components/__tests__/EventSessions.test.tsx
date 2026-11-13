@@ -6,6 +6,8 @@ import { ApiError } from "@/src/core/api-client/base-api.service";
 import { useHasPermission } from "@/src/features/auth";
 import {
   findSampleOverview,
+  FINTECH_ID,
+  FUTURES_ID,
   MEETUP_ID,
   SUMMIT_ID,
 } from "../../../events/__fixtures__/event-manage";
@@ -219,6 +221,102 @@ describe("EventSessions: the list", () => {
   });
 });
 
+describe("EventSessions: searching", () => {
+  const search = (text: string) =>
+    userEvent.type(
+      screen.getByRole("searchbox", { name: "Search sessions" }),
+      text,
+    );
+  const rows = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.textContent ?? "");
+
+  it("finds a session by its title, ignoring case", async () => {
+    await renderPage();
+    await screen.findByText(talk.title);
+
+    await search("OFFLINE-first");
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toContain(talk.title);
+    expect(screen.getByText("Showing 1 of 3 sessions")).toBeInTheDocument();
+  });
+
+  it("finds sessions by hall name", async () => {
+    await renderPage();
+    await screen.findByText(talk.title);
+
+    await search("hall b");
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toContain(workshop.title);
+  });
+
+  it("finds sessions by any speaker's name", async () => {
+    await renderPage();
+    await screen.findByText(talk.title);
+
+    await search("rohan");
+
+    // Rohan Mehta is on the workshop and on the cancelled keynote.
+    expect(rows()).toHaveLength(2);
+    expect(rows().join(" ")).toContain(workshop.title);
+    expect(rows().join(" ")).toContain(cancelledKeynote.title);
+  });
+
+  it("works together with the speaker filter", async () => {
+    events.getOverview.mockResolvedValue(sampleOverview(SUMMIT_ID));
+    renderWithClient(
+      <EventSessions eventId={SUMMIT_ID} speakerId={SPEAKER_ANANYA_ID} />,
+    );
+    await screen.findByText(talk.title);
+
+    await search("design");
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toContain(workshop.title);
+  });
+
+  it("says nothing matched, and Clear search shows every session again", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await screen.findByText(talk.title);
+
+    await search("zzz");
+
+    expect(screen.getByText("No session matches “zzz”.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(rows()).toHaveLength(organizerSessions.length);
+    expect(
+      screen.getByRole("searchbox", { name: "Search sessions" }),
+    ).toHaveValue("");
+  });
+
+  it("ignores spaces around the text, and shows every session when it is blank", async () => {
+    await renderPage();
+    await screen.findByText(talk.title);
+
+    await search("   ");
+    expect(rows()).toHaveLength(organizerSessions.length);
+
+    await search(" offline ");
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("has no search box when the event has no sessions", async () => {
+    api.listForEvent.mockResolvedValue([]);
+    await renderPage();
+
+    await screen.findByText("This event has no sessions yet.");
+    expect(
+      screen.queryByRole("searchbox", { name: "Search sessions" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("EventSessions: adding", () => {
   it("offers Add session when the organizer may create sessions", async () => {
     await renderPage();
@@ -242,7 +340,7 @@ describe("EventSessions: adding", () => {
 });
 
 describe("EventSessions: a read-only event", () => {
-  it("has no Add session, no links and no menus, and says why", async () => {
+  it("has no Add session, no edit links and no Cancel, and says why", async () => {
     await renderPage(MEETUP_ID);
 
     expect(await screen.findByText(talk.title)).toBeInTheDocument();
@@ -255,13 +353,25 @@ describe("EventSessions: a read-only event", () => {
       screen.queryByRole("link", { name: talk.title }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /^Actions for/ }),
+      screen.queryByRole("button", { name: `Cancel ${talk.title}` }),
     ).not.toBeInTheDocument();
+  });
+
+  it("still offers only 'View public page' on a scheduled session (a cancelled event keeps its pages)", async () => {
+    const user = userEvent.setup();
+    await renderPage(MEETUP_ID);
+
+    await user.click(
+      await screen.findByRole("button", { name: `Actions for ${talk.title}` }),
+    );
+
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["View public page"]);
   });
 });
 
 describe("EventSessions: row actions", () => {
-  it("offers every edit step, and cancel last", async () => {
+  it("offers every edit step, the public page, and cancel last", async () => {
     const user = userEvent.setup();
     await renderPage();
 
@@ -275,8 +385,19 @@ describe("EventSessions: row actions", () => {
       "Edit details & speakers",
       "Edit content",
       "Cover image",
+      "View public page",
       "Cancel session",
     ]);
+    // The public page opens in a new tab, so the organizer keeps their list.
+    const publicPage = menu.getByRole("menuitem", {
+      name: "View public page",
+    });
+    expect(publicPage).toHaveAttribute(
+      "href",
+      `/events/product-engineering-summit-2026/sessions/${talk.id}`,
+    );
+    expect(publicPage).toHaveAttribute("target", "_blank");
+    expect(publicPage).toHaveAttribute("rel", "noopener noreferrer");
     expect(
       menu.getByRole("menuitem", { name: "Edit details & speakers" }),
     ).toHaveAttribute("href", eventSessionEditHref(SUMMIT_ID, talk.id));
@@ -284,6 +405,61 @@ describe("EventSessions: row actions", () => {
       "href",
       eventSessionEditHref(SUMMIT_ID, talk.id, "cover"),
     );
+  });
+
+  it("does not offer the public page for a draft session, which is a 404 there", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Actions for ${workshop.title}`,
+      }),
+    );
+
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", {
+        name: "View public page",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("has no menu on a cancelled session", async () => {
+    await renderPage();
+
+    await screen.findByText(cancelledKeynote.title);
+    expect(
+      screen.queryByRole("button", {
+        name: `Actions for ${cancelledKeynote.title}`,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer the public page while the event is a draft", async () => {
+    const user = userEvent.setup();
+    await renderPage(FINTECH_ID);
+
+    await user.click(
+      await screen.findByRole("button", { name: `Actions for ${talk.title}` }),
+    );
+
+    expect(
+      within(screen.getByRole("menu")).queryByRole("menuitem", {
+        name: "View public page",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the public page of a session of an event that has ended", async () => {
+    const user = userEvent.setup();
+    await renderPage(FUTURES_ID);
+
+    await user.click(
+      await screen.findByRole("button", { name: `Actions for ${talk.title}` }),
+    );
+
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["View public page"]);
   });
 
   it("shows a visible Cancel button on the row that opens the confirm dialog", async () => {

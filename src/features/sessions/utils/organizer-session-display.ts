@@ -9,6 +9,7 @@ import {
   formatTicketPrice,
   toFormDateTime,
   zoneLabel,
+  type EventDisplayStatus,
 } from "../../events";
 import type { SessionDto } from "../schemas/sessions.schemas";
 
@@ -77,6 +78,18 @@ export function sessionPlace(
   return session.mode === "hybrid"
     ? `${session.hallName} + online`
     : session.hallName;
+}
+
+/**
+ * Whether the session has a public page. The public API only finds a SCHEDULED session of an event
+ * that is published, over or cancelled; a draft session, a cancelled session and a draft event are
+ * a 404 there, so the "View public page" link is not offered for them.
+ */
+export function hasPublicPage(
+  session: Pick<SessionDto, "status">,
+  eventStatus: EventDisplayStatus,
+): boolean {
+  return session.status === "scheduled" && eventStatus !== "draft";
 }
 
 /** The speakers' names in their display order: "Ananya Rao, Rohan Mehta". */

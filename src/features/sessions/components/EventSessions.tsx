@@ -11,6 +11,7 @@ import {
   eventSessionsHref,
   isEventEditable,
   plural,
+  SearchBox,
   type EventOverviewData,
 } from "../../events";
 import { useCancelSession } from "../hooks/useCancelSession";
@@ -18,6 +19,7 @@ import { useGetEventSessions } from "../hooks/useGetEventSessions";
 import { eventSessionNewHref } from "../routes";
 import type { SessionDto } from "../schemas/sessions.schemas";
 import { ALL_HALLS, filterSessionsByHall } from "../utils/session-hall-filter";
+import { filterSessionsBySearch } from "../utils/session-search-filter";
 import {
   filterSessionsBySpeaker,
   speakerNameIn,
@@ -80,15 +82,18 @@ function SessionsPage({
         : (allSessions ?? []),
     [allSessions, speakerId],
   );
+  // Then the typed search (title, hall or speaker name), also in the browser.
+  const [search, setSearch] = useState("");
+  const term = search.trim();
   const shown = useMemo(
-    () => filterSessionsByHall(ofSpeaker, hall),
-    [ofSpeaker, hall],
+    () => filterSessionsBySearch(filterSessionsByHall(ofSpeaker, hall), term),
+    [ofSpeaker, hall, term],
   );
   const speakerName =
     speakerId && allSessions
       ? (speakerNameIn(allSessions, speakerId) ?? "this speaker")
       : null;
-  const filtered = hall !== ALL_HALLS || speakerId !== undefined;
+  const filtered = hall !== ALL_HALLS || speakerId !== undefined || term !== "";
 
   function closeDialog() {
     setCancelling(null);
@@ -124,6 +129,12 @@ function SessionsPage({
 
       {sessions.isSuccess && sessions.data.length > 0 && (
         <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <SearchBox
+            label="Search sessions"
+            placeholder="Search by session, hall or speaker"
+            value={search}
+            onChange={setSearch}
+          />
           <SessionHallFilter
             venueId={event.venue?.id ?? null}
             sessions={sessions.data}
@@ -195,6 +206,13 @@ function SessionsPage({
               This speaker is not on any session of this event.
             </p>
           </div>
+        ) : shown.length === 0 && term !== "" ? (
+          <div className="space-y-3 px-5 py-10 text-center">
+            <p className="text-muted">{`No session matches “${term}”.`}</p>
+            <Button variant="secondary" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+          </div>
         ) : shown.length === 0 ? (
           <div className="space-y-3 px-5 py-10 text-center">
             <p className="text-muted">
@@ -210,6 +228,8 @@ function SessionsPage({
         ) : (
           <EventSessionsTable
             eventId={event.id}
+            eventSlug={event.slug}
+            eventStatus={event.status}
             sessions={shown}
             timezone={event.timezone}
             canEdit={editable}
