@@ -9,6 +9,7 @@ import {
   sessionSpeakersTable,
   speakersProfilesTable,
   usersTable,
+  venuesTable,
   type EventSession,
   type SessionSpeaker,
 } from "../../../db/schemas";
@@ -149,6 +150,12 @@ export type PublicSessionRow = Pick<
   /** Only to load the Strapi content: the public DTO never carries it. */
   cmsSessionId: string | null;
   hallName: string | null;
+  /** Seats in the hall; null = no hall (online). */
+  hallCapacity: number | null;
+  /** Seats booked right now (cancelled bookings are not counted). */
+  booked: number;
+  /** Where the event is held; null = no venue (an online event). */
+  venue: { name: string; addressLine: string; city: string } | null;
   event: {
     slug: string;
     title: string;
@@ -157,6 +164,8 @@ export type PublicSessionRow = Pick<
   };
   /** In display order. A suspended speaker is left out: they have no public page. */
   speakers: {
+    /** speaker_profiles.id */
+    id: string;
     slug: string;
     firstName: string;
     lastName: string;
@@ -219,6 +228,15 @@ export const sessionRepository = {
         requiresRegistration: sessionsTable.requiresRegistration,
         cmsSessionId: sessionsTable.cmsSessionId,
         hallName: hallsTable.name,
+        hallCapacity: hallsTable.capacity,
+        booked: sql<number>`(
+          select count(*)::int from ${sessionRegistrationsTable}
+          where ${sessionRegistrationsTable.sessionId} = ${sessionsTable.id}
+            and ${sessionRegistrationsTable.status} = 'registered'
+        )`,
+        venueName: venuesTable.name,
+        venueAddress: venuesTable.addressLine,
+        venueCity: venuesTable.city,
         eventSlug: eventsTable.slug,
         eventTitle: eventsTable.title,
         eventStatus: eventsTable.status,
@@ -226,6 +244,7 @@ export const sessionRepository = {
       })
       .from(sessionsTable)
       .innerJoin(eventsTable, eq(eventsTable.id, sessionsTable.eventId))
+      .leftJoin(venuesTable, eq(venuesTable.id, eventsTable.venueId))
       .leftJoin(hallsTable, eq(hallsTable.id, sessionsTable.hallId))
       .where(
         and(
@@ -240,6 +259,7 @@ export const sessionRepository = {
 
     const speakers = await db
       .select({
+        id: speakersProfilesTable.id,
         slug: speakersProfilesTable.slug,
         firstName: usersTable.firstName,
         lastName: usersTable.lastName,
@@ -260,10 +280,22 @@ export const sessionRepository = {
       )
       .orderBy(asc(sessionSpeakersTable.displayOrder));
 
-    const { eventSlug, eventTitle, eventStatus, eventTimezone, ...session } =
-      row;
+    const {
+      eventSlug,
+      eventTitle,
+      eventStatus,
+      eventTimezone,
+      venueName,
+      venueAddress,
+      venueCity,
+      ...session
+    } = row;
     return {
       ...session,
+      venue:
+        venueName !== null && venueAddress !== null && venueCity !== null
+          ? { name: venueName, addressLine: venueAddress, city: venueCity }
+          : null,
       event: {
         slug: eventSlug,
         title: eventTitle,

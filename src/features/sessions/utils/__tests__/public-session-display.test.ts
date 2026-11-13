@@ -1,5 +1,10 @@
 import type { PublicSessionDetailDto } from "../../schemas/session-public.schemas";
-import { sessionPlace, sessionWhen } from "../public-session-display";
+import {
+  seatsTakenPercent,
+  sessionPlace,
+  sessionWhen,
+  sessionWhere,
+} from "../public-session-display";
 
 const event: PublicSessionDetailDto["event"] = {
   slug: "summit",
@@ -42,5 +47,57 @@ describe("sessionPlace", () => {
   it("is the hall, or Online when there is none", () => {
     expect(sessionPlace({ hallName: "Lab 3" })).toBe("Lab 3");
     expect(sessionPlace({ hallName: null })).toBe("Online");
+  });
+});
+
+describe("sessionWhere", () => {
+  const venue = {
+    name: "Tech Park Auditorium",
+    addressLine: "12 MG Road",
+    city: "Pune",
+  };
+
+  it("names the hall and the venue for an in-person session", () => {
+    expect(sessionWhere({ mode: "in_person", hallName: "Hall A", venue })).toBe(
+      "Hall A · Tech Park Auditorium, Pune",
+    );
+  });
+
+  it("leaves out what is not known", () => {
+    expect(sessionWhere({ mode: "in_person", hallName: null, venue })).toBe(
+      "Tech Park Auditorium, Pune",
+    );
+    expect(
+      sessionWhere({ mode: "in_person", hallName: "Hall A", venue: null }),
+    ).toBe("Hall A");
+    expect(
+      sessionWhere({ mode: "in_person", hallName: null, venue: null }),
+    ).toBe("Place to be announced");
+  });
+
+  it("is just Online for an online session, even at an event with a venue", () => {
+    expect(sessionWhere({ mode: "online", hallName: null, venue })).toBe(
+      "Online",
+    );
+  });
+
+  it("adds that a hybrid session is also live online", () => {
+    expect(sessionWhere({ mode: "hybrid", hallName: "Hall A", venue })).toBe(
+      "Hall A · Tech Park Auditorium, Pune · Also live online",
+    );
+  });
+});
+
+describe("seatsTakenPercent", () => {
+  it("is how much of the hall is booked, rounded", () => {
+    expect(seatsTakenPercent(120, 32)).toBe(73);
+    expect(seatsTakenPercent(100, 100)).toBe(0);
+    expect(seatsTakenPercent(100, 0)).toBe(100);
+  });
+
+  it("stays between 0 and 100, and is 0 for a hall with no seats", () => {
+    expect(seatsTakenPercent(100, 150)).toBe(0);
+    expect(seatsTakenPercent(100, -5)).toBe(100);
+    expect(seatsTakenPercent(0, 0)).toBe(0);
   });
 });

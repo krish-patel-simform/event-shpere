@@ -117,9 +117,17 @@ export function toPublicSessionDetailDto(
     startAt: row.startAt?.toISOString() ?? null,
     endAt: row.endAt?.toISOString() ?? null,
     hallName: row.hallName,
+    hallCapacity: row.hallCapacity,
+    // Only a session that needs booking in a hall has a seat count; never below zero.
+    seatsLeft:
+      row.requiresRegistration && row.hallCapacity !== null
+        ? Math.max(0, row.hallCapacity - row.booked)
+        : null,
+    venue: row.venue,
     price: row.price,
     requiresRegistration: row.requiresRegistration,
     speakers: row.speakers.map((speaker) => ({
+      id: speaker.id,
       slug: speaker.slug,
       name: `${speaker.firstName} ${speaker.lastName}`,
       role: speaker.role,

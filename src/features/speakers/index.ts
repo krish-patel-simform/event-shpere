@@ -50,6 +50,7 @@ export {
 export { blocksToText, textToBlocks } from "./utils/bio-blocks";
 // For pickers in other features (an organizer chooses a session's speakers from the list).
 export { useGetSpeakerList } from "./hooks/useGetSpeakerList";
+export { SpeakerPhoto } from "./components/SpeakerPhoto";
 export { speakerFullName } from "./utils/speaker-display";
 // "Edit my profile": the page content loads and saves the real profile; the form alone still
 // works on sample data (no props).

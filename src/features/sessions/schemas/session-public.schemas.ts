@@ -30,6 +30,18 @@ export type PublicSessionContentDto = z.infer<
 >;
 
 export const publicSessionDetailSchema = publicSessionSchema.extend({
+  /** Each speaker also carries their id, so the page can ask the speakers list for the photo and job title. */
+  speakers: z.array(
+    publicSessionSchema.shape.speakers.element.extend({ id: z.uuid() }),
+  ),
+  /** Seats in the hall; null for an online session (no hall). */
+  hallCapacity: z.number().int().positive().nullable(),
+  /** Hall seats minus bookings; null when the session needs no booking or has no hall. */
+  seatsLeft: z.number().int().min(0).nullable(),
+  /** Where the event is held; null for an online event. */
+  venue: z
+    .object({ name: z.string(), addressLine: z.string(), city: z.string() })
+    .nullable(),
   /** The event the session belongs to, for the breadcrumb, the back link and the time zone. */
   event: z.object({
     slug: z.string(),

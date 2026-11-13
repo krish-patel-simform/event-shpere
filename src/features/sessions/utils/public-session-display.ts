@@ -38,3 +38,26 @@ export function sessionPlace(
 ): string {
   return session.hallName ?? "Online";
 }
+
+/**
+ * Where to go, in one line: "Hall A · Tech Park Auditorium, Pune". An online session is "Online"
+ * (the join link is never public); a hybrid one adds "Also live online".
+ */
+export function sessionWhere(
+  session: Pick<PublicSessionDetailDto, "mode" | "hallName" | "venue">,
+): string {
+  if (session.mode === "online") return "Online";
+  const parts = [
+    session.hallName,
+    session.venue ? `${session.venue.name}, ${session.venue.city}` : null,
+  ].filter((part) => part !== null);
+  if (session.mode === "hybrid") parts.push("Also live online");
+  return parts.length > 0 ? parts.join(" · ") : "Place to be announced";
+}
+
+/** How full the hall is, 0–100, for the seats bar. */
+export function seatsTakenPercent(capacity: number, seatsLeft: number): number {
+  if (capacity <= 0) return 0;
+  const taken = Math.min(Math.max(capacity - seatsLeft, 0), capacity);
+  return Math.round((taken / capacity) * 100);
+}

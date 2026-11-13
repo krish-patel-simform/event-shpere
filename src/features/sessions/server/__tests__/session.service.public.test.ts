@@ -17,6 +17,7 @@ jest.mock("../../../events/server", () =>
 
 const slug = "tech-conf-2026";
 const sessionId = "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10";
+const speakerId = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01";
 
 let errorSpy: jest.SpyInstance;
 beforeEach(() => {
@@ -36,6 +37,13 @@ const row = (overrides: Partial<PublicSessionRow> = {}): PublicSessionRow => ({
   requiresRegistration: true,
   cmsSessionId: "doc-1",
   hallName: "Main Hall",
+  hallCapacity: 120,
+  booked: 88,
+  venue: {
+    name: "Tech Park Auditorium",
+    addressLine: "12 MG Road",
+    city: "Pune",
+  },
   event: {
     slug,
     title: "Tech Conf",
@@ -43,7 +51,13 @@ const row = (overrides: Partial<PublicSessionRow> = {}): PublicSessionRow => ({
     timezone: "Asia/Kolkata",
   },
   speakers: [
-    { slug: "asha-rao", firstName: "Asha", lastName: "Rao", role: "speaker" },
+    {
+      id: speakerId,
+      slug: "asha-rao",
+      firstName: "Asha",
+      lastName: "Rao",
+      role: "speaker",
+    },
   ],
   ...overrides,
 });
@@ -136,7 +150,16 @@ describe("sessionService.getPublicSession", () => {
       hallName: "Main Hall",
       price: 50_000,
       requiresRegistration: true,
-      speakers: [{ slug: "asha-rao", name: "Asha Rao", role: "speaker" }],
+      speakers: [
+        { id: speakerId, slug: "asha-rao", name: "Asha Rao", role: "speaker" },
+      ],
+      hallCapacity: 120,
+      seatsLeft: 32,
+      venue: {
+        name: "Tech Park Auditorium",
+        addressLine: "12 MG Road",
+        city: "Pune",
+      },
       event: {
         slug,
         title: "Tech Conf",
@@ -234,6 +257,36 @@ describe("sessionService.getPublicSession", () => {
     const dto = await service.getPublicSession(slug, sessionId);
 
     expect(dto.event.status).toBe("cancelled");
+  });
+
+  describe("seats left", () => {
+    const seatsFor = async (overrides: Partial<PublicSessionRow>) => {
+      const { service } = setup(row(overrides));
+      return (await service.getPublicSession(slug, sessionId)).seatsLeft;
+    };
+
+    it("is the hall's seats minus the bookings, when the session needs booking", async () => {
+      expect(await seatsFor({ hallCapacity: 120, booked: 88 })).toBe(32);
+    });
+
+    it("is 0 when full, never negative", async () => {
+      expect(await seatsFor({ hallCapacity: 30, booked: 30 })).toBe(0);
+      expect(await seatsFor({ hallCapacity: 30, booked: 35 })).toBe(0);
+    });
+
+    it("is null when no booking is needed, or when there is no hall", async () => {
+      expect(await seatsFor({ requiresRegistration: false })).toBeNull();
+      expect(await seatsFor({ hallName: null, hallCapacity: null })).toBeNull();
+    });
+  });
+
+  it("answers no venue for an online event, and keeps the address out when there is one only by name", async () => {
+    const { service } = setup(row({ venue: null }));
+
+    const dto = await service.getPublicSession(slug, sessionId);
+
+    expect(dto.venue).toBeNull();
+    expect(() => publicSessionDetailSchema.parse(dto)).not.toThrow();
   });
 
   it("answers no hall and no time for an online session still without a slot", async () => {
