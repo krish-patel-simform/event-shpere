@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { roleNameEnum, userStatusEnum } from "../../../db/schemas";
+import { roleNameEnum } from "../../../db/schemas";
 import {
   PASSWORD_REGEX,
   PASSWORD_REGEX_MESSAGE,
@@ -136,27 +136,6 @@ export const organizerSignupBodySchema = signupBaseSchema
 
 export type OrganizerSignupBody = z.infer<typeof organizerSignupBodySchema>;
 
-export const organizerSignUpResponseSchema = z.object({
-  id: z.uuid(),
-  userId: z.uuid(),
-  firstName: z.string(),
-  lastName: z.string(),
-  email: z.email(),
-  status: z.enum(userStatusEnum.enumValues),
-  organizationName: z.string(),
-  organizationWebsite: z.string().nullable(),
-
-  isVerified: z.boolean(),
-  createdAt: z.iso.datetime(),
-
-  verificationEmailSent: z.boolean(),
-
-  verificationCodeExpiresInMinutes: z.number().int().positive(),
-});
-export type OrganizerSignUpResponseDto = z.infer<
-  typeof organizerSignUpResponseSchema
->;
-
 //* Post Verify the OPT
 export const verifyOtpBodySchema = z.object({
   otp: z.coerce.number().min(6).max(6),
@@ -195,25 +174,16 @@ export const userSignupBodySchema = signupBaseSchema
   .refine(passwordsMatch, PASSWORDS_MATCH_ERROR);
 export type UserSignupBody = z.infer<typeof userSignupBodySchema>;
 
-// The profile fields are nullable because the DB stores a skipped field as null.
-export const userSignupResponseSchema = z.object({
-  userId: z.uuid(),
-  firstName: z.string(),
-  lastName: z.string(),
+// The answer of BOTH signups (user and organizer). Deliberately minimal and identical for a new
+// email and for one that already has an account, so the response never reveals which: no ids,
+// no status, nothing read from the database.
+export const signupResponseSchema = z.object({
   email: z.email(),
-  /** `pending` until the email is verified with the emailed code. */
-  status: z.enum(userStatusEnum.enumValues),
-  phone: z.string().nullable(),
-  city: z.string().nullable(),
-  postalCode: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
-  /** Email verified (users.email_verified_at set): false right after signup. */
-  isVerified: z.boolean(),
   /** False if the account was created but the code could not be sent: offer "resend". */
   verificationEmailSent: z.boolean(),
   verificationCodeExpiresInMinutes: z.number().int().positive(),
 });
-export type UserSignUpResponseDto = z.infer<typeof userSignupResponseSchema>;
+export type SignUpResponseDto = z.infer<typeof signupResponseSchema>;
 
 //* POST Forgot Password
 

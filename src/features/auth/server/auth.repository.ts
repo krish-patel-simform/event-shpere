@@ -55,8 +55,8 @@ export const authRepository = {
   },
 
   /**
-   * Cheap pre-check so a duplicate signup skips the slow argon2 hash. NOT a guarantee:
-   * two signups at the same moment both pass it; signUpOrganizer's insert decides.
+   * Cheap pre-check so a duplicate signup creates and sends nothing. NOT a guarantee:
+   * two signups at the same moment both pass it; the signup insert decides.
    */
   async isEmailTaken(email: string): Promise<boolean> {
     const [row] = await db

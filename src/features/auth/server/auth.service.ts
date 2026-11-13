@@ -8,11 +8,7 @@ import {
   hashPassword,
   verifyPassword,
 } from "../../../core/auth/server/password";
-import {
-  ConflictError,
-  ForbiddenError,
-  UnauthorizedError,
-} from "../../../core/http/errors";
+import { ForbiddenError, UnauthorizedError } from "../../../core/http/errors";
 import {
   createEmailOtp,
   EMAIL_OTP_TTL_MINUTES,
@@ -24,23 +20,15 @@ import type {
   AuthUserDto,
   LoginBody,
   OrganizerSignupBody,
-  OrganizerSignUpResponseDto,
   ResendOtpBody,
+  SignUpResponseDto,
   UserSignupBody,
-  UserSignUpResponseDto,
 } from "../schemas/auth.schemas";
 import { createEmailVerifyToken } from "./account-activation.service";
-import {
-  toAuthUserDto,
-  toOrganizerSignUpDto,
-  toUserSignUpDto,
-} from "./auth.dto";
+import { toAuthUserDto, toSignUpDto } from "./auth.dto";
 import { authRepository, type AuthRepository } from "./auth.repository";
 
 const INVALID_LOGIN = "Invalid email or password";
-
-const emailTaken = () =>
-  new ConflictError("EMAIL_TAKEN", "An account with this email already exists");
 
 export type AuthServiceDeps = {
   authRepository: Pick<
@@ -65,6 +53,28 @@ export type AuthServiceDeps = {
 
 // A factory with injected dependencies, so tests can pass fakes instead of the real DB.
 export function createAuthService(deps: AuthServiceDeps) {
+  /**
+   * A real hash of a throwaway password, made once (on the first failed lookup) with the same
+   * hashPassword as real accounts so its argon2 settings match. login verifies against it when
+   * there is no real hash, to keep the response time the same.
+   */
+  let dummyPasswordHash: Promise<string> | undefined;
+  const getDummyPasswordHash = () =>
+    (dummyPasswordHash ??= deps.hashPassword(
+      "timing-equalizer-not-a-password",
+    ));
+
+  /**
+   * What a signup answers when the email already has an account (or a parallel signup took it):
+   * the same shape and values as a new signup, so the response never reveals which emails are
+   * registered. Nothing is created and nothing is sent.
+   */
+  const duplicateSignUpAnswer = (email: string): SignUpResponseDto =>
+    toSignUpDto(email, {
+      emailSent: true,
+      expiresInMinutes: deps.verificationCodeTtlMinutes,
+    });
+
   /**
    * Shared by every self-signup, called only AFTER the account is committed (a rolled-back
    * account must never get a code): new 6-digit code → its hash in Redis → code + verify
@@ -105,26 +115,20 @@ export function createAuthService(deps: AuthServiceDeps) {
     ): Promise<{ user: AuthUserDto; tokens: AuthTokens }> {
       const user = await deps.authRepository.findUserForLogin(input.email);
 
-      // 1. Unknown email: 401.
-      if (!user) {
+      // Always run one argon2 verify, even for an unknown email or an account without a password
+      // yet (created by an admin, setup link not used): against a dummy hash, so every failed
+      // login takes the same time and the response time cannot tell whether the account exists.
+      const passwordOk = await deps.verifyPassword(
+        user?.passwordHash ?? (await getDummyPasswordHash()),
+        input.password,
+      );
+
+      // Unknown email, no password yet and wrong password: the same 401, never a hint which.
+      if (!user || !user.passwordHash || !passwordOk) {
         throw new UnauthorizedError(INVALID_LOGIN);
       }
 
-      // 2. No password yet: an account created by an admin, until its setup link is used.
-      if (!user.passwordHash) {
-        throw new ForbiddenError(
-          "Set your password using the link sent to your email first",
-          "PASSWORD_NOT_SET",
-        );
-      }
-
-      // 3. Wrong password: 401.
-      const passwordOk = await deps.verifyPassword(
-        user.passwordHash,
-        input.password,
-      );
-      if (!passwordOk) throw new UnauthorizedError(INVALID_LOGIN);
-
+      // Only a correct password gets to hear the account state.
       if (user.status === "pending") {
         throw new ForbiddenError(
           "Verify your email with the code we sent you first",
@@ -152,12 +156,14 @@ export function createAuthService(deps: AuthServiceDeps) {
      */
     async signUpOrganizer(
       input: OrganizerSignupBody,
-    ): Promise<OrganizerSignUpResponseDto> {
-      // 1. Fast path for a known duplicate: skips the slow argon2 hash below.
-      if (await deps.authRepository.isEmailTaken(input.email)) {
-        throw emailTaken();
-      }
+    ): Promise<SignUpResponseDto> {
+      // Hashed before the duplicate check, so a known email costs the same slow hash as a new one.
       const passwordHash = await deps.hashPassword(input.password);
+
+      // 1. A known email gets the same answer as a new one, and nothing is created or sent.
+      if (await deps.authRepository.isEmailTaken(input.email)) {
+        return duplicateSignUpAnswer(input.email);
+      }
 
       const verifyToken = deps.createEmailVerifyToken();
 
@@ -175,7 +181,7 @@ export function createAuthService(deps: AuthServiceDeps) {
         },
       });
       // A parallel signup with the same email won the race between step 1 and step 4.
-      if (!result.ok) throw emailTaken();
+      if (!result.ok) return duplicateSignUpAnswer(input.email);
 
       // 5. Only after the commit: code → Redis, code + link → email.
       const emailSent = await sendSignupVerification(
@@ -183,20 +189,21 @@ export function createAuthService(deps: AuthServiceDeps) {
         verifyToken.token,
       );
 
-      return toOrganizerSignUpDto(result.user, result.profile, {
+      return toSignUpDto(result.user.email, {
         emailSent,
         expiresInMinutes: deps.verificationCodeTtlMinutes,
       });
     },
 
     /** //* AUTH-1: a user (attendee) registers: pending account + profile, then a code is emailed. */
-    async signUpUser(input: UserSignupBody): Promise<UserSignUpResponseDto> {
-      // 1. Fast path for a known duplicate: skips the slow argon2 hash below.
-      if (await deps.authRepository.isEmailTaken(input.email)) {
-        throw emailTaken();
-      }
-
+    async signUpUser(input: UserSignupBody): Promise<SignUpResponseDto> {
+      // Hashed before the duplicate check, so a known email costs the same slow hash as a new one.
       const passwordHash = await deps.hashPassword(input.password);
+
+      // A known email gets the same answer as a new one, and nothing is created or sent.
+      if (await deps.authRepository.isEmailTaken(input.email)) {
+        return duplicateSignUpAnswer(input.email);
+      }
 
       const verifyToken = deps.createEmailVerifyToken();
 
@@ -216,7 +223,7 @@ export function createAuthService(deps: AuthServiceDeps) {
         },
       });
       // A parallel signup with the same email won the race.
-      if (!result.ok) throw emailTaken();
+      if (!result.ok) return duplicateSignUpAnswer(input.email);
 
       // Only after the commit: code → Redis, code + link → email.
       const emailSent = await sendSignupVerification(
@@ -224,7 +231,7 @@ export function createAuthService(deps: AuthServiceDeps) {
         verifyToken.token,
       );
 
-      return toUserSignUpDto(result.user, result.profile, {
+      return toSignUpDto(result.user.email, {
         emailSent,
         expiresInMinutes: deps.verificationCodeTtlMinutes,
       });

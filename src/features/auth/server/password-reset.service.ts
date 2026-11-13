@@ -96,8 +96,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
     /**
      * AUTH-6: emails a reset link to an ACTIVE account with this email.
      * Resolves the same way, found or not: the caller (and so the person typing the email)
-     * must never be able to tell whether an account exists. The one exception is an ADMIN
-     * account, which throws a ValidationError (400): admins never reset by email link.
+     * must never be able to tell whether an account exists. That includes an ADMIN account:
+     * admins never reset by email link, but this public endpoint stays silent about it
+     * (no token, no email); sendResetLinkToUser tells a signed-in admin why.
      */
     async requestReset(
       input: ForgotPasswordBody,
@@ -108,12 +109,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
       );
       if (!user) return;
 
-      // Admin passwords are never reset by email link. Checked before any token is created.
-      if (user.role === "admin") {
-        throw new ValidationError(ADMIN_RESET_NOT_ALLOWED, {
-          fieldErrors: { email: [ADMIN_RESET_NOT_ALLOWED] },
-        });
-      }
+      // Admin passwords are never reset by email link. Checked before any token is created,
+      // and answered like an unknown email so admin addresses cannot be found out.
+      if (user.role === "admin") return;
 
       const { token } = await createLink(user, now);
 

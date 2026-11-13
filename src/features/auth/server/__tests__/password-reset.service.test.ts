@@ -5,7 +5,6 @@ import {
   NotFoundError,
   RateLimitError,
   ServiceUnavailableError,
-  ValidationError,
 } from "../../../../core/http/errors";
 import {
   createPasswordResetService,
@@ -113,12 +112,12 @@ describe("passwordResetService.requestReset", () => {
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
-  it("rejects an admin account with a validation error (no token, no email)", async () => {
+  it("answers an admin account like an unknown email (same answer, no token, no email)", async () => {
     const { deps, service } = setup({ user: { ...user, role: "admin" } });
 
     await expect(
       service.requestReset({ email: user.email }, now),
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).resolves.toBeUndefined();
 
     expect(
       deps.passwordResetRepository.createResetToken,

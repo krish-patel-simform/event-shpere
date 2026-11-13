@@ -1,14 +1,10 @@
-import {
-  ConflictError,
-  ForbiddenError,
-  UnauthorizedError,
-} from "../../../../core/http/errors";
+import { UnauthorizedError } from "../../../../core/http/errors";
 import {
   loginBodySchema,
   organizerSignupBodySchema,
   resendOtpBodySchema,
+  signupResponseSchema,
   userSignupBodySchema,
-  userSignupResponseSchema,
 } from "../../schemas/auth.schemas";
 import { createAuthService, type AuthServiceDeps } from "../auth.service";
 
@@ -101,18 +97,59 @@ describe("authService.login", () => {
     expect(deps.createAuthSession).not.toHaveBeenCalled();
   });
 
-  it("tells a pending account (no password) to set its password first", async () => {
+  it("gives an account without a password yet the generic 401, not a hint", async () => {
     const { deps, service } = setup({
       ...activeUser,
       passwordHash: null,
       status: "pending",
     });
 
-    const error = await service.login(input, null).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ForbiddenError);
-    expect(error).toMatchObject({ status: 403, code: "PASSWORD_NOT_SET" });
+    await expect(service.login(input, null)).rejects.toThrow(
+      new UnauthorizedError("Invalid email or password"),
+    );
     expect(deps.createAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("verifies against a dummy hash for an unknown email, so the timing does not tell", async () => {
+    const { deps, service } = setup(null);
+
+    await service.login(input, null).catch(() => undefined);
+
+    expect(deps.verifyPassword).toHaveBeenCalledTimes(1);
+    expect(deps.verifyPassword).toHaveBeenCalledWith(
+      "$argon2id$dummy-hash",
+      "correct-password",
+    );
+  });
+
+  it("verifies against a dummy hash for an account without a password, and never lets it in", async () => {
+    // verifyPassword says true (default mock): the missing real hash alone must still deny.
+    const { deps, service } = setup({ ...activeUser, passwordHash: null });
+
+    await expect(service.login(input, null)).rejects.toThrow(UnauthorizedError);
+
+    expect(deps.verifyPassword).toHaveBeenCalledWith(
+      "$argon2id$dummy-hash",
+      "correct-password",
+    );
+    expect(deps.createAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("makes the dummy hash only once, however many failed logins", async () => {
+    const { deps, service } = setup(null);
+
+    await service.login(input, null).catch(() => undefined);
+    await service.login(input, null).catch(() => undefined);
+
+    expect(deps.hashPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not make a dummy hash when the account has a real one", async () => {
+    const { deps, service } = setup();
+
+    await service.login(input, null);
+
+    expect(deps.hashPassword).not.toHaveBeenCalled();
   });
 
   it("tells a signed-up account (password, email not verified) to verify its email", async () => {
@@ -253,16 +290,7 @@ describe("authService.signUpOrganizer", () => {
       expiresInMinutes: 5,
     });
     expect(result).toEqual({
-      id: newProfile.id,
-      userId: newUser.id,
-      firstName: "Olga",
-      lastName: "Organizer",
       email: "olga@acme.test",
-      status: "pending",
-      organizationName: "Acme Events",
-      organizationWebsite: null,
-      isVerified: false,
-      createdAt: "2026-10-19T10:00:00.000Z",
       verificationEmailSent: true,
       verificationCodeExpiresInMinutes: 5,
     });
@@ -279,7 +307,30 @@ describe("authService.signUpOrganizer", () => {
     expect(body).not.toContain("verify-token");
   });
 
-  it("rejects a known email with 409 before hashing anything", async () => {
+  it("answers a known email exactly like a new one, and creates and sends nothing", async () => {
+    const fresh = setupSignup();
+    const known = setupSignup({
+      authRepository: {
+        findUserForLogin: jest.fn(),
+        signUpUser: jest.fn(),
+        resendOtpEmail: jest.fn(),
+        isEmailTaken: jest.fn().mockResolvedValue(true),
+        signUpOrganizer: jest.fn(),
+      },
+    });
+
+    const freshAnswer = await fresh.service.signUpOrganizer(signupInput);
+    const knownAnswer = await known.service.signUpOrganizer(signupInput);
+
+    // No 409 and no difference in the body: the answer cannot tell the two apart.
+    expect(knownAnswer).toEqual(freshAnswer);
+    expect(signupResponseSchema.parse(knownAnswer)).toEqual(knownAnswer);
+    expect(known.deps.authRepository.signUpOrganizer).not.toHaveBeenCalled();
+    expect(known.deps.emailOtpStore.save).not.toHaveBeenCalled();
+    expect(known.deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+  });
+
+  it("hashes the password for a known email too, so it does not answer faster", async () => {
     const { deps, service } = setupSignup({
       authRepository: {
         findUserForLogin: jest.fn(),
@@ -290,18 +341,14 @@ describe("authService.signUpOrganizer", () => {
       },
     });
 
-    const error = await service
-      .signUpOrganizer(signupInput)
-      .catch((e: unknown) => e);
+    await service.signUpOrganizer(signupInput);
 
-    expect(error).toBeInstanceOf(ConflictError);
-    expect(error).toMatchObject({ status: 409, code: "EMAIL_TAKEN" });
-    expect(deps.hashPassword).not.toHaveBeenCalled();
-    expect(deps.authRepository.signUpOrganizer).not.toHaveBeenCalled();
+    expect(deps.hashPassword).toHaveBeenCalledWith("Str0ng-Passw0rd!");
   });
 
-  it("returns 409 and sends nothing when a parallel signup took the email first", async () => {
-    const { deps, service } = setupSignup({
+  it("answers the same and sends nothing when a parallel signup took the email first", async () => {
+    const fresh = setupSignup();
+    const raced = setupSignup({
       authRepository: {
         findUserForLogin: jest.fn(),
         signUpUser: jest.fn(),
@@ -313,11 +360,11 @@ describe("authService.signUpOrganizer", () => {
       },
     });
 
-    await expect(service.signUpOrganizer(signupInput)).rejects.toMatchObject({
-      code: "EMAIL_TAKEN",
-    });
-    expect(deps.emailOtpStore.save).not.toHaveBeenCalled();
-    expect(deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+    const answer = await raced.service.signUpOrganizer(signupInput);
+
+    expect(answer).toEqual(await fresh.service.signUpOrganizer(signupInput));
+    expect(raced.deps.emailOtpStore.save).not.toHaveBeenCalled();
+    expect(raced.deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
   });
 
   it("still succeeds, with verificationEmailSent false, when the email fails", async () => {
@@ -427,16 +474,7 @@ describe("authService.signUpUser", () => {
       }),
     );
     expect(result).toEqual({
-      userId: newUser.id,
-      firstName: "Ann",
-      lastName: "Attendee",
       email: "ann@example.test",
-      status: "pending",
-      phone: "555-123-4567",
-      city: null,
-      postalCode: null,
-      avatarUrl: null,
-      isVerified: false,
       verificationEmailSent: true,
       verificationCodeExpiresInMinutes: 5,
     });
@@ -457,14 +495,37 @@ describe("authService.signUpUser", () => {
     const result = await service.signUpUser(userInput);
 
     // The route parses with this schema: a mismatch here would be a 500 in production.
-    expect(userSignupResponseSchema.parse(result)).toEqual(result);
+    expect(signupResponseSchema.parse(result)).toEqual(result);
     const body = JSON.stringify(result);
     expect(body).not.toContain("argon2");
     expect(body).not.toContain("123456");
     expect(body).not.toContain("verify-token");
   });
 
-  it("rejects a known email with 409 before hashing anything", async () => {
+  it("answers a known email exactly like a new one, and creates and sends nothing", async () => {
+    const fresh = setupUserSignup();
+    const known = setupUserSignup({
+      authRepository: {
+        findUserForLogin: jest.fn(),
+        resendOtpEmail: jest.fn(),
+        isEmailTaken: jest.fn().mockResolvedValue(true),
+        signUpOrganizer: jest.fn(),
+        signUpUser: jest.fn(),
+      },
+    });
+
+    const freshAnswer = await fresh.service.signUpUser(userInput);
+    const knownAnswer = await known.service.signUpUser(userInput);
+
+    // No 409 and no difference in the body: the answer cannot tell the two apart.
+    expect(knownAnswer).toEqual(freshAnswer);
+    expect(signupResponseSchema.parse(knownAnswer)).toEqual(knownAnswer);
+    expect(known.deps.authRepository.signUpUser).not.toHaveBeenCalled();
+    expect(known.deps.emailOtpStore.save).not.toHaveBeenCalled();
+    expect(known.deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+  });
+
+  it("hashes the password for a known email too, so it does not answer faster", async () => {
     const { deps, service } = setupUserSignup({
       authRepository: {
         findUserForLogin: jest.fn(),
@@ -475,15 +536,14 @@ describe("authService.signUpUser", () => {
       },
     });
 
-    await expect(service.signUpUser(userInput)).rejects.toMatchObject({
-      status: 409,
-      code: "EMAIL_TAKEN",
-    });
-    expect(deps.hashPassword).not.toHaveBeenCalled();
+    await service.signUpUser(userInput);
+
+    expect(deps.hashPassword).toHaveBeenCalledWith("Str0ng-Passw0rd!");
   });
 
-  it("returns 409 and sends nothing when a parallel signup took the email first", async () => {
-    const { deps, service } = setupUserSignup({
+  it("answers the same and sends nothing when a parallel signup took the email first", async () => {
+    const fresh = setupUserSignup();
+    const raced = setupUserSignup({
       authRepository: {
         findUserForLogin: jest.fn(),
         isEmailTaken: jest.fn().mockResolvedValue(false),
@@ -495,10 +555,10 @@ describe("authService.signUpUser", () => {
       },
     });
 
-    await expect(service.signUpUser(userInput)).rejects.toBeInstanceOf(
-      ConflictError,
-    );
-    expect(deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+    const answer = await raced.service.signUpUser(userInput);
+
+    expect(answer).toEqual(await fresh.service.signUpUser(userInput));
+    expect(raced.deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
   });
 
   it("still succeeds, with verificationEmailSent false, when the email fails", async () => {

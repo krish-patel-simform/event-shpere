@@ -6,7 +6,7 @@ import { ApiError } from "@/src/core/api-client/base-api.service";
 import { selectPendingVerification } from "@/src/redux/slices/auth-flow.slice";
 import { renderWithStoreAndQuery } from "@/src/redux/test-utils";
 import { authApiService } from "../../../api/auth-api.service";
-import type { UserSignUpResponseDto } from "../../../schemas/auth.schemas";
+import type { SignUpResponseDto } from "../../../schemas/auth.schemas";
 import { UserSignupForm } from "../UserSignupForm";
 
 const mockPush = jest.fn();
@@ -16,17 +16,8 @@ jest.mock("../../../api/auth-api.service", () => ({
 }));
 const signUpUser = jest.mocked(authApiService.signUpUser);
 
-const createdAccount: UserSignUpResponseDto = {
-  userId: "0b0f6a1e-6a0d-4f6e-9a55-1f6f2f0f9a11",
-  firstName: "Ananya",
-  lastName: "Rao",
+const createdAccount: SignUpResponseDto = {
   email: "ananya@example.com",
-  status: "pending",
-  phone: null,
-  city: null,
-  postalCode: null,
-  avatarUrl: null,
-  isVerified: false,
   verificationEmailSent: true,
   verificationCodeExpiresInMinutes: 5,
 };
@@ -172,32 +163,6 @@ describe("UserSignupForm", () => {
     expect(button).toBeDisabled();
     expect(screen.getByLabelText("Email address")).toHaveAttribute("readonly");
     expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("a taken email shows under the email field, keeps every value and does not leave the page", async () => {
-    signUpUser.mockRejectedValue(
-      new ApiError(
-        409,
-        "EMAIL_TAKEN",
-        "An account with this email already exists",
-      ),
-    );
-    const { store } = renderWithStoreAndQuery(<UserSignupForm />);
-    await fillRequired();
-    await userEvent.click(submitButton());
-
-    expect(
-      await screen.findByText("An account with this email already exists"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Email address")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("First name")).toHaveValue("Ananya");
-    expect(screen.getByLabelText("Password")).toHaveValue("Secret123!");
-    expect(mockPush).not.toHaveBeenCalled();
-    expect(selectPendingVerification(store.getState())).toBeNull();
   });
 
   it("a field error from the server shows under that field, not in the alert", async () => {
