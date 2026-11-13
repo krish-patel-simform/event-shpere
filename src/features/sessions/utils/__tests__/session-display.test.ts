@@ -160,6 +160,19 @@ describe("isFiltering and eventNames", () => {
       "Summit 2026",
     ]);
   });
+
+  it("sorts names alphabetically as people read them, whatever the case or accents", () => {
+    const named = (eventName: string) => ({ ...pwaTalk, eventName });
+
+    expect(
+      eventNames([
+        named("Zebra Summit"),
+        named("apple fest"),
+        named("École Expo"),
+        named("Banana Conf"),
+      ]),
+    ).toEqual(["apple fest", "Banana Conf", "École Expo", "Zebra Summit"]);
+  });
 });
 
 describe("labels", () => {

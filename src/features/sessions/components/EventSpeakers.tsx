@@ -212,8 +212,13 @@ function SpeakersTable({
   rows: readonly EventSpeakerRow[];
   eventId: string;
 }) {
-  // Sorted, so the same people in another order are the same cached request.
-  const ids = useMemo(() => rows.map((row) => row.id).sort(), [rows]);
+  // Sorted, so the same people in another order are the same cached request. Plain code-unit
+  // order on purpose: it is a cache key, not text a person reads, so it must not depend on locale.
+  const ids = useMemo(
+    () =>
+      rows.map((row) => row.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+    [rows],
+  );
   const cards = useGetSpeakerList({ ids, pageSize: ids.length });
   const cardById = useMemo(
     () => new Map((cards.data?.items ?? []).map((card) => [card.id, card])),
