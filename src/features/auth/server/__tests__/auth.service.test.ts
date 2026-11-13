@@ -53,7 +53,11 @@ function setup(
       expiresAt: new Date("2026-10-19T10:05:00.000Z"),
     }),
     createEmailOtp: jest.fn(),
-    emailOtpStore: { save: jest.fn() },
+    emailOtpStore: {
+      save: jest.fn(),
+      // No cooldown running by default; the cooldown tests make it answer false.
+      claimResend: jest.fn().mockResolvedValue(true),
+    },
     sendVerificationCodeEmail: jest.fn(),
     verificationCodeTtlMinutes: 5,
     appUrl: "http://localhost:3000",
@@ -254,7 +258,10 @@ describe("authService.signUpOrganizer", () => {
       createEmailOtp: jest
         .fn()
         .mockReturnValue({ otp: "123456", otpHash: "hashed-otp" }),
-      emailOtpStore: { save: jest.fn().mockResolvedValue(undefined) },
+      emailOtpStore: {
+        save: jest.fn().mockResolvedValue(undefined),
+        claimResend: jest.fn().mockResolvedValue(true),
+      },
       sendVerificationCodeEmail: jest.fn().mockResolvedValue(undefined),
       ...overrides,
     });
@@ -286,7 +293,7 @@ describe("authService.signUpOrganizer", () => {
       firstName: "Olga",
       otp: "123456",
       verifyUrl:
-        "http://localhost:3000/verify-email?token=raw-verify-token%2Fwith%2Bchars",
+        "http://localhost:3000/verify-email#token=raw-verify-token%2Fwith%2Bchars",
       expiresInMinutes: 5,
     });
     expect(result).toEqual({
@@ -384,6 +391,7 @@ describe("authService.signUpOrganizer", () => {
     const { deps, service } = setupSignup({
       emailOtpStore: {
         save: jest.fn().mockRejectedValue(new Error("Redis down")),
+        claimResend: jest.fn().mockResolvedValue(true),
       },
     });
     jest.spyOn(console, "error").mockImplementation(() => {});
@@ -438,7 +446,10 @@ describe("authService.signUpUser", () => {
       createEmailOtp: jest
         .fn()
         .mockReturnValue({ otp: "123456", otpHash: "hashed-otp" }),
-      emailOtpStore: { save: jest.fn().mockResolvedValue(undefined) },
+      emailOtpStore: {
+        save: jest.fn().mockResolvedValue(undefined),
+        claimResend: jest.fn().mockResolvedValue(true),
+      },
       sendVerificationCodeEmail: jest.fn().mockResolvedValue(undefined),
       ...overrides,
     });
@@ -470,7 +481,7 @@ describe("authService.signUpUser", () => {
         to: "ann@example.test",
         otp: "123456",
         verifyUrl:
-          "http://localhost:3000/verify-email?token=raw-verify-token%2Fwith%2Bchars",
+          "http://localhost:3000/verify-email#token=raw-verify-token%2Fwith%2Bchars",
       }),
     );
     expect(result).toEqual({
@@ -690,7 +701,10 @@ describe("authService.resendOtp", () => {
       createEmailOtp: jest
         .fn()
         .mockReturnValue({ otp: "123456", otpHash: "hashed-otp" }),
-      emailOtpStore: { save: jest.fn().mockResolvedValue(undefined) },
+      emailOtpStore: {
+        save: jest.fn().mockResolvedValue(undefined),
+        claimResend: jest.fn().mockResolvedValue(true),
+      },
       sendVerificationCodeEmail: jest.fn().mockResolvedValue(undefined),
       ...overrides,
     });
@@ -721,7 +735,7 @@ describe("authService.resendOtp", () => {
         firstName: "Ann",
         otp: "123456",
         verifyUrl:
-          "http://localhost:3000/verify-email?token=raw-verify-token%2Fwith%2Bchars",
+          "http://localhost:3000/verify-email#token=raw-verify-token%2Fwith%2Bchars",
       }),
     );
   });
@@ -755,6 +769,81 @@ describe("authService.resendOtp", () => {
 
     expect(foundAnswer).toBeUndefined();
     expect(missingAnswer).toBe(foundAnswer);
+  });
+
+  describe("cooldown", () => {
+    const refusing = () =>
+      setupResend(undefined, {
+        emailOtpStore: {
+          save: jest.fn().mockResolvedValue(undefined),
+          claimResend: jest.fn().mockResolvedValue(false),
+        },
+      });
+
+    it("a resend inside the cooldown does nothing: no new link, no new code, no email", async () => {
+      const { deps, service } = refusing();
+
+      await service.resendOtp({ email: pendingUser.email }, now);
+
+      expect(deps.emailOtpStore.claimResend).toHaveBeenCalledWith(
+        pendingUser.email,
+      );
+      expect(deps.createEmailVerifyToken).not.toHaveBeenCalled();
+      expect(deps.authRepository.resendOtpEmail).not.toHaveBeenCalled();
+      expect(deps.emailOtpStore.save).not.toHaveBeenCalled();
+      expect(deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+    });
+
+    it("answers a refused resend exactly like a sent one, so nothing is revealed", async () => {
+      const sent = setupResend();
+      const refused = refusing();
+
+      const sentAnswer = await sent.service.resendOtp(
+        { email: pendingUser.email },
+        now,
+      );
+      const refusedAnswer = await refused.service.resendOtp(
+        { email: pendingUser.email },
+        now,
+      );
+
+      expect(refusedAnswer).toBeUndefined();
+      expect(refusedAnswer).toBe(sentAnswer);
+    });
+
+    it("is checked before anything else, and also for an address with no account", async () => {
+      const { deps, service } = setupResend({
+        ok: false,
+        reason: "USER_NOT_EXIST",
+      });
+
+      await service.resendOtp({ email: "nobody@example.test" }, now);
+
+      // The same quiet path for every address: the cooldown cannot be used to probe accounts.
+      expect(deps.emailOtpStore.claimResend).toHaveBeenCalledWith(
+        "nobody@example.test",
+      );
+      const claimed = jest.mocked(deps.emailOtpStore.claimResend).mock
+        .invocationCallOrder[0];
+      const looked = jest.mocked(deps.authRepository.resendOtpEmail).mock
+        .invocationCallOrder[0];
+      expect(claimed).toBeLessThan(looked);
+    });
+
+    it("when Redis is down it fails and sends nothing (an unchecked resend would be a mail cannon)", async () => {
+      const { deps, service } = setupResend(undefined, {
+        emailOtpStore: {
+          save: jest.fn().mockResolvedValue(undefined),
+          claimResend: jest.fn().mockRejectedValue(new Error("Redis down")),
+        },
+      });
+
+      await expect(
+        service.resendOtp({ email: pendingUser.email }, now),
+      ).rejects.toThrow("Redis down");
+
+      expect(deps.sendVerificationCodeEmail).not.toHaveBeenCalled();
+    });
   });
 
   it("only the LATEST code works: every request overwrites the code saved before it", async () => {

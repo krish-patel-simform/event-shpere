@@ -44,7 +44,7 @@ export type AuthServiceDeps = {
   createAuthSession: typeof createAuthSession;
   createEmailVerifyToken: typeof createEmailVerifyToken;
   createEmailOtp: typeof createEmailOtp;
-  emailOtpStore: Pick<EmailOtpStore, "save">;
+  emailOtpStore: Pick<EmailOtpStore, "save" | "claimResend">;
   sendVerificationCodeEmail: typeof sendVerificationCodeEmail;
   verificationCodeTtlMinutes: number;
   /** Base URL for the verify-email link in the email. */
@@ -93,7 +93,8 @@ export function createAuthService(deps: AuthServiceDeps) {
         firstName: user.firstName,
         otp,
         // The raw token exists only here and in the email; the DB has its hash.
-        verifyUrl: `${deps.appUrl}/verify-email?token=${encodeURIComponent(rawVerifyToken)}`,
+        // In the fragment (#), not the query (?): see the password reset link.
+        verifyUrl: `${deps.appUrl}/verify-email#token=${encodeURIComponent(rawVerifyToken)}`,
         expiresInMinutes: deps.verificationCodeTtlMinutes,
       });
       return true;
@@ -242,8 +243,16 @@ export function createAuthService(deps: AuthServiceDeps) {
      * found or not: the caller must never be able to tell whether an account exists. Every
      * resend replaces the code (emailOtpStore.save overwrites it) and the link (the repository
      * invalidates the old ones), so only the newest email works, however many are requested.
+     *
+     * Cooldown: the route is public, so an address gets at most one email per
+     * EMAIL_OTP_RESEND_COOLDOWN_SECONDS, or anyone could fill someone else's inbox. It is
+     * checked FIRST and for every address, known or not, and a refused resend answers exactly
+     * like any other (nothing), so the response still never reveals which emails are registered.
+     * A refused request does not extend the cooldown.
      */
     async resendOtp(input: ResendOtpBody, now = new Date()): Promise<void> {
+      if (!(await deps.emailOtpStore.claimResend(input.email))) return;
+
       const verifyToken = deps.createEmailVerifyToken(now);
 
       const result = await deps.authRepository.resendOtpEmail({
