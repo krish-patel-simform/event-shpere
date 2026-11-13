@@ -9,6 +9,8 @@ import type {
   HallDetailDto,
   SetHallsStatusBody,
   SetVenueStatusBody,
+  UpdateHallBody,
+  UpdateVenueBody,
   VenueDetailDto,
   VenueListItemDto,
   VenueListQuery,
@@ -32,11 +34,35 @@ export type VenueServiceDeps = {
     | "setHallsActive"
     | "addHall"
     | "deleteHall"
+    | "updateVenue"
+    | "updateHall"
+    | "deleteVenue"
   >;
 };
 
 /** Who is asking: `canManage` is true for an admin holding the manage permission. */
 export type ViewerAccess = { canManage: boolean };
+
+/** Names the halls that stop a deactivation, and says what to do about it. */
+function busyHallsMessage(halls: { name: string }[]): string {
+  const names = halls.map((hall) => hall.name).join(", ");
+  const verb = halls.length === 1 ? "has" : "have";
+  return `${names} ${verb} sessions that are not over yet. Move or cancel them first`;
+}
+
+/** How many blocking sessions the message names before it says "and more". */
+const NAMED_SESSIONS = 3;
+
+/** `"Design Tokens" (Design Systems Day), "Panel" (Summit) and more`: what is in the way. */
+function busySessionsText(
+  sessions: { title: string; eventTitle: string }[],
+): string {
+  const named = sessions
+    .slice(0, NAMED_SESSIONS)
+    .map((session) => `"${session.title}" (${session.eventTitle})`)
+    .join(", ");
+  return sessions.length > NAMED_SESSIONS ? `${named} and more` : named;
+}
 
 export function createVenueService({ venueRepository }: VenueServiceDeps) {
   return {
@@ -54,6 +80,9 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       });
 
       if (!result.ok) {
+        // A well-formed uuid that is not in `states`: the client picked something that is gone.
+        if (result.reason === "STATE_NOT_FOUND")
+          throw new NotFoundError("State not found");
         throw new ConflictError(
           "VENUE_EXISTS",
           `A venue named "${body.name}" already exists in ${body.city}`,
@@ -75,11 +104,12 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       items: VenueListItemDto[];
       meta: { page: number; pageSize: number; total: number };
     }> {
-      const { page, pageSize, search, status, sort } = query;
+      const { page, pageSize, search, status, state, sort } = query;
 
       const { rows, total } = await venueRepository.listVenues({
         // An empty search (after trim) counts as no search.
         search: search || undefined,
+        state: state || undefined,
         status: canManage ? status : "active",
         sort,
         onlyActiveHalls: !canManage,
@@ -134,7 +164,10 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       return toHallDetailDto(result.hall, result.venue);
     },
 
-    /** Activate or deactivate a venue (VENUE_MANAGE). Deactivating deactivates all its halls too. */
+    /**
+     * Activate or deactivate a venue (VENUE_MANAGE). Deactivating deactivates all its halls too,
+     * so it is a 409 VENUE_HAS_SESSIONS while one of them still has a session that is not over.
+     */
     async setVenueStatus(
       venueId: string,
       body: SetVenueStatusBody,
@@ -144,7 +177,16 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
         body.isActive,
         body.activateHalls,
       );
-      if (!result) throw new NotFoundError("Venue not found");
+
+      if (!result.ok) {
+        if (result.reason === "VENUE_NOT_FOUND")
+          throw new NotFoundError("Venue not found");
+        throw new ConflictError(
+          "VENUE_HAS_SESSIONS",
+          `This venue cannot be deactivated. ${busyHallsMessage(result.halls)}`,
+          { halls: result.halls },
+        );
+      }
 
       return toVenueDetailDto(result.venue, result.halls);
     },
@@ -173,6 +215,12 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
             throw new ConflictError(
               "VENUE_INACTIVE",
               "Activate the venue before activating its halls",
+            );
+          case "HALLS_IN_USE":
+            throw new ConflictError(
+              "HALL_HAS_SESSIONS",
+              `Nothing was deactivated. ${busyHallsMessage(result.halls)}`,
+              { halls: result.halls },
             );
         }
       }
@@ -231,6 +279,84 @@ export function createVenueService({ venueRepository }: VenueServiceDeps) {
       }
 
       return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /** Edit a venue's details (VENUE_MANAGE). Only the fields in the body change. */
+    async updateVenue(
+      venueId: string,
+      body: UpdateVenueBody,
+    ): Promise<VenueDetailDto> {
+      const result = await venueRepository.updateVenue(venueId, body);
+
+      if (!result.ok) {
+        switch (result.reason) {
+          case "VENUE_NOT_FOUND":
+            throw new NotFoundError("Venue not found");
+          case "STATE_NOT_FOUND":
+            throw new NotFoundError("State not found");
+          case "VENUE_EXISTS":
+            throw new ConflictError(
+              "VENUE_EXISTS",
+              "Another venue with this name already exists in this city",
+            );
+        }
+      }
+
+      return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /** Rename a hall and/or change its seats (HALL_MANAGE). Returns the venue with its halls. */
+    async updateHall(
+      venueId: string,
+      hallId: string,
+      body: UpdateHallBody,
+    ): Promise<VenueDetailDto> {
+      const result = await venueRepository.updateHall(venueId, hallId, body);
+
+      if (!result.ok) {
+        switch (result.reason) {
+          case "VENUE_NOT_FOUND":
+            throw new NotFoundError("Venue not found");
+          case "HALL_NOT_FOUND":
+            throw new NotFoundError("Hall not found");
+          case "HALL_EXISTS":
+            throw new ConflictError(
+              "HALL_EXISTS",
+              "This venue already has a hall with this name",
+            );
+          case "HALL_HAS_SESSIONS":
+            throw new ConflictError(
+              "HALL_HAS_SESSIONS",
+              `This hall cannot be edited while it has sessions that are not over yet: ${busySessionsText(result.sessions)}. Move or cancel them first`,
+              {
+                sessions: result.sessions.map((session) => ({
+                  title: session.title,
+                  eventTitle: session.eventTitle,
+                  startAt: session.startAt?.toISOString() ?? null,
+                })),
+              },
+            );
+        }
+      }
+
+      return toVenueDetailDto(result.venue, result.halls);
+    },
+
+    /**
+     * Permanently delete a venue (VENUE_MANAGE), only if it was never used. A venue with an event
+     * or a session in one of its halls, past or not, is a 409: deactivate it instead.
+     */
+    async deleteVenue(venueId: string): Promise<void> {
+      const result = await venueRepository.deleteVenue(venueId);
+
+      if (!result.ok) {
+        if (result.reason === "VENUE_NOT_FOUND")
+          throw new NotFoundError("Venue not found");
+        throw new ConflictError(
+          "VENUE_IN_USE",
+          "This venue has events or sessions, so it cannot be deleted. Deactivate it instead",
+        );
+      }
     },
   };
 }

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  strapiBlocksSchema,
+  strapiMediaSchema,
+  type StrapiBlocks,
+} from "./strapi-common.schemas";
 
 //* POST {STRAPI_URL}/api/speakers?status=published (server to server, Strapi REST content API)
 
@@ -22,24 +27,6 @@ export type StrapiCreatedSpeaker = z.infer<
 >["data"];
 
 //* GET {STRAPI_URL}/api/speakers?filters[documentId][$in]=... and /api/speakers/:documentId
-
-/**
- * Strapi "blocks" rich text: an array of nodes (paragraph, heading, list...). Only each
- * node's `type` is checked; the UI renders the tree with Strapi's blocks renderer, so it is
- * never turned into raw HTML.
- */
-export const strapiBlocksSchema = z.array(z.looseObject({ type: z.string() }));
-export type StrapiBlocks = z.infer<typeof strapiBlocksSchema>;
-
-const strapiMediaSchema = z.object({
-  /** Upload file id: what a Speaker's `photo` is set to, and what deletes the file. */
-  id: z.number().int().positive(),
-  /** Relative ("/uploads/x.jpg") for local uploads, absolute for a cloud provider. */
-  url: z.string().min(1),
-  alternativeText: z.string().nullish(),
-  width: z.number().int().positive().nullish(),
-  height: z.number().int().positive().nullish(),
-});
 
 /** One Speaker entry as Strapi returns it. Fields the speaker has not filled are null. */
 export const strapiSpeakerEntrySchema = z.object({
@@ -104,19 +91,3 @@ export type StrapiSpeakerUpdate = Partial<{
   /** Upload file id; null removes the photo. */
   photo: number | null;
 }>;
-
-//* POST {STRAPI_URL}/api/upload (multipart, field "files"), streamed through from the browser
-
-/** One uploaded file as Strapi reports it. Used to verify the upload after the fact. */
-const strapiUploadedFileSchema = z.object({
-  id: z.number().int().positive(),
-  /** Detected by Strapi from the file's bytes, not just the name or the browser's claim. */
-  mime: z.string(),
-  /** In KILObytes (Strapi's unit). */
-  size: z.number().nonnegative(),
-  width: z.number().int().positive().nullish(),
-  height: z.number().int().positive().nullish(),
-});
-export type StrapiUploadedFile = z.infer<typeof strapiUploadedFileSchema>;
-
-export const strapiUploadResponseSchema = z.array(strapiUploadedFileSchema);

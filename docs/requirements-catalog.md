@@ -45,21 +45,22 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ### Event listing
 
-| ID     | Requirement                                                                                | Week | Status |
-| ------ | ------------------------------------------------------------------------------------------ | ---- | ------ |
-| DISC-1 | Event listing card: banner, title, category, date, location, ticket price, available seats | 1    | Todo   |
+| ID     | Requirement                                                                                | Week | Status      |
+| ------ | ------------------------------------------------------------------------------------------ | ---- | ----------- |
+| DISC-1 | Event listing card: banner, title, category, date, location, ticket price, available seats | 1    | In progress |
 
 ---
 
 ## Week 2 – Search + Filtering + Event Details
 
-| ID     | Requirement                                                                            | Week | Status |
-| ------ | -------------------------------------------------------------------------------------- | ---- | ------ |
-| DISC-2 | Search by event name                                                                   | 2    | Todo   |
-| DISC-3 | Filter by category, date, event type, free/paid                                        | 2    | Todo   |
-| DISC-4 | Sort by date, popularity, price (server-side, indexed queries, paginated)              | 2    | Todo   |
-| DET-1  | Event details page: banner, description, agenda, speakers, sessions, venue information | 2    | Todo   |
-| DET-2  | Session schedule: session name, speaker, start time, end time, description             | 2    | Todo   |
+| ID                | Requirement                                                                            | Week | Status      |
+| ----------------- | -------------------------------------------------------------------------------------- | ---- | ----------- |
+| DISC-2            | Search by event name                                                                   | 2    | Done        |
+| DISC-3            | Filter by category, date, event type, free/paid                                        | 2    | In progress |
+| DISC-4            | Sort by date, popularity, price (server-side, indexed queries, paginated)              | 2    | Done        |
+| DET-1             | Event details page: banner, description, agenda, speakers, sessions, venue information | 2    | Done        |
+| DET-2             | Session schedule: session name, speaker, start time, end time, description             | 2    | In progress |
+| DET-3 **(added)** | Public session detail page, opened from a session on the event page                    | 2    | Done        |
 
 ---
 
@@ -79,13 +80,13 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ## Week 4 – Agenda Builder + Drag-and-Drop
 
-| ID    | Requirement                                                                          | Week | Status |
-| ----- | ------------------------------------------------------------------------------------ | ---- | ------ |
-| AGD-1 | Add sessions to personal agenda                                                      | 4    | Todo   |
-| AGD-2 | Remove sessions                                                                      | 4    | Todo   |
-| AGD-3 | Rearrange sessions (positions persisted atomically)                                  | 4    | Todo   |
-| AGD-4 | Drag-and-drop for session management and schedule organization (keyboard accessible) | 4    | Todo   |
-| AGD-5 | Bookmark sessions                                                                    | 4    | Todo   |
+| ID    | Requirement                                                                          | Week | Status      |
+| ----- | ------------------------------------------------------------------------------------ | ---- | ----------- |
+| AGD-1 | Add sessions to personal agenda                                                      | 4    | Todo        |
+| AGD-2 | Remove sessions                                                                      | 4    | Todo        |
+| AGD-3 | Rearrange sessions (positions persisted atomically)                                  | 4    | Todo        |
+| AGD-4 | Drag-and-drop for session management and schedule organization (keyboard accessible) | 4    | In progress |
+| AGD-5 | Bookmark sessions                                                                    | 4    | Todo        |
 
 ---
 
@@ -131,12 +132,15 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ### Organizer tools
 
-| ID                | Requirement                                                                                                           | Week | Status |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------- | ---- | ------ |
-| ORG-1             | Organizer creates events                                                                                              | 7    | Todo   |
-| ORG-2             | Organizer manages sessions                                                                                            | 7    | Todo   |
-| ORG-3             | Organizer publishes announcements                                                                                     | 7    | Todo   |
-| ORG-4 **(added)** | Organizer creates and manages polls (question, type, options, open/close) so polls have a source other than seed data | 7    | Todo   |
+| ID                | Requirement                                                                                                                             | Week | Status |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------ |
+| ORG-1             | Organizer creates events                                                                                                                | 7    | Done   |
+| ORG-2             | Organizer manages sessions                                                                                                              | 7    | Done   |
+| VEN-1 **(added)** | Admin manages venues and halls: create, activate or deactivate (blocked while a session that is not over uses it), add or delete a hall | 7    | Done   |
+| VEN-2 **(added)** | Admin edits a venue's details and a hall's name and seats (`PATCH` APIs send only the changed fields)                                   | 7    | Done   |
+| VEN-3 **(added)** | Admin deletes a venue that was never used (no event, and no session in its halls, of any date); otherwise 409 and "deactivate it"       | 7    | Done   |
+| ORG-3             | Organizer publishes announcements                                                                                                       | 7    | Todo   |
+| ORG-4 **(added)** | Organizer creates and manages polls (question, type, options, open/close) so polls have a source other than seed data                   | 7    | Todo   |
 
 ### Analytics dashboard
 
@@ -214,15 +218,17 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ## Spec gaps added after reading poc-spec.md
 
-| New ID  | Why it was added                                                                                                                                                                                                  | Spec reference                    |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| AUTH-9  | The spec lists login but never logout; a session needs an end.                                                                                                                                                    | §5 Module 1                       |
-| NOTIF-7 | The spec title is "Notification Center", but the catalog only had the notification _producers_ and the SSE transport. The user-facing list/unread/mark-read UI had no ID.                                         | §5 Module 8                       |
-| ORG-4   | Polls are "answered" by users (Module 7) but nothing says who creates them. Organizers "manage sessions/events"; poll authoring is the missing piece.                                                             | §4, §5 Module 7                   |
-| DOD-1   | "Code review feedback is addressed" is an explicit Definition of Done item with no owner.                                                                                                                         | Definition of Done                |
-| ADM-6   | Speakers and organizers only become active through the emailed set-password link. If that email fails or the 24 h link expires, the account stays pending with no way to get a new link.                          | §4 accounts, custom-auth decision |
-| ADM-7/8 | The schema has a `suspended` status and the `user:status_manage` permission, but nothing let an admin suspend or reactivate an account.                                                                           | §4 permissions                    |
-| ADM-9   | When a user is locked out, the only way to a new password is their own "forgot password". An admin helping them had no way to start it. ADM-9 reuses the AUTH-7 token and page, so there is no second reset flow. | §4 permissions                    |
+| New ID    | Why it was added                                                                                                                                                                                                                                                                  | Spec reference                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| AUTH-9    | The spec lists login but never logout; a session needs an end.                                                                                                                                                                                                                    | §5 Module 1                         |
+| NOTIF-7   | The spec title is "Notification Center", but the catalog only had the notification _producers_ and the SSE transport. The user-facing list/unread/mark-read UI had no ID.                                                                                                         | §5 Module 8                         |
+| ORG-4     | Polls are "answered" by users (Module 7) but nothing says who creates them. Organizers "manage sessions/events"; poll authoring is the missing piece.                                                                                                                             | §4, §5 Module 7                     |
+| DOD-1     | "Code review feedback is addressed" is an explicit Definition of Done item with no owner.                                                                                                                                                                                         | Definition of Done                  |
+| ADM-6     | Speakers and organizers only become active through the emailed set-password link. If that email fails or the 24 h link expires, the account stays pending with no way to get a new link.                                                                                          | §4 accounts, custom-auth decision   |
+| ADM-7/8   | The schema has a `suspended` status and the `user:status_manage` permission, but nothing let an admin suspend or reactivate an account.                                                                                                                                           | §4 permissions                      |
+| ADM-9     | When a user is locked out, the only way to a new password is their own "forgot password". An admin helping them had no way to start it. ADM-9 reuses the AUTH-7 token and page, so there is no second reset flow.                                                                 | §4 permissions                      |
+| DET-3     | The event page lists sessions, but a session had no page of its own to open. DET-3 is that page (time, place, speakers, description, resources), on the same public API style as the event page.                                                                                  | §5 Module 3                         |
+| VEN-1/2/3 | An organizer creates events "at a venue", but nothing says where venues and halls come from. An admin manages them: create, activate or deactivate, add or delete halls (VEN-1), fix a wrong name, address or seat count (VEN-2), and delete a venue that was never used (VEN-3). | §4, §5 Module 3 (venue information) |
 
 Interpretation notes (no new ID, but they shape the schema):
 

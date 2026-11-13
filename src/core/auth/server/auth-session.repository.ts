@@ -41,12 +41,14 @@ export const authSessionRepository = {
     return row ?? null;
   },
 
+  /** `createdAt` is returned for the absolute session lifetime (see refreshAuthSession). */
   async findValidByRefreshTokenHash(refreshTokenHash: string, now: Date) {
     const [row] = await db
       .select({
         sessionId: authSessionsTable.id,
         userId: usersTable.id,
         status: usersTable.status,
+        createdAt: authSessionsTable.createdAt,
       })
       .from(authSessionsTable)
       .innerJoin(usersTable, eq(usersTable.id, authSessionsTable.userId))
@@ -58,6 +60,14 @@ export const authSessionRepository = {
         ),
       );
     return row ?? null;
+  },
+
+  /** Ends one session: its access and refresh tokens stop working at once. */
+  async revoke(sessionId: string): Promise<void> {
+    await db
+      .update(authSessionsTable)
+      .set({ isRevoked: true })
+      .where(eq(authSessionsTable.id, sessionId));
   },
 
   /**

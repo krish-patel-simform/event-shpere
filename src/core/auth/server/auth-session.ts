@@ -55,9 +55,21 @@ export async function createAuthSession(
 }
 
 /**
+ * A session ends this long after login, however often it is refreshed. Each refresh only
+ * extends the sliding 7 days (REFRESH_TOKEN_TTL_SECONDS), never past this.
+ */
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * Trades a refresh token for a new pair (rotation): the old refresh token stops working.
  * The role is re-read here, so a role change reaches the access token on the next refresh.
  * Returns null when the token is invalid, expired, already used, or the user is not active.
+ *
+ * Reuse: the signature is valid (so the session id inside is real) but no live session holds
+ * this token any more. It was already rotated, so someone is replaying it, and the session is
+ * revoked: the attacker's access token dies at once and the owner has to log in again.
+ * Known trade-off: two tabs refreshing at the same moment look the same, so the loser's
+ * request ends the session too. The client already refreshes one request at a time per tab.
  */
 export async function refreshAuthSession(
   refreshTokenValue: string,
@@ -65,19 +77,29 @@ export async function refreshAuthSession(
   const claims = verifyRefreshToken(refreshTokenValue);
   if (!claims) return null;
 
+  const now = new Date();
   const oldHash = hashToken(refreshTokenValue);
   const session = await authSessionRepository.findValidByRefreshTokenHash(
     oldHash,
-    new Date(),
+    now,
   );
+  if (!session) {
+    // Also reached after a logout (the row is gone) or when the session expired: revoking
+    // is then a no-op.
+    await authSessionRepository.revoke(claims.sessionId);
+    return null;
+  }
   if (
-    !session ||
     session.sessionId !== claims.sessionId ||
     session.userId !== claims.userId ||
     session.status !== "active"
   ) {
     return null;
   }
+
+  // The absolute end of the session: refreshing never moves it.
+  const sessionEnd = session.createdAt.getTime() + SESSION_MAX_AGE_MS;
+  if (now.getTime() >= sessionEnd) return null;
 
   const role = await permissionRepository.findRoleByUserId(session.userId);
   if (!role) return null;
@@ -88,9 +110,14 @@ export async function refreshAuthSession(
     oldHash,
     {
       refreshTokenHash: refreshToken.tokenHash,
-      expiresAt: refreshToken.expiresAt,
+      // The sliding 7 days, but never past the absolute end.
+      expiresAt: new Date(
+        Math.min(refreshToken.expiresAt.getTime(), sessionEnd),
+      ),
     },
   );
+  // Lost a race inside the database (another request rotated between our read and write):
+  // not a replay, so no revoke.
   if (!rotated) return null;
 
   const accessToken = createAccessToken({ ...claims, role });

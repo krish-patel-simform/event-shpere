@@ -12,6 +12,8 @@ type ItemBase = {
   tone?: "danger";
   /** A line above this item, to set it apart (e.g. a destructive action). */
   separatorBefore?: boolean;
+  /** For a link: open it in a new tab (the page the menu is on stays as it is). */
+  newTab?: boolean;
 };
 
 export type ActionMenuItem =
@@ -153,6 +155,9 @@ export function ActionMenu({
                     <Link
                       role="menuitem"
                       href={item.href}
+                      {...(item.newTab
+                        ? { target: "_blank", rel: "noopener noreferrer" }
+                        : {})}
                       onClick={() => close(false)}
                       className={className}
                     >

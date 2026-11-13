@@ -5,6 +5,11 @@ import {
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
 import {
+  hallAvailabilityResponseSchema,
+  type HallAvailabilityDto,
+  type HallAvailabilityRequest,
+} from "../schemas/hall-availability.schemas";
+import {
   createVenueResponseSchema,
   venueDetailResponseSchema,
   venueListResponseSchema,
@@ -13,6 +18,8 @@ import {
   type CreateVenueDto,
   type SetHallsStatusBody,
   type SetVenueStatusBody,
+  type UpdateHallBody,
+  type UpdateVenueBody,
   type VenueDetailDto,
   type VenueSort,
   type VenueStatusFilter,
@@ -23,6 +30,8 @@ export type ListVenuesParams = {
   status?: VenueStatusFilter;
   /** Matches the venue name or the city. An empty text means no search. */
   search?: string;
+  /** Only venues in the state with this name, e.g. "Gujarat". */
+  state?: string;
   /** The server defaults to name A–Z. */
   sort?: VenueSort;
   page?: number;
@@ -31,7 +40,7 @@ export type ListVenuesParams = {
 
 export const venueApiService = {
   /** One page of venues (with their hall counts) and how many match in total. */
-  list({ status, search, sort, page = 1, pageSize }: ListVenuesParams) {
+  list({ status, search, state, sort, page = 1, pageSize }: ListVenuesParams) {
     return apiRequestPage(
       {
         method: "GET",
@@ -42,6 +51,7 @@ export const venueApiService = {
           // Left out when not set, so the server does not filter or reorder by it.
           ...(status ? { status } : {}),
           ...(search ? { search } : {}),
+          ...(state ? { state } : {}),
           ...(sort ? { sort } : {}),
         },
       },
@@ -91,6 +101,54 @@ export const venueApiService = {
   addHall(venueId: string, body: CreateHallBody): Promise<VenueDetailDto> {
     return apiRequest(
       { method: "POST", url: `/venues/${venueId}/halls`, data: body },
+      venueDetailResponseSchema,
+    );
+  },
+
+  /**
+   * The venue's active halls and the times each is taken inside the range (ISO with an offset).
+   * Needs an approved organizer: 403 otherwise. 409 VENUE_INACTIVE, 404 for an unknown venue.
+   */
+  getHallAvailability(
+    venueId: string,
+    range: HallAvailabilityRequest,
+  ): Promise<HallAvailabilityDto[]> {
+    return apiRequest(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        // `exceptSessionId` is only there when a session is being edited.
+        params: range,
+      },
+      hallAvailabilityResponseSchema,
+    );
+  },
+
+  /** Changes the venue's details; send only the fields that changed. 409 VENUE_EXISTS (name taken in that city). */
+  update(venueId: string, body: UpdateVenueBody): Promise<VenueDetailDto> {
+    return apiRequest(
+      { method: "PATCH", url: `/venues/${venueId}`, data: body },
+      venueDetailResponseSchema,
+    );
+  },
+
+  /** Deletes a venue that was never used (no 200: the server answers 204). 409 VENUE_IN_USE when an event or a session ever used it. */
+  delete(venueId: string): Promise<void> {
+    return apiRequest({ method: "DELETE", url: `/venues/${venueId}` });
+  },
+
+  /** Renames a hall and/or changes its seats; send only what changed. 409 HALL_EXISTS (name taken) or HALL_HAS_SESSIONS (a session that is not over yet uses the hall: nothing can be edited). */
+  updateHall(
+    venueId: string,
+    hallId: string,
+    body: UpdateHallBody,
+  ): Promise<VenueDetailDto> {
+    return apiRequest(
+      {
+        method: "PATCH",
+        url: `/venues/${venueId}/halls/${hallId}`,
+        data: body,
+      },
       venueDetailResponseSchema,
     );
   },

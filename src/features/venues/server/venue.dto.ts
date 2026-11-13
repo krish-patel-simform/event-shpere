@@ -7,7 +7,7 @@ import type {
   VenueDetailDto,
   VenueListItemDto,
 } from "../schemas/venue.schemas";
-import type { VenueRepository } from "./venue.repository";
+import type { VenueRepository, VenueWithState } from "./venue.repository";
 
 /** One row of the venue list as the repository returns it (counts already worked out in SQL). */
 export type VenueListRow = Awaited<
@@ -47,13 +47,13 @@ function toHallDtos(halls: Hall[]): CreateHallDto[] {
 }
 
 // Picks fields one by one: createdBy and any column added later never leave by accident.
-function toVenueFields(venue: Venue): Omit<VenueDetailDto, "halls"> {
+function toVenueFields(venue: VenueWithState): Omit<VenueDetailDto, "halls"> {
   return {
     id: venue.id,
     name: venue.name,
     addressLine: venue.addressLine,
     city: venue.city,
-    state: venue.state,
+    state: venue.stateName,
     postalCode: venue.postalCode,
     country: venue.country,
     timezone: venue.timezone,
@@ -64,7 +64,10 @@ function toVenueFields(venue: Venue): Omit<VenueDetailDto, "halls"> {
   };
 }
 
-export function toVenueDto(venue: Venue, halls: Hall[]): CreateVenueDto {
+export function toVenueDto(
+  venue: VenueWithState,
+  halls: Hall[],
+): CreateVenueDto {
   return {
     ...toVenueFields(venue),
     createdAt: venue.createdAt.toISOString(),
@@ -87,6 +90,9 @@ export function toHallDetailDto(hall: Hall, venue: Venue): HallDetailDto {
 }
 
 /** Venue detail: the venue and its hall list (not each hall's own detail). */
-export function toVenueDetailDto(venue: Venue, halls: Hall[]): VenueDetailDto {
+export function toVenueDetailDto(
+  venue: VenueWithState,
+  halls: Hall[],
+): VenueDetailDto {
   return { ...toVenueFields(venue), halls: toHallDtos(halls) };
 }

@@ -2,10 +2,12 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitError,
   ServiceUnavailableError,
   ValidationError,
 } from "../../../../core/http/errors";
 import type { CmsSpeaker } from "../../../cms";
+import { SPEAKER_INVITE_MAX_PER_DAY } from "../../constants";
 import {
   createSpeakerBodySchema,
   getSpeakersResponseSchema,
@@ -26,7 +28,10 @@ jest.mock("../../../../config/env", () => ({ env: {} }));
 jest.mock("../speaker.repository", () => ({}));
 jest.mock("../../../auth/server", () => ({}));
 jest.mock("../../../email/server", () => ({}));
-jest.mock("../../../cms/server", () => ({}));
+// The Strapi clients are never loaded; the image helpers are pure, so the real ones are kept.
+jest.mock("../../../cms/server", () =>
+  jest.requireActual("../../../cms/server/image-upload"),
+);
 jest.mock("../../../organizer/server", () => ({}));
 
 const createdAt = new Date("2026-10-23T10:00:00.000Z");
@@ -79,15 +84,17 @@ const existingSpeakerAccount = {
 const otherRoleAccount = { speaker: null };
 
 type SetupOverrides = Partial<
-  Omit<SpeakerServiceDeps, "speakerRepository" | "strapiClient">
+  Omit<SpeakerServiceDeps, "speakerRepository" | "strapiClient" | "mediaClient">
 > & {
   /** Replace only these repository methods; the rest keep their defaults. */
   repo?: Partial<SpeakerServiceDeps["speakerRepository"]>;
   /** Replace only these Strapi client methods. */
   strapi?: Partial<SpeakerServiceDeps["strapiClient"]>;
+  /** Replace only these Strapi media client methods (upload, delete file). */
+  media?: Partial<SpeakerServiceDeps["mediaClient"]>;
 };
 
-function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
+function setup({ repo, strapi, media, ...overrides }: SetupOverrides = {}) {
   const deps = {
     speakerRepository: {
       findAccountByEmail: jest.fn().mockResolvedValue(null),
@@ -116,9 +123,12 @@ function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
       findSpeakersByIds: jest.fn().mockResolvedValue([]),
       findSpeakerById: jest.fn().mockResolvedValue(null),
       updateSpeaker: jest.fn().mockResolvedValue(null),
+      ...strapi,
+    },
+    mediaClient: {
       uploadFiles: jest.fn().mockResolvedValue({ ok: true, files: [] }),
       deleteFile: jest.fn().mockResolvedValue(undefined),
-      ...strapi,
+      ...media,
     },
     createSlug: jest.fn().mockReturnValue("ankit-sharma-3f9a1c"),
     appUrl: "http://localhost:3000",
@@ -126,6 +136,8 @@ function setup({ repo, strapi, ...overrides }: SetupOverrides = {}) {
     organizerVerification: {
       assertVerifiedOrganizer: jest.fn().mockResolvedValue(undefined),
     },
+    // Under the daily limit by default; tests for the refused case make it reject.
+    assertUnderDailyLimit: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } satisfies SpeakerServiceDeps;
   return { deps, service: createSpeakerService(deps) };
@@ -183,7 +195,7 @@ describe("speakerService.createSpeaker", () => {
       to: "ankit@speaker.test",
       firstName: "Ankit",
       passwordSetupUrl:
-        "http://localhost:3000/set-password?token=raw-token%2Fwith%2Bchars",
+        "http://localhost:3000/set-password#token=raw-token%2Fwith%2Bchars",
       loginUrl: "http://localhost:3000/login",
       expiresInHours: 24,
     });
@@ -390,19 +402,25 @@ describe("createSpeakerBodySchema", () => {
 // ---------- public reads ----------
 
 const ankitRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d11",
   slug: "ankit-sharma-3f9a1c",
   firstName: "Ankit",
   lastName: "Sharma",
   cmsSpeakerId: "doc-ankit",
+  // Invited, no password yet.
+  status: "pending" as const,
 };
 const priyaRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d12",
   slug: "priya-rao-7b2e4d",
   firstName: "Priya",
   lastName: "Rao",
   cmsSpeakerId: "doc-priya",
+  status: "active" as const,
 };
 // A speaker whose CMS entry was never linked.
 const unlinkedRow = {
+  id: "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d13",
   slug: "ravi-k-1a2b3c",
   firstName: "Ravi",
   lastName: "K",
@@ -455,6 +473,8 @@ describe("speakerService.listSpeakers", () => {
     expect(result.meta).toEqual({ page: 2, pageSize: 2, total: 5 });
     expect(result.items).toEqual([
       {
+        // The profile id: an organizer picks a session's speakers by it.
+        id: ankitRow.id,
         slug: "ankit-sharma-3f9a1c",
         firstName: "Ankit",
         lastName: "Sharma",
@@ -474,6 +494,7 @@ describe("speakerService.listSpeakers", () => {
       },
       // In Postgres but not returned by Strapi → name only.
       {
+        id: priyaRow.id,
         slug: "priya-rao-7b2e4d",
         firstName: "Priya",
         lastName: "Rao",
@@ -499,6 +520,17 @@ describe("speakerService.listSpeakers", () => {
     expect(deps.strapiClient.findSpeakersByIds).toHaveBeenCalledWith([
       "doc-ankit",
     ]);
+  });
+
+  it("passes the ids on to the repository, so only those speakers are read", async () => {
+    const { deps, service } = setup();
+    const ids = [ankitRow.id, priyaRow.id];
+
+    await service.listSpeakers({ ...query, ids });
+
+    expect(deps.speakerRepository.listSpeakers).toHaveBeenCalledWith(
+      expect.objectContaining({ ids }),
+    );
   });
 
   it("passes the search on, and treats an empty one as no search", async () => {
@@ -554,6 +586,69 @@ describe("speakerService.listSpeakers", () => {
     const result = await service.listSpeakers(query);
 
     expect(JSON.stringify(result)).not.toContain("doc-ankit");
+  });
+});
+
+describe("the account state in the public reads", () => {
+  it("is left out of the list for everyone but a manager: not even the key is there", async () => {
+    const { service } = setup({
+      repo: {
+        listSpeakers: jest
+          .fn()
+          .mockResolvedValue({ rows: [ankitRow, priyaRow], total: 2 }),
+      },
+    });
+
+    const { items } = await service.listSpeakers({ page: 1, pageSize: 5 });
+
+    for (const item of items) expect(item).not.toHaveProperty("accountStatus");
+    expect(JSON.stringify(items)).not.toContain("pending");
+  });
+
+  it("is added to every card of the list for a manager, so 'Resend invite' can be limited to a pending speaker", async () => {
+    const { service } = setup({
+      repo: {
+        listSpeakers: jest
+          .fn()
+          .mockResolvedValue({ rows: [ankitRow, priyaRow], total: 2 }),
+      },
+    });
+
+    const { items } = await service.listSpeakers(
+      { page: 1, pageSize: 5 },
+      { canManage: true },
+    );
+
+    expect(items.map((item) => item.accountStatus)).toEqual([
+      "pending",
+      "active",
+    ]);
+    expect(getSpeakersResponseSchema.safeParse(items).success).toBe(true);
+  });
+
+  it("is left out of one profile for everyone but a manager", async () => {
+    const { service } = setup({
+      repo: { findBySlug: jest.fn().mockResolvedValue(ankitRow) },
+      strapi: { findSpeakerById: jest.fn().mockResolvedValue(ankitCms) },
+    });
+
+    const result = await service.getSpeakerBySlug("ankit-sharma-3f9a1c");
+
+    expect(result).not.toHaveProperty("accountStatus");
+  });
+
+  it("is added to one profile for a manager", async () => {
+    const { service } = setup({
+      repo: { findBySlug: jest.fn().mockResolvedValue(ankitRow) },
+      strapi: { findSpeakerById: jest.fn().mockResolvedValue(ankitCms) },
+    });
+
+    const result = await service.getSpeakerBySlug("ankit-sharma-3f9a1c", {
+      canManage: true,
+    });
+
+    expect(result.accountStatus).toBe("pending");
+    expect(speakerProfileResponseSchema.safeParse(result).success).toBe(true);
   });
 });
 
@@ -661,6 +756,42 @@ describe("listSpeakersQuerySchema", () => {
       false,
     );
   });
+
+  describe("ids", () => {
+    const a = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01";
+    const b = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d02";
+
+    it("is not there when it is not asked for: no filter", () => {
+      expect(listSpeakersQuerySchema.parse({})).not.toHaveProperty("ids");
+    });
+
+    it("splits a comma separated list and drops repeats", () => {
+      expect(
+        listSpeakersQuerySchema.parse({ ids: `${a}, ${b},${a}` }).ids,
+      ).toEqual([a, b]);
+    });
+
+    it("rejects an empty list instead of treating it as no filter", () => {
+      expect(listSpeakersQuerySchema.safeParse({ ids: "" }).success).toBe(
+        false,
+      );
+    });
+
+    it("rejects an id that is not a uuid", () => {
+      expect(
+        listSpeakersQuerySchema.safeParse({ ids: `${a},nope` }).success,
+      ).toBe(false);
+    });
+
+    it("rejects more than 50 ids", () => {
+      const ids = Array.from(
+        { length: 51 },
+        (_, i) => `6b2c3d4e-5f6a-4b7c-9d8e-${String(i).padStart(12, "0")}`,
+      ).join(",");
+
+      expect(listSpeakersQuerySchema.safeParse({ ids }).success).toBe(false);
+    });
+  });
 });
 
 describe("speakerSlugParamsSchema", () => {
@@ -683,7 +814,7 @@ describe("speakerSlugParamsSchema", () => {
 
 const userId = user.id;
 // What findOwnSpeaker returns for the logged-in speaker.
-const ownRow = { id: profile.id, ...ankitRow };
+const ownRow = { ...ankitRow, id: profile.id };
 
 describe("speakerService.getOwnProfile", () => {
   it("returns the form values: bio as text, links as stored, photo without its file id", async () => {
@@ -952,18 +1083,25 @@ describe("speakerService.replaceOwnPhoto", () => {
   };
 
   // A speaker whose current photo is file 9.
-  function photoSetup(
-    strapi: Partial<SpeakerServiceDeps["strapiClient"]> = {},
-  ) {
+  function photoSetup({
+    strapi,
+    media,
+  }: {
+    strapi?: Partial<SpeakerServiceDeps["strapiClient"]>;
+    media?: Partial<SpeakerServiceDeps["mediaClient"]>;
+  } = {}) {
     return setup({
       repo: { findOwnSpeaker: jest.fn().mockResolvedValue(ownRow) },
       strapi: {
         findSpeakerById: jest.fn().mockResolvedValue(ankitCms),
+        updateSpeaker: jest.fn().mockResolvedValue(cmsWithNewPhoto),
+        ...strapi,
+      },
+      media: {
         uploadFiles: jest
           .fn()
           .mockResolvedValue({ ok: true, files: [newFile] }),
-        updateSpeaker: jest.fn().mockResolvedValue(cmsWithNewPhoto),
-        ...strapi,
+        ...media,
       },
     });
   }
@@ -974,15 +1112,15 @@ describe("speakerService.replaceOwnPhoto", () => {
 
     const result = await service.replaceOwnPhoto(userId, photoUpload);
 
-    expect(deps.strapiClient.uploadFiles).toHaveBeenCalledWith(
+    expect(deps.mediaClient.uploadFiles).toHaveBeenCalledWith(
       expect.any(ReadableStream),
       "multipart/form-data; boundary=abc",
     );
     expect(deps.strapiClient.updateSpeaker).toHaveBeenCalledWith("doc-ankit", {
       photo: 31,
     });
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(9);
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(9);
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalledWith(31);
     expect(result).toEqual({
       photo: {
         url: "http://cms.test/uploads/new.jpg",
@@ -995,12 +1133,14 @@ describe("speakerService.replaceOwnPhoto", () => {
 
   it("deletes the upload and returns 400 when it is not an image (e.g. a PDF)", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({
-        ok: true,
-        files: [
-          { ...newFile, mime: "application/pdf", width: null, height: null },
-        ],
-      }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({
+          ok: true,
+          files: [
+            { ...newFile, mime: "application/pdf", width: null, height: null },
+          ],
+        }),
+      },
     });
 
     const error = await service
@@ -1008,28 +1148,32 @@ describe("speakerService.replaceOwnPhoto", () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
     expect(deps.strapiClient.updateSpeaker).not.toHaveBeenCalled();
   });
 
   it("deletes every file and returns 400 when more than one was sent", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({
-        ok: true,
-        files: [newFile, { ...newFile, id: 32 }],
-      }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({
+          ok: true,
+          files: [newFile, { ...newFile, id: 32 }],
+        }),
+      },
     });
 
     await expect(
       service.replaceOwnPhoto(userId, upload()),
     ).rejects.toBeInstanceOf(ValidationError);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(32);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(32);
   });
 
   it("returns 400 when Strapi itself refuses the file", async () => {
     const { deps, service } = photoSetup({
-      uploadFiles: jest.fn().mockResolvedValue({ ok: false, status: 415 }),
+      media: {
+        uploadFiles: jest.fn().mockResolvedValue({ ok: false, status: 415 }),
+      },
     });
 
     await expect(
@@ -1040,14 +1184,16 @@ describe("speakerService.replaceOwnPhoto", () => {
 
   it("cuts off a body over the size limit while streaming → 400", async () => {
     const { deps, service } = photoSetup({
-      // Like real fetch: reads the (size-limited) stream, which errors past the limit.
-      uploadFiles: jest.fn(async (body: ReadableStream<Uint8Array>) => {
-        const reader = body.getReader();
-        for (;;) {
-          const { done } = await reader.read();
-          if (done) return { ok: true as const, files: [newFile] };
-        }
-      }),
+      media: {
+        // Like real fetch: reads the (size-limited) stream, which errors past the limit.
+        uploadFiles: jest.fn(async (body: ReadableStream<Uint8Array>) => {
+          const reader = body.getReader();
+          for (;;) {
+            const { done } = await reader.read();
+            if (done) return { ok: true as const, files: [newFile] };
+          }
+        }),
+      },
     });
 
     const error = await service
@@ -1061,7 +1207,9 @@ describe("speakerService.replaceOwnPhoto", () => {
   it("returns 503 when the upload to Strapi fails", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const { service } = photoSetup({
-      uploadFiles: jest.fn().mockRejectedValue(new Error("connection reset")),
+      media: {
+        uploadFiles: jest.fn().mockRejectedValue(new Error("connection reset")),
+      },
     });
 
     await expect(
@@ -1075,7 +1223,9 @@ describe("speakerService.replaceOwnPhoto", () => {
   it("deletes the new file and keeps the old photo when setting it fails", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const { deps, service } = photoSetup({
-      updateSpeaker: jest.fn().mockRejectedValue(new Error("timeout")),
+      strapi: {
+        updateSpeaker: jest.fn().mockRejectedValue(new Error("timeout")),
+      },
     });
 
     await expect(
@@ -1083,21 +1233,23 @@ describe("speakerService.replaceOwnPhoto", () => {
     ).rejects.toMatchObject({
       status: 503,
     });
-    expect(deps.strapiClient.deleteFile).toHaveBeenCalledWith(31);
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalledWith(9);
+    expect(deps.mediaClient.deleteFile).toHaveBeenCalledWith(31);
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalledWith(9);
     log.mockRestore();
   });
 
   it("deletes nothing old when the speaker had no photo", async () => {
     const { deps, service } = photoSetup({
-      findSpeakerById: jest
-        .fn()
-        .mockResolvedValue({ ...ankitCms, photo: null }),
+      strapi: {
+        findSpeakerById: jest
+          .fn()
+          .mockResolvedValue({ ...ankitCms, photo: null }),
+      },
     });
 
     await service.replaceOwnPhoto(userId, upload());
 
-    expect(deps.strapiClient.deleteFile).not.toHaveBeenCalled();
+    expect(deps.mediaClient.deleteFile).not.toHaveBeenCalled();
   });
 
   it("returns 404 for a non-speaker before sending anything to Strapi", async () => {
@@ -1106,7 +1258,7 @@ describe("speakerService.replaceOwnPhoto", () => {
     await expect(
       service.replaceOwnPhoto(userId, upload()),
     ).rejects.toBeInstanceOf(NotFoundError);
-    expect(deps.strapiClient.uploadFiles).not.toHaveBeenCalled();
+    expect(deps.mediaClient.uploadFiles).not.toHaveBeenCalled();
   });
 });
 
@@ -1194,6 +1346,47 @@ describe("speakerService.resendInvite", () => {
     await expect(
       service.resendInvite("ankit-sharma-3f9a1c", inviter),
     ).rejects.toBe(alreadyActive);
+  });
+});
+
+describe("speakerService.createSpeaker: daily invite limit", () => {
+  it("counts the inviter against the invites-per-day cap", async () => {
+    const { deps, service } = setup();
+
+    await service.createSpeaker(input, inviter);
+
+    expect(deps.assertUnderDailyLimit).toHaveBeenCalledWith(
+      "speaker:invite",
+      inviter.id,
+      SPEAKER_INVITE_MAX_PER_DAY,
+    );
+  });
+
+  it("429 over the cap: no Strapi entry, no user and no email", async () => {
+    const refused = new RateLimitError("You reached today's limit of 30.");
+    const { deps, service } = setup({
+      assertUnderDailyLimit: jest.fn().mockRejectedValue(refused),
+    });
+
+    await expect(service.createSpeaker(input, inviter)).rejects.toBe(refused);
+
+    expect(deps.strapiClient.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.speakerRepository.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.enqueueAccountSetupEmail).not.toHaveBeenCalled();
+  });
+
+  it("an email that is already taken (409) does not use up a slot", async () => {
+    const { deps, service } = setup({
+      repo: {
+        findAccountByEmail: jest.fn().mockResolvedValue(otherRoleAccount),
+      },
+    });
+
+    await expect(service.createSpeaker(input, inviter)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+
+    expect(deps.assertUnderDailyLimit).not.toHaveBeenCalled();
   });
 });
 

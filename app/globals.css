@@ -21,10 +21,20 @@
 
   --background: light-dark(#ffffff, #0c121a); /* auth form column, <body> */
   --foreground: light-dark(#141b27, #f2f6fb);
-  --canvas: light-dark(#f3f5f8, #080c12); /* page behind cards in the signed-in app */
+  --canvas: light-dark(
+    #f3f5f8,
+    #080c12
+  ); /* page behind cards in the signed-in app */
   --surface: light-dark(#ffffff, #131b27); /* cards, inputs, sidebar, top bar */
-  --surface-subtle: light-dark(#f3f5f8, #1b2535); /* hint boxes, secondary hover, read-only */
+  --surface-subtle: light-dark(
+    #f3f5f8,
+    #1b2535
+  ); /* hint boxes, secondary hover, read-only */
   --line: light-dark(#d3d8e0, #34455d); /* card borders, dividers */
+  --skeleton: light-dark(
+    #d5dce6,
+    #26344a
+  ); /* loading placeholders: seen on a white card too */
   --field: light-dark(#8995a6, #71839d); /* input and button borders */
   --muted: light-dark(#515c6b, #b3bfcf); /* secondary text */
 
@@ -32,7 +42,10 @@
   --brand-hover: light-dark(#173f75, #3d82d4);
   --brand-foreground: #ffffff;
   --link: light-dark(#1d4e8f, #9fc8f6); /* text links and link-like buttons */
-  --brand-soft: light-dark(#e9eef7, #1a2c4a); /* tinted badge / active menu item */
+  --brand-soft: light-dark(
+    #e9eef7,
+    #1a2c4a
+  ); /* tinted badge / active menu item */
   --brand-soft-foreground: light-dark(#1d4e8f, #a8cdf7);
 
   /* The navy brand panel on the auth screens; navy in both themes. */
@@ -51,6 +64,17 @@
   --danger-soft: light-dark(#fdecea, #421d1d);
   --info: light-dark(#1d4e8f, #9fc8f6);
   --info-soft: light-dark(#e9eef7, #1a2c4a);
+
+  /* The schedule board's session types: a vivid accent (the left bar) and a tinted background.
+     Text on them is --foreground, which is well over 7:1 on every background. */
+  --session-keynote: light-dark(#7c3aed, #a78bfa);
+  --session-keynote-soft: light-dark(#e6dbfd, #3a2870);
+  --session-talk: light-dark(#2563eb, #60a5fa);
+  --session-talk-soft: light-dark(#d4e3fe, #1c3a70);
+  --session-workshop: light-dark(#16a34a, #4ade80);
+  --session-workshop-soft: light-dark(#ccf0d9, #14472d);
+  --session-panel: light-dark(#d97706, #fbbf24);
+  --session-panel-soft: light-dark(#fce2b0, #54390a);
 }
 
 /* The user's explicit choice wins over the system setting. */
@@ -68,6 +92,7 @@
   --color-surface: var(--surface);
   --color-surface-subtle: var(--surface-subtle);
   --color-line: var(--line);
+  --color-skeleton: var(--skeleton);
   --color-field: var(--field);
   --color-muted: var(--muted);
 
@@ -94,6 +119,15 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
 
+  --color-session-keynote: var(--session-keynote);
+  --color-session-keynote-soft: var(--session-keynote-soft);
+  --color-session-talk: var(--session-talk);
+  --color-session-talk-soft: var(--session-talk-soft);
+  --color-session-workshop: var(--session-workshop);
+  --color-session-workshop-soft: var(--session-workshop-soft);
+  --color-session-panel: var(--session-panel);
+  --color-session-panel-soft: var(--session-panel-soft);
+
   --font-sans: var(--font-plex-sans);
   --font-mono: var(--font-plex-mono);
 }
@@ -102,6 +136,16 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/*
+ * Loading placeholders. A pulsing bar in the subtle surface colour is all but invisible on a white
+ * card in light mode, so every placeholder (a block with animate-pulse, or a bar inside one) is
+ * painted with the skeleton colour instead. New placeholders can use bg-skeleton directly.
+ */
+.animate-pulse.bg-surface-subtle,
+.animate-pulse .bg-surface-subtle {
+  background-color: var(--skeleton);
 }
 
 /* One visible focus style for every interactive element (keyboard users). */

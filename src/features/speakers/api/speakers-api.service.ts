@@ -4,11 +4,17 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../core/api-client/base-api.service";
+import { fileUploadRequest } from "../../../core/api-client/file-upload";
 import {
   resendInviteResponseSchema,
   type ResendInviteResponseDto,
 } from "../../auth";
 import { SPEAKER_PHOTO_FORM_FIELD } from "../constants";
+import {
+  speakerSessionsMetaSchema,
+  speakerSessionsResponseSchema,
+  type ListSpeakerSessionsQuery,
+} from "../schemas/speaker-sessions.schemas";
 import {
   createSpeakerResponseSchema,
   getSpeakersResponseSchema,
@@ -25,17 +31,52 @@ import {
 } from "../schemas/speaker.schemas";
 
 export type ListSpeakersParams = Pick<ListSpeakersQuery, "pageSize"> &
-  Partial<Pick<ListSpeakersQuery, "page" | "search">>;
+  Partial<Pick<ListSpeakersQuery, "page" | "search" | "ids">>;
+
+export type ListSpeakerSessionsParams = Pick<
+  ListSpeakerSessionsQuery,
+  "timeline"
+> &
+  Partial<Pick<ListSpeakerSessionsQuery, "page" | "pageSize">>;
 
 export const speakersApiService = {
-  /** One page of speakers (A–Z), filtered by name by the server, and how many match in total. */
-  list({ search, page = 1, pageSize }: ListSpeakersParams) {
+  /**
+   * One category of a speaker's sessions (`timeline`: now, upcoming or past), grouped by event,
+   * one page of events. `meta.total` = events and `meta.totalSessions` = sessions in the category.
+   * 404 if the speaker is unknown.
+   */
+  listSessions(
+    slug: string,
+    { timeline, page = 1, pageSize }: ListSpeakerSessionsParams,
+  ) {
+    return apiRequestPage(
+      {
+        method: "GET",
+        url: `/speakers/${slug}/sessions`,
+        // pageSize is left out when not set, so the server uses its default.
+        params: { timeline, page, ...(pageSize ? { pageSize } : {}) },
+      },
+      speakerSessionsResponseSchema,
+      speakerSessionsMetaSchema,
+    );
+  },
+
+  /**
+   * One page of speakers (A–Z), filtered by name by the server, and how many match in total.
+   * `ids` limits the list to those speakers (1 to 50).
+   */
+  list({ search, ids, page = 1, pageSize }: ListSpeakersParams) {
     return apiRequestPage(
       {
         method: "GET",
         url: "/speakers",
         // Only what is set goes into the URL: no search means the server does not filter.
-        params: { page, pageSize, ...(search ? { search } : {}) },
+        params: {
+          page,
+          pageSize,
+          ...(search ? { search } : {}),
+          ...(ids ? { ids: ids.join(",") } : {}),
+        },
       },
       getSpeakersResponseSchema,
     );
@@ -89,19 +130,15 @@ export const speakersApiService = {
 
   /**
    * Replaces the speaker's photo. The file goes as multipart/form-data in the field the server
-   * streams on to the CMS. The JSON content type of the shared client is cleared, so the browser
-   * sets `multipart/form-data` with its boundary itself.
+   * streams on to the CMS.
    */
   uploadOwnPhoto(file: File): Promise<SpeakerPhotoResponseDto> {
-    const data = new FormData();
-    data.append(SPEAKER_PHOTO_FORM_FIELD, file);
     return apiRequest(
-      {
-        method: "POST",
-        url: "/me/speaker-profile/photo",
-        data,
-        headers: { "Content-Type": undefined },
-      },
+      fileUploadRequest(
+        "/me/speaker-profile/photo",
+        SPEAKER_PHOTO_FORM_FIELD,
+        file,
+      ),
       speakerPhotoResponseSchema,
     );
   },

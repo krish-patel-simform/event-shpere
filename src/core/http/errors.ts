@@ -9,7 +9,7 @@ export abstract class AppError extends Error {
 
   constructor(
     message: string,
-    readonly details?: ErrorDetails,  
+    readonly details?: ErrorDetails,
   ) {
     super(message);
     this.name = new.target.name;
@@ -71,6 +71,16 @@ export class ConflictError extends AppError {
     details?: ErrorDetails,
   ) {
     super(message, details);
+  }
+}
+
+/** 413: the request body is larger than the route accepts. */
+export class PayloadTooLargeError extends AppError {
+  readonly status = 413;
+  readonly code = "PAYLOAD_TOO_LARGE";
+
+  constructor(message = "Request body is too large") {
+    super(message);
   }
 }
 

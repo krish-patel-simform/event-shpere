@@ -6,7 +6,7 @@ import { ApiError } from "@/src/core/api-client/base-api.service";
 import { selectPendingVerification } from "@/src/redux/slices/auth-flow.slice";
 import { renderWithStoreAndQuery } from "@/src/redux/test-utils";
 import { authApiService } from "../../../api/auth-api.service";
-import type { OrganizerSignUpResponseDto } from "../../../schemas/auth.schemas";
+import type { SignUpResponseDto } from "../../../schemas/auth.schemas";
 import { OrganizerSignupForm } from "../OrganizerSignupForm";
 
 const mockPush = jest.fn();
@@ -16,17 +16,8 @@ jest.mock("../../../api/auth-api.service", () => ({
 }));
 const signUpOrganizer = jest.mocked(authApiService.signUpOrganizer);
 
-const createdOrganizer: OrganizerSignUpResponseDto = {
-  id: "6c2f9f0e-1d3b-4a55-8a11-0d4c7b1f2e33",
-  userId: "0b0f6a1e-6a0d-4f6e-9a55-1f6f2f0f9a11",
-  firstName: "Ananya",
-  lastName: "Rao",
+const createdOrganizer: SignUpResponseDto = {
   email: "ananya@acme.com",
-  status: "pending",
-  organizationName: "Acme Events",
-  organizationWebsite: null,
-  isVerified: false,
-  createdAt: "2026-10-21T10:00:00.000Z",
   verificationEmailSent: true,
   verificationCodeExpiresInMinutes: 5,
 };
@@ -168,33 +159,6 @@ describe("OrganizerSignupForm", () => {
     expect(button).toBeDisabled();
     expect(screen.getByLabelText("Work email")).toHaveAttribute("readonly");
     expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it("a taken email shows under the email field, keeps every value and does not leave the page", async () => {
-    signUpOrganizer.mockRejectedValue(
-      new ApiError(
-        409,
-        "EMAIL_TAKEN",
-        "An account with this email already exists",
-      ),
-    );
-    const { store } = renderWithStoreAndQuery(<OrganizerSignupForm />);
-    await fillRequired();
-    await userEvent.click(submitButton());
-
-    expect(
-      await screen.findByText("An account with this email already exists"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Work email")).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Organisation name")).toHaveValue(
-      "Acme Events",
-    );
-    expect(mockPush).not.toHaveBeenCalled();
-    expect(selectPendingVerification(store.getState())).toBeNull();
   });
 
   it("a field error from the server shows under that field, not in the alert", async () => {

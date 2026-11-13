@@ -80,10 +80,23 @@ export const listSpeakersQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(50).default(5),
   /** Part of the speaker's name, case-insensitive. Empty = no filter. */
   search: z.string().trim().max(100).optional(),
+  /**
+   * Only these speakers (speaker_profiles ids, comma separated: `?ids=a,b,c`). For a screen that
+   * already knows who it needs, such as an event's speakers, and wants just their cards. When the
+   * parameter is there it needs 1 to 50 distinct valid ids: an empty list is an error, never "no
+   * filter", so a bug can't turn "these speakers" into "every speaker".
+   */
+  ids: z
+    .string()
+    .transform((value) => [...new Set(value.split(",").map((id) => id.trim()))])
+    .pipe(z.array(z.uuid("Speaker ids must be valid ids")).min(1).max(50))
+    .optional(),
 });
 export type ListSpeakersQuery = z.infer<typeof listSpeakersQuerySchema>;
 
 export const speakerListItemSchema = z.object({
+  /** speaker_profiles.id: what an organizer's session speakers are chosen by. */
+  id: z.uuid(),
   slug: z.string(),
   firstName: z.string(),
   lastName: z.string(),
@@ -94,6 +107,12 @@ export const speakerListItemSchema = z.object({
       expertise: z.array(z.string()),
     })
     .nullable(),
+  /**
+   * Whether the account has been set up. ONLY in the answer to someone who manages every speaker
+   * (SPEAKER_MANAGE_ALL): everyone else never gets it. "pending" = no password yet, so the admin
+   * can resend the invite; any other state has nothing to resend.
+   */
+  accountStatus: z.enum(userStatusEnum.enumValues).optional(),
 });
 export type SpeakerListItemDto = z.infer<typeof speakerListItemSchema>;
 
@@ -127,6 +146,8 @@ export const speakerProfileResponseSchema = z.object({
       }),
     })
     .nullable(),
+  /** Same as on the list item: only for someone who manages every speaker. */
+  accountStatus: z.enum(userStatusEnum.enumValues).optional(),
   // Sessions (SPK-2) are added once the sessions table exists.
 });
 export type SpeakerProfileDto = z.infer<typeof speakerProfileResponseSchema>;

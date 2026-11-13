@@ -168,20 +168,26 @@ export type PageMeta = z.infer<typeof pageMetaSchema>;
 
 /**
  * For list endpoints (`{ data: [...], meta }`): returns the rows and the paging meta, both
- * parsed. Pass the schema of the whole array, as the server uses for `data`.
+ * parsed. Pass the schema of the whole array, as the server uses for `data`. A list whose `meta`
+ * carries more than the paging fields passes its own `metaSchema` (it must include those fields).
  */
-export async function apiRequestPage<S extends z.ZodType>(
+export async function apiRequestPage<
+  S extends z.ZodType,
+  M extends z.ZodType = typeof pageMetaSchema,
+>(
   config: AxiosRequestConfig,
   rowsSchema: S,
-): Promise<{ items: z.infer<S>; meta: PageMeta }>;
+  metaSchema?: M,
+): Promise<{ items: z.infer<S>; meta: z.infer<M> }>;
 export async function apiRequestPage(
   config: AxiosRequestConfig,
   rowsSchema: z.ZodType,
-): Promise<{ items: unknown; meta: PageMeta }> {
+  metaSchema: z.ZodType = pageMetaSchema,
+): Promise<{ items: unknown; meta: unknown }> {
   const body = await send(config);
 
   const parsed = z
-    .object({ data: rowsSchema, meta: pageMetaSchema })
+    .object({ data: rowsSchema, meta: metaSchema })
     .safeParse(body);
   if (!parsed.success) {
     throw new ApiError(200, "INVALID_RESPONSE", "Unexpected server response");

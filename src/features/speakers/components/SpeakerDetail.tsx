@@ -25,6 +25,7 @@ import {
 import { InviteNotice, type InviteResult } from "./InviteNotice";
 import { SpeakerDetailSkeleton } from "./SpeakerDetailSkeleton";
 import { SpeakerPhoto } from "./SpeakerPhoto";
+import { SpeakerSessions } from "./SpeakerSessions";
 
 const SPEAKERS_CRUMB = { label: "Speakers", href: SPEAKER_ROUTES.list };
 
@@ -83,9 +84,13 @@ function PageFrame({ name, children }: { name: string; children: ReactNode }) {
 
 function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
   const name = speakerFullName(speaker);
-  // Only the admin resends invites. Without the permission there is no button at all. The API
-  // checks it again, and answers 409 if the speaker already set a password.
-  const canResendInvite = useHasPermission("SPEAKER_MANAGE_ALL");
+  // Only the admin resends invites, and only to a speaker who has not set up the account yet
+  // (no password, or the email not confirmed): that state comes with the profile, for an admin
+  // only. Without the permission, or for an account that is already set up, there is no button at
+  // all. The API checks it again, and answers 409 if the speaker already set a password.
+  const canResendInvite =
+    useHasPermission("SPEAKER_MANAGE_ALL") &&
+    speaker.accountStatus === "pending";
   const resendInvite = useResendSpeakerInvite();
   const [invited, setInvited] = useState<InviteResult | null>(null);
   const { profile } = speaker;
@@ -182,6 +187,9 @@ function SpeakerView({ speaker }: { speaker: SpeakerProfileDto }) {
           This speaker&apos;s profile is not available right now.
         </Alert>
       )}
+
+      {/* From Postgres, so it shows even when the CMS has nothing. */}
+      <SpeakerSessions slug={speaker.slug} />
     </PageFrame>
   );
 }

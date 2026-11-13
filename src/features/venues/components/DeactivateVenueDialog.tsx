@@ -46,6 +46,10 @@ function DeactivateVenueBody({
           Guests and attendees will no longer see this venue or its halls, and
           organizers cannot pick it for new events.
         </p>
+        <p>
+          A venue cannot be deactivated while one of its halls has a session
+          that is not over yet. Move or cancel those sessions first.
+        </p>
         <Alert tone="warning">
           All {pluralHalls(venue.hallCount)} become inactive too. You can
           activate the venue again later; you then choose whether its halls

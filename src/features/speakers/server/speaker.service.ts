@@ -8,6 +8,10 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from "../../../core/http/errors";
+import {
+  assertUnderDailyLimit,
+  type AssertUnderDailyLimit,
+} from "../../../core/http/daily-limit";
 import type { PageMeta } from "../../../core/http/response";
 import {
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
@@ -20,7 +24,10 @@ import {
 } from "../../auth/server";
 import type { CmsSpeaker, StrapiSpeakerUpdate } from "../../cms";
 import {
+  createImageUploader,
+  strapiMediaClient,
   strapiSpeakerClient,
+  type StrapiMediaClient,
   type StrapiSpeakerClient,
 } from "../../cms/server";
 import { enqueueAccountSetupEmail } from "../../email/server";
@@ -28,6 +35,7 @@ import {
   organizerService,
   type OrganizerService,
 } from "../../organizer/server";
+import { SPEAKER_INVITE_MAX_PER_DAY } from "../constants";
 import type {
   CreateSpeakerBody,
   CreateSpeakerResponseDto,
@@ -52,11 +60,7 @@ import {
   type OwnSpeakerRow,
   type SpeakerRepository,
 } from "./speaker.repository";
-import {
-  createByteLimit,
-  isAcceptablePhoto,
-  SPEAKER_PHOTO_MAX_BODY_BYTES,
-} from "./speaker-photo";
+import { SPEAKER_PHOTO_POLICY } from "./speaker-photo";
 import { createSpeakerSlug } from "./speaker-slug";
 
 export type SpeakerServiceDeps = {
@@ -81,13 +85,15 @@ export type SpeakerServiceDeps = {
     | "findSpeakersByIds"
     | "findSpeakerById"
     | "updateSpeaker"
-    | "uploadFiles"
-    | "deleteFile"
   >;
+  /** Strapi's media library: the photo upload and removing replaced files. */
+  mediaClient: Pick<StrapiMediaClient, "uploadFiles" | "deleteFile">;
   createSlug: typeof createSpeakerSlug;
   appUrl: string;
   /** Organizers may invite speakers only once an admin has approved them. */
   organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
+  /** Redis counter that caps how many speakers one inviter adds per day. */
+  assertUnderDailyLimit: AssertUnderDailyLimit;
 };
 
 /** The signed-in user doing the invite: an organizer or an admin. */
@@ -263,17 +269,16 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
     return updated;
   }
 
-  /** Best effort: a file left behind only takes space in the media library. */
-  async function removeUploadedFile(id: number) {
-    try {
-      await deps.strapiClient.deleteFile(id);
-    } catch (error) {
-      console.error(
-        `[speakers] Strapi file ${id} not deleted:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
+  // Streaming an upload to Strapi, checking what it stored and deleting bad files is the same
+  // for every feature: it lives in the cms feature. Speakers only bring their limits and wording.
+  const { uploadOneImage, removeUploadedFile } = createImageUploader({
+    mediaClient: deps.mediaClient,
+    policy: SPEAKER_PHOTO_POLICY,
+    scope: "speakers",
+    noun: "photo",
+    invalid: invalidPhoto,
+    unavailable: cmsUnavailable,
+  });
 
   return {
     /**
@@ -295,6 +300,13 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
     ): Promise<CreateSpeakerResponseDto> {
       await deps.organizerVerification.assertVerifiedOrganizer(inviter);
       await assertEmailFree(input.email);
+      // After the cheap checks (a taken email does not use up a slot), before the Strapi call
+      // and the email, so a refused request costs nothing.
+      await deps.assertUnderDailyLimit(
+        "speaker:invite",
+        inviter.id,
+        SPEAKER_INVITE_MAX_PER_DAY,
+      );
 
       const cmsSpeaker = await createCmsSpeaker(
         `${input.firstName} ${input.lastName}`,
@@ -334,7 +346,8 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
         await deps.enqueueAccountSetupEmail({
           to: result.user.email,
           firstName: result.user.firstName,
-          passwordSetupUrl: `${deps.appUrl}/set-password?token=${encodeURIComponent(setupToken.token)}`,
+          // In the fragment (#), not the query (?): a browser never sends it to a server.
+          passwordSetupUrl: `${deps.appUrl}/set-password#token=${encodeURIComponent(setupToken.token)}`,
           loginUrl: `${deps.appUrl}/login`,
           expiresInHours: ACCOUNT_SETUP_TOKEN_TTL_HOURS,
         });
@@ -372,12 +385,14 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
      */
     async listSpeakers(
       query: ListSpeakersQuery,
+      { canManage = false }: { canManage?: boolean } = {},
     ): Promise<{ items: SpeakerListItemDto[]; meta: PageMeta }> {
       const { page, pageSize } = query;
 
       const { rows, total } = await deps.speakerRepository.listSpeakers({
         // An empty value after trim counts as no search.
         search: query.search || undefined,
+        ids: query.ids,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
@@ -395,6 +410,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
           toSpeakerListItemDto(
             row,
             (row.cmsSpeakerId && cmsById.get(row.cmsSpeakerId)) || null,
+            canManage,
           ),
         ),
         meta: { page, pageSize, total },
@@ -402,7 +418,10 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
     },
 
     /** SPK-2: one public speaker profile. Unknown (or suspended) slug → 404. */
-    async getSpeakerBySlug(slug: string): Promise<SpeakerProfileDto> {
+    async getSpeakerBySlug(
+      slug: string,
+      { canManage = false }: { canManage?: boolean } = {},
+    ): Promise<SpeakerProfileDto> {
       const row = await deps.speakerRepository.findBySlug(slug);
       if (!row) throw new NotFoundError("Speaker not found");
 
@@ -413,7 +432,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
           )
         : null;
 
-      return toSpeakerProfileDto(row, cms);
+      return toSpeakerProfileDto(row, cms, canManage);
     },
 
     /** The edit form's current values. The speaker comes from the login, never from the URL. */
@@ -476,31 +495,7 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
       const speaker = await requireOwnSpeaker(userId);
       const current = await loadOwnCms(speaker);
 
-      const limit = createByteLimit(SPEAKER_PHOTO_MAX_BODY_BYTES);
-      let result: Awaited<ReturnType<StrapiSpeakerClient["uploadFiles"]>>;
-      try {
-        result = await deps.strapiClient.uploadFiles(
-          upload.body.pipeThrough(limit.stream),
-          upload.contentType,
-        );
-      } catch (error) {
-        if (limit.exceeded()) throw invalidPhoto();
-        console.error(
-          "[speakers] photo upload to Strapi failed:",
-          error instanceof Error ? error.message : error,
-        );
-        throw cmsUnavailable();
-      }
-      // Strapi refused the file itself (e.g. a type its upload settings deny).
-      if (!result.ok) throw invalidPhoto();
-
-      const [photo, ...extra] = result.files;
-      if (!photo || extra.length > 0 || !isAcceptablePhoto(photo)) {
-        await Promise.all(
-          result.files.map((file) => removeUploadedFile(file.id)),
-        );
-        throw invalidPhoto();
-      }
+      const photo = await uploadOneImage(upload);
 
       let cms: CmsSpeaker;
       try {
@@ -559,7 +554,9 @@ export const speakerService = createSpeakerService({
   enqueueAccountSetupEmail,
   accountInviteService,
   strapiClient: strapiSpeakerClient,
+  mediaClient: strapiMediaClient,
   createSlug: createSpeakerSlug,
   appUrl: env.APP_URL,
   organizerVerification: organizerService,
+  assertUnderDailyLimit,
 });

@@ -17,3 +17,8 @@ export function venueHref(id: string): string {
 export function adminVenueHref(id: string): string {
   return `${VENUE_ROUTES.list}/${id}`;
 }
+
+/** The form that edits one venue's details. `id` = venues.id. */
+export function adminVenueEditHref(id: string): string {
+  return `${adminVenueHref(id)}/edit`;
+}

@@ -6,6 +6,7 @@ import {
   DrizzleQueryError,
   eq,
   ilike,
+  inArray,
   ne,
   sql,
 } from "drizzle-orm";
@@ -64,25 +65,28 @@ export type ExistingSpeakerRow = {
 
 /** What the public reads need from Postgres; the rest of the profile comes from the CMS. */
 export type SpeakerRow = {
+  /** speaker_profiles.id: what a session's speakers are linked by. */
+  id: string;
   slug: string;
   firstName: string;
   lastName: string;
   /** Strapi documentId; null if the CMS entry was never linked. */
   cmsSpeakerId: string | null;
+  /** The account's state. Only an admin's response carries it (see toSpeakerListItemDto). */
+  status: User["status"];
 };
 
 const speakerRowColumns = {
+  id: speakersProfilesTable.id,
   slug: speakersProfilesTable.slug,
   firstName: usersTable.firstName,
   lastName: usersTable.lastName,
   cmsSpeakerId: speakersProfilesTable.cmsSpeakerId,
+  status: usersTable.status,
 };
 
 /** The logged-in speaker's own profile row (found by their user id, never by a request id). */
-export type OwnSpeakerRow = SpeakerRow & {
-  /** speaker_profiles.id */
-  id: string;
-};
+export type OwnSpeakerRow = SpeakerRow;
 
 // Suspended accounts are not shown publicly. Pending (invited, no password yet) are:
 // a speaker is usable as soon as an organizer adds them.
@@ -95,11 +99,14 @@ export const speakerRepository = {
    */
   async listSpeakers(params: {
     search?: string;
+    /** Only these speaker_profiles ids (already validated: 1 to 50 uuids). */
+    ids?: string[];
     limit: number;
     offset: number;
   }): Promise<{ rows: SpeakerRow[]; total: number }> {
     const where = and(
       isPubliclyVisible,
+      params.ids ? inArray(speakersProfilesTable.id, params.ids) : undefined,
       params.search
         ? ilike(
             sql`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
@@ -148,7 +155,7 @@ export const speakerRepository = {
   /** The speaker profile of this user; null = the user is not a speaker. */
   async findOwnSpeaker(userId: string): Promise<OwnSpeakerRow | null> {
     const [row] = await db
-      .select({ id: speakersProfilesTable.id, ...speakerRowColumns })
+      .select(speakerRowColumns)
       .from(speakersProfilesTable)
       .innerJoin(usersTable, eq(usersTable.id, speakersProfilesTable.userId))
       .where(eq(speakersProfilesTable.userId, userId))
