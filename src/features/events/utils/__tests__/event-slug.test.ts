@@ -27,4 +27,25 @@ describe("slugify", () => {
     expect(slug.length).toBeLessThanOrEqual(80);
     expect(slug.endsWith("-")).toBe(false);
   });
+
+  it("long runs of dashes and symbols on both ends and in the middle become single dashes", () => {
+    const dashes = "-".repeat(100);
+    expect(slugify(`${dashes}Hello${dashes}World${dashes}`)).toBe(
+      "hello-world",
+    );
+    expect(slugify(` -_-_- Hello !?!?-- World -_-_- `)).toBe("hello-world");
+  });
+
+  it("a title of only dashes falls back to 'event'", () => {
+    expect(slugify("-".repeat(255))).toBe("event");
+  });
+
+  it("a cut that lands right after a word's dash drops that one dash", () => {
+    // 79 letters, a space, more letters: the 80th character of the slug is the dash.
+    expect(slugify(`${"a".repeat(79)} bbbb`)).toBe("a".repeat(79));
+  });
+
+  it("never leaves two dashes in a row", () => {
+    expect(slugify("A -- B ... C ___ D")).toBe("a-b-c-d");
+  });
 });
