@@ -59,6 +59,12 @@ IDs like `DISC-3` are from the catalog. "Static" means the screen exists but sho
 
 - [ ] **"Organised by"** on the public event page is a fixed "Organiser" (Static). Add the
       organisation name to the public detail DTO and show it.
+- [ ] **Public session page: "Book this session"** (DET-3) shows the real price and seats left,
+      but the button is a disabled "Booking opens soon" placeholder until session booking (REG)
+      exists. Then it should book, and say "Booked" / "Log in to book". Also check by hand: the
+      cover hero (with and without an image), the speakers' photo, job title and company (they
+      come from `GET /api/speakers?ids=`), and the venue and seats in Details. The new SQL
+      (venue join and booked-seats count in `findPublicSession`) was never run against Postgres.
 - [ ] **Session description on the schedule** (DET-2): rows show name, speakers, start and end;
       the description is only on the session's own page. Decide: accept that, or add a one-line
       summary to the public session list item.
