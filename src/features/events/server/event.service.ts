@@ -1,5 +1,10 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { createByteLimit } from "../../../core/http/byte-limit";
+import {
+  assertUnderDailyLimit,
+  type AssertUnderDailyLimit,
+} from "../../../core/http/daily-limit";
 // Direct file import: the core/http barrel also pulls in the route wrapper and cookies.
 import {
   ConflictError,
@@ -29,7 +34,11 @@ import {
   organizerService,
   type OrganizerService,
 } from "../../organizer/server";
-import { EVENT_GALLERY_MAX_IMAGES } from "../constants";
+import {
+  EVENT_CREATE_MAX_PER_DAY,
+  EVENT_GALLERY_MAX_IMAGES,
+  EVENT_IMAGE_MAX_BODY_BYTES,
+} from "../constants";
 import type {
   EventContentDto,
   EventCoverDto,
@@ -120,6 +129,8 @@ export type EventServiceDeps = {
   mediaClient: Pick<StrapiMediaClient, "uploadFiles" | "deleteFile">;
   /** An organizer may manage events only while an admin's approval stands. */
   organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
+  /** Redis counter that caps how many events one organizer creates per day. */
+  assertUnderDailyLimit: AssertUnderDailyLimit;
   /** The current time; injected in tests. */
   now?: () => Date;
 };
@@ -539,6 +550,14 @@ export function createEventService(deps: EventServiceDeps) {
 
       // The event happens where the venue is: its zone wins over whatever the form sent.
       const timezone = venue?.timezone ?? body.timezone ?? DEFAULT_TIMEZONE;
+
+      // After the cheap checks (a mistyped venue does not use up a slot), before the Strapi
+      // call, so a refused request costs nothing.
+      await deps.assertUnderDailyLimit(
+        "event:create",
+        organizerId,
+        EVENT_CREATE_MAX_PER_DAY,
+      );
 
       // One id for both systems: Postgres events.id and the Strapi page's `eventId`.
       const eventId = randomUUID();
@@ -1136,4 +1155,5 @@ export const eventService = createEventService({
   sessionStrapiClient: strapiSessionClient,
   mediaClient: strapiMediaClient,
   organizerVerification: organizerService,
+  assertUnderDailyLimit,
 });

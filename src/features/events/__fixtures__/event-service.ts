@@ -239,12 +239,15 @@ export function setupEventService() {
           user.role === "organizer" ? (profileIds.get(user.id) ?? null) : null,
       ),
   };
+  // Under the daily limit by default; tests for the refused case make it reject.
+  const dailyLimit = jest.fn().mockResolvedValue(undefined);
   const deps: EventServiceDeps = {
     eventRepository: repo,
     strapiClient: strapi,
     sessionStrapiClient: sessionStrapi,
     mediaClient: media,
     organizerVerification: verification,
+    assertUnderDailyLimit: dailyLimit,
     now: () => NOW,
   };
   return {
@@ -253,6 +256,7 @@ export function setupEventService() {
     sessionStrapi,
     media,
     verification,
+    dailyLimit,
     service: createEventService(deps),
   };
 }

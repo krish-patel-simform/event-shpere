@@ -8,6 +8,10 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from "../../../core/http/errors";
+import {
+  assertUnderDailyLimit,
+  type AssertUnderDailyLimit,
+} from "../../../core/http/daily-limit";
 import type { PageMeta } from "../../../core/http/response";
 import {
   ACCOUNT_SETUP_TOKEN_TTL_HOURS,
@@ -31,6 +35,7 @@ import {
   organizerService,
   type OrganizerService,
 } from "../../organizer/server";
+import { SPEAKER_INVITE_MAX_PER_DAY } from "../constants";
 import type {
   CreateSpeakerBody,
   CreateSpeakerResponseDto,
@@ -87,6 +92,8 @@ export type SpeakerServiceDeps = {
   appUrl: string;
   /** Organizers may invite speakers only once an admin has approved them. */
   organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
+  /** Redis counter that caps how many speakers one inviter adds per day. */
+  assertUnderDailyLimit: AssertUnderDailyLimit;
 };
 
 /** The signed-in user doing the invite: an organizer or an admin. */
@@ -293,6 +300,13 @@ export function createSpeakerService(deps: SpeakerServiceDeps) {
     ): Promise<CreateSpeakerResponseDto> {
       await deps.organizerVerification.assertVerifiedOrganizer(inviter);
       await assertEmailFree(input.email);
+      // After the cheap checks (a taken email does not use up a slot), before the Strapi call
+      // and the email, so a refused request costs nothing.
+      await deps.assertUnderDailyLimit(
+        "speaker:invite",
+        inviter.id,
+        SPEAKER_INVITE_MAX_PER_DAY,
+      );
 
       const cmsSpeaker = await createCmsSpeaker(
         `${input.firstName} ${input.lastName}`,
@@ -543,4 +557,5 @@ export const speakerService = createSpeakerService({
   createSlug: createSpeakerSlug,
   appUrl: env.APP_URL,
   organizerVerification: organizerService,
+  assertUnderDailyLimit,
 });

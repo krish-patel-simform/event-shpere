@@ -28,6 +28,8 @@ export const EVENT_GALLERY_MAX_IMAGES = 10;
  */
 export const EVENT_GALLERY_BATCH_MAX_BYTES = EVENT_IMAGE_MAX_BYTES;
 
+export const EVENT_CREATE_MAX_PER_DAY = 20;
+
 /**
  * Name of the file field in the multipart form. The body is streamed to Strapi as-is, and
  * Strapi's upload API reads its files from a field called "files".

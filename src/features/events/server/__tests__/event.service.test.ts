@@ -2,8 +2,10 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitError,
   ServiceUnavailableError,
 } from "../../../../core/http/errors";
+import { EVENT_CREATE_MAX_PER_DAY } from "../../constants";
 import {
   admin,
   organizer,
@@ -149,6 +151,42 @@ describe("eventService.createEvent", () => {
       // Nothing is created anywhere, not even the empty page in Strapi.
       expect(strapi.createEventPage).not.toHaveBeenCalled();
       expect(repo.createEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("daily limit", () => {
+    it("counts the organizer's PROFILE id against the events-per-day cap", async () => {
+      const { service, dailyLimit } = setup();
+
+      await service.createEvent(body, organizer);
+
+      expect(dailyLimit).toHaveBeenCalledWith(
+        "event:create",
+        organizerId,
+        EVENT_CREATE_MAX_PER_DAY,
+      );
+    });
+
+    it("429 over the cap, and nothing is created in Strapi or Postgres", async () => {
+      const { service, repo, strapi, dailyLimit } = setup();
+      const refused = new RateLimitError("You reached today's limit of 20.");
+      dailyLimit.mockRejectedValue(refused);
+
+      await expect(service.createEvent(body, organizer)).rejects.toBe(refused);
+
+      expect(strapi.createEventPage).not.toHaveBeenCalled();
+      expect(repo.createEvent).not.toHaveBeenCalled();
+    });
+
+    it("a request refused for another reason (unknown venue) does not use up a slot", async () => {
+      const { service, repo, dailyLimit } = setup();
+      repo.findVenue.mockResolvedValue(null);
+
+      await expect(
+        service.createEvent({ ...body, venueId: venueId }, organizer),
+      ).rejects.toBeInstanceOf(NotFoundError);
+
+      expect(dailyLimit).not.toHaveBeenCalled();
     });
   });
 

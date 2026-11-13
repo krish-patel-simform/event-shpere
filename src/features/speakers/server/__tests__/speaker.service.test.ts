@@ -2,10 +2,12 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitError,
   ServiceUnavailableError,
   ValidationError,
 } from "../../../../core/http/errors";
 import type { CmsSpeaker } from "../../../cms";
+import { SPEAKER_INVITE_MAX_PER_DAY } from "../../constants";
 import {
   createSpeakerBodySchema,
   getSpeakersResponseSchema,
@@ -134,6 +136,8 @@ function setup({ repo, strapi, media, ...overrides }: SetupOverrides = {}) {
     organizerVerification: {
       assertVerifiedOrganizer: jest.fn().mockResolvedValue(undefined),
     },
+    // Under the daily limit by default; tests for the refused case make it reject.
+    assertUnderDailyLimit: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } satisfies SpeakerServiceDeps;
   return { deps, service: createSpeakerService(deps) };
@@ -1342,6 +1346,47 @@ describe("speakerService.resendInvite", () => {
     await expect(
       service.resendInvite("ankit-sharma-3f9a1c", inviter),
     ).rejects.toBe(alreadyActive);
+  });
+});
+
+describe("speakerService.createSpeaker: daily invite limit", () => {
+  it("counts the inviter against the invites-per-day cap", async () => {
+    const { deps, service } = setup();
+
+    await service.createSpeaker(input, inviter);
+
+    expect(deps.assertUnderDailyLimit).toHaveBeenCalledWith(
+      "speaker:invite",
+      inviter.id,
+      SPEAKER_INVITE_MAX_PER_DAY,
+    );
+  });
+
+  it("429 over the cap: no Strapi entry, no user and no email", async () => {
+    const refused = new RateLimitError("You reached today's limit of 30.");
+    const { deps, service } = setup({
+      assertUnderDailyLimit: jest.fn().mockRejectedValue(refused),
+    });
+
+    await expect(service.createSpeaker(input, inviter)).rejects.toBe(refused);
+
+    expect(deps.strapiClient.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.speakerRepository.createSpeaker).not.toHaveBeenCalled();
+    expect(deps.enqueueAccountSetupEmail).not.toHaveBeenCalled();
+  });
+
+  it("an email that is already taken (409) does not use up a slot", async () => {
+    const { deps, service } = setup({
+      repo: {
+        findAccountByEmail: jest.fn().mockResolvedValue(otherRoleAccount),
+      },
+    });
+
+    await expect(service.createSpeaker(input, inviter)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+
+    expect(deps.assertUnderDailyLimit).not.toHaveBeenCalled();
   });
 });
 
