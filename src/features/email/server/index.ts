@@ -10,6 +10,11 @@ export {
 // Email verification codes (OTP): generated and hashed here, stored in Redis, sent directly.
 export { createEmailOtp, hashEmailOtp, type EmailOtp } from "./email-otp";
 export { emailOtpStore, type EmailOtpStore } from "./email-otp.store";
+// The cooldown between two "forgot password" requests for the same address.
+export {
+  passwordResetCooldownStore,
+  type PasswordResetCooldownStore,
+} from "./password-reset-cooldown.store";
 export {
   sendPasswordResetEmail,
   sendVerificationCodeEmail,

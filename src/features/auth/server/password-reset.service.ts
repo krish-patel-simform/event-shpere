@@ -16,7 +16,11 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from "../../../core/http/errors";
-import { sendPasswordResetEmail } from "../../email/server";
+import {
+  passwordResetCooldownStore,
+  sendPasswordResetEmail,
+  type PasswordResetCooldownStore,
+} from "../../email/server";
 import {
   PASSWORD_RESET_ADMIN_COOLDOWN_SECONDS,
   PASSWORD_RESET_TOKEN_TTL_MINUTES,
@@ -50,6 +54,8 @@ export type PasswordResetServiceDeps = {
   hashPassword: typeof hashPassword;
   verifyPassword: typeof verifyPassword;
   sendPasswordResetEmail: typeof sendPasswordResetEmail;
+  /** One "forgot password" request per address per minute (the route is public). */
+  passwordResetCooldownStore: Pick<PasswordResetCooldownStore, "claim">;
   tokenTtlMinutes: number;
   /** Minimum wait between two links an admin sends to the same person. */
   adminCooldownSeconds: number;
@@ -101,11 +107,18 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
      * must never be able to tell whether an account exists. That includes an ADMIN account:
      * admins never reset by email link, but this public endpoint stays silent about it
      * (no token, no email); sendResetLinkToUser tells a signed-in admin why.
+     *
+     * One request per address per minute, whoever sends it. This route is public, and every
+     * accepted request sends an email AND ends the person's older reset links, so without a limit
+     * anyone could fill an inbox and keep a victim from ever using a link. The limit comes first
+     * and applies to unknown addresses too, so it also answers the same 204 and tells nothing.
      */
     async requestReset(
       input: ForgotPasswordBody,
       now = new Date(),
     ): Promise<void> {
+      if (!(await deps.passwordResetCooldownStore.claim(input.email))) return;
+
       const user = await deps.passwordResetRepository.findActiveUserByEmail(
         input.email,
       );
@@ -254,6 +267,7 @@ export const passwordResetService = createPasswordResetService({
   hashPassword,
   verifyPassword,
   sendPasswordResetEmail,
+  passwordResetCooldownStore,
   tokenTtlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
   adminCooldownSeconds: PASSWORD_RESET_ADMIN_COOLDOWN_SECONDS,
   appUrl: env.APP_URL,
