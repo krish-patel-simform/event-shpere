@@ -12,6 +12,7 @@ function setup() {
   const repository = {
     findOverlappingSessions: jest.fn().mockResolvedValue([]),
     findHeldSlotsInHalls: jest.fn().mockResolvedValue([]),
+    isSessionOfOrganizer: jest.fn().mockResolvedValue(false),
   };
   return { repository, service: createHallBookingService({ repository }) };
 }
@@ -145,5 +146,31 @@ describe("hallBookingService.findHeldSlots", () => {
     await expect(
       service.findHeldSlots({ hallIds: ["h1"], startAt, endAt }),
     ).resolves.toEqual([]);
+  });
+});
+
+describe("hallBookingService.isSessionOfOrganizer", () => {
+  const sessionId = "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01";
+  const organizerId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
+
+  it("asks the repository about this session and this organizer, and returns its answer", async () => {
+    const { service, repository } = setup();
+    repository.isSessionOfOrganizer.mockResolvedValue(true);
+
+    await expect(
+      service.isSessionOfOrganizer(sessionId, organizerId),
+    ).resolves.toBe(true);
+    expect(repository.isSessionOfOrganizer).toHaveBeenCalledWith(
+      sessionId,
+      organizerId,
+    );
+  });
+
+  it("is false for a session that is not theirs or does not exist", async () => {
+    const { service } = setup();
+
+    await expect(
+      service.isSessionOfOrganizer(sessionId, organizerId),
+    ).resolves.toBe(false);
   });
 });

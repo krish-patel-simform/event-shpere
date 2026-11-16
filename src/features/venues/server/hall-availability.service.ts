@@ -19,7 +19,10 @@ import { venueRepository, type VenueRepository } from "./venue.repository";
 export type HallAvailabilityDeps = {
   venueRepository: Pick<VenueRepository, "getVenueById">;
   /** Who holds which hall when (the sessions of every event). */
-  hallBooking: Pick<HallBookingService, "findHeldSlots">;
+  hallBooking: Pick<
+    HallBookingService,
+    "findHeldSlots" | "isSessionOfOrganizer"
+  >;
   /** An organizer may plan events only while an admin's approval stands. */
   organizerVerification: Pick<OrganizerService, "assertVerifiedOrganizer">;
 };
@@ -38,13 +41,20 @@ export function createHallAvailabilityService(deps: HallAvailabilityDeps) {
      * A hall is `busy` when any session overlaps the range, even a part of it; `bookedSlots`
      * says which times. The slots are times only: another organizer's session titles never
      * leave here.
+     *
+     * `query.exceptSessionId` (the session being edited, so it does not block its own hall) is
+     * used only when that session is the caller's own. Any other id, a stranger's or an unknown
+     * one, is ignored as if it was not sent, so nobody can hide another organizer's booking from
+     * the answer, and a stranger's id and an unknown one look the same.
      */
     async getHallAvailability(
       venueId: string,
       query: HallAvailabilityQuery,
       currentUser: Pick<CurrentUser, "id" | "role">,
     ): Promise<HallAvailabilityDto[]> {
-      await deps.organizerVerification.assertVerifiedOrganizer(currentUser);
+      // The organizer PROFILE id (null for an admin, who has none).
+      const organizerId =
+        await deps.organizerVerification.assertVerifiedOrganizer(currentUser);
 
       const found = await deps.venueRepository.getVenueById(venueId);
       if (!found) throw new NotFoundError("Venue not found");
@@ -56,11 +66,20 @@ export function createHallAvailabilityService(deps: HallAvailabilityDeps) {
       }
 
       const halls = found.halls.filter((hall) => hall.isActive);
+      const exceptSessionId =
+        query.exceptSessionId &&
+        organizerId &&
+        (await deps.hallBooking.isSessionOfOrganizer(
+          query.exceptSessionId,
+          organizerId,
+        ))
+          ? query.exceptSessionId
+          : undefined;
       const slots = await deps.hallBooking.findHeldSlots({
         hallIds: halls.map((hall) => hall.id),
         startAt: query.startAt,
         endAt: query.endAt,
-        exceptSessionId: query.exceptSessionId,
+        exceptSessionId,
       });
 
       return halls.map((hall) => {

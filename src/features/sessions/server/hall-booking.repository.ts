@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, gt, inArray, isNotNull, lt, ne } from "drizzle-orm";
 import { db } from "../../../db/dbClient";
-import { sessionsTable } from "../../../db/schemas";
+import { eventsTable, sessionsTable } from "../../../db/schemas";
 
 /**
  * A session HOLDS its hall while it is not cancelled and has a time, whether it is a draft or
@@ -102,6 +102,28 @@ export const hallBookingRepository = {
         ? [{ hallId: row.hallId, startAt: row.startAt, endAt: row.endAt }]
         : [],
     );
+  },
+
+  /**
+   * True when the session belongs to an event of this organizer. `organizerId` is the organizer
+   * PROFILE id (events.organizer_id), not the user id. An unknown session is simply false.
+   */
+  async isSessionOfOrganizer(
+    sessionId: string,
+    organizerId: string,
+  ): Promise<boolean> {
+    const [row] = await db
+      .select({ id: sessionsTable.id })
+      .from(sessionsTable)
+      .innerJoin(eventsTable, eq(eventsTable.id, sessionsTable.eventId))
+      .where(
+        and(
+          eq(sessionsTable.id, sessionId),
+          eq(eventsTable.organizerId, organizerId),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   },
 };
 

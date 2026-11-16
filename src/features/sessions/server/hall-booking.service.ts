@@ -9,7 +9,7 @@ import {
 export type HallBookingDeps = {
   repository: Pick<
     HallBookingRepository,
-    "findOverlappingSessions" | "findHeldSlotsInHalls"
+    "findOverlappingSessions" | "findHeldSlotsInHalls" | "isSessionOfOrganizer"
   >;
 };
 
@@ -62,6 +62,18 @@ export function createHallBookingService(deps: HallBookingDeps) {
       exceptSessionId?: string;
     }): Promise<{ hallId: string; startAt: Date; endAt: Date }[]> {
       return deps.repository.findHeldSlotsInHalls(params);
+    },
+
+    /**
+     * Whether this session is one of this organizer's (`organizerId` is the organizer PROFILE id).
+     * For a caller-supplied session id: use it only when this is true, so nobody can leave
+     * another organizer's booking out of an answer.
+     */
+    isSessionOfOrganizer(
+      sessionId: string,
+      organizerId: string,
+    ): Promise<boolean> {
+      return deps.repository.isSessionOfOrganizer(sessionId, organizerId);
     },
   };
 }

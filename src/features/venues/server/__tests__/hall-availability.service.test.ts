@@ -73,7 +73,11 @@ const halls = [
 function setup(found: { venue: VenueWithState; halls: Hall[] } | null) {
   const deps = {
     venueRepository: { getVenueById: jest.fn().mockResolvedValue(found) },
-    hallBooking: { findHeldSlots: jest.fn().mockResolvedValue([]) },
+    hallBooking: {
+      findHeldSlots: jest.fn().mockResolvedValue([]),
+      // true = the session is the caller's own (what an honest edit form sends).
+      isSessionOfOrganizer: jest.fn().mockResolvedValue(true),
+    },
     organizerVerification: {
       assertVerifiedOrganizer: jest.fn().mockResolvedValue("profile-id"),
     },
@@ -145,7 +149,7 @@ describe("hallAvailabilityService.getHallAvailability", () => {
     });
   });
 
-  it("leaves nothing out when no session is named", async () => {
+  it("leaves nothing out when no session is named, and does not even look one up", async () => {
     const { service, deps } = setup({ venue: venue(), halls });
 
     await service.getHallAvailability(venueId, query, organizer);
@@ -153,8 +157,136 @@ describe("hallAvailabilityService.getHallAvailability", () => {
     expect(
       deps.hallBooking.findHeldSlots.mock.calls[0][0].exceptSessionId,
     ).toBeUndefined();
+    expect(deps.hallBooking.isSessionOfOrganizer).not.toHaveBeenCalled();
+  });
+});
+
+describe("hallAvailabilityService: the session to leave out must be the caller's own", () => {
+  const sessionId = "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01";
+
+  it("checks the session against the organizer PROFILE id, not the user id", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    deps.organizerVerification.assertVerifiedOrganizer.mockResolvedValue(
+      "organizer-profile-id",
+    );
+
+    await service.getHallAvailability(
+      venueId,
+      { ...query, exceptSessionId: sessionId },
+      organizer,
+    );
+
+    expect(deps.hallBooking.isSessionOfOrganizer).toHaveBeenCalledWith(
+      sessionId,
+      "organizer-profile-id",
+    );
+    expect(deps.hallBooking.isSessionOfOrganizer).not.toHaveBeenCalledWith(
+      sessionId,
+      organizer.id,
+    );
   });
 
+  it("leaves out the caller's own session", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+
+    await service.getHallAvailability(
+      venueId,
+      { ...query, exceptSessionId: sessionId },
+      organizer,
+    );
+
+    expect(
+      deps.hallBooking.findHeldSlots.mock.calls[0][0].exceptSessionId,
+    ).toBe(sessionId);
+  });
+
+  it("ignores another organizer's session: its booking stays in the answer", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    deps.hallBooking.isSessionOfOrganizer.mockResolvedValue(false);
+
+    await service.getHallAvailability(
+      venueId,
+      { ...query, exceptSessionId: sessionId },
+      organizer,
+    );
+
+    expect(
+      deps.hallBooking.findHeldSlots.mock.calls[0][0].exceptSessionId,
+    ).toBeUndefined();
+  });
+
+  it("answers a stranger's session and an unknown one in exactly the same way", async () => {
+    // Both come back as "not yours" from the lookup, so the two requests are indistinguishable.
+    const stranger = setup({ venue: venue(), halls });
+    const unknown = setup({ venue: venue(), halls });
+    stranger.deps.hallBooking.isSessionOfOrganizer.mockResolvedValue(false);
+    unknown.deps.hallBooking.isSessionOfOrganizer.mockResolvedValue(false);
+    const slot = {
+      hallId: hallA,
+      startAt: new Date("2026-12-12T04:00:00.000Z"),
+      endAt: new Date("2026-12-12T05:00:00.000Z"),
+    };
+    stranger.deps.hallBooking.findHeldSlots.mockResolvedValue([slot]);
+    unknown.deps.hallBooking.findHeldSlots.mockResolvedValue([slot]);
+    const ask = { ...query, exceptSessionId: sessionId };
+
+    expect(
+      await stranger.service.getHallAvailability(venueId, ask, organizer),
+    ).toEqual(
+      await unknown.service.getHallAvailability(venueId, ask, organizer),
+    );
+    expect(stranger.deps.hallBooking.findHeldSlots).toHaveBeenCalledWith(
+      expect.objectContaining({ exceptSessionId: undefined }),
+    );
+  });
+
+  it("ignores the id when the caller has no organizer profile (an admin), without a lookup", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    deps.organizerVerification.assertVerifiedOrganizer.mockResolvedValue(null);
+
+    await service.getHallAvailability(
+      venueId,
+      { ...query, exceptSessionId: sessionId },
+      organizer,
+    );
+
+    expect(deps.hallBooking.isSessionOfOrganizer).not.toHaveBeenCalled();
+    expect(
+      deps.hallBooking.findHeldSlots.mock.calls[0][0].exceptSessionId,
+    ).toBeUndefined();
+  });
+
+  it("does not answer with an error for a foreign id: a stale form still gets its preview", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    deps.hallBooking.isSessionOfOrganizer.mockResolvedValue(false);
+
+    await expect(
+      service.getHallAvailability(
+        venueId,
+        { ...query, exceptSessionId: sessionId },
+        organizer,
+      ),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("a failed ownership lookup fails the request (it never falls back to trusting the id)", async () => {
+    const { service, deps } = setup({ venue: venue(), halls });
+    deps.hallBooking.isSessionOfOrganizer.mockRejectedValue(
+      new Error("db down"),
+    );
+
+    await expect(
+      service.getHallAvailability(
+        venueId,
+        { ...query, exceptSessionId: sessionId },
+        organizer,
+      ),
+    ).rejects.toThrow("db down");
+    expect(deps.hallBooking.findHeldSlots).not.toHaveBeenCalled();
+  });
+});
+
+describe("hallAvailabilityService.getHallAvailability (the lists)", () => {
   it("marks a hall busy when it is only PARTLY taken, and says which times", async () => {
     const { service, deps } = setup({ venue: venue(), halls });
     // Hall B has one session from 10:00 to 12:00 IST inside the 09:00-17:00 range.
