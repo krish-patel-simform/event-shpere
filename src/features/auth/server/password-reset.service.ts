@@ -16,7 +16,11 @@ import {
   ServiceUnavailableError,
   ValidationError,
 } from "../../../core/http/errors";
-import { sendPasswordResetEmail } from "../../email/server";
+import {
+  passwordResetCooldownStore,
+  sendPasswordResetEmail,
+  type PasswordResetCooldownStore,
+} from "../../email/server";
 import {
   PASSWORD_RESET_ADMIN_COOLDOWN_SECONDS,
   PASSWORD_RESET_TOKEN_TTL_MINUTES,
@@ -50,6 +54,8 @@ export type PasswordResetServiceDeps = {
   hashPassword: typeof hashPassword;
   verifyPassword: typeof verifyPassword;
   sendPasswordResetEmail: typeof sendPasswordResetEmail;
+  /** One "forgot password" request per address per minute (the route is public). */
+  passwordResetCooldownStore: Pick<PasswordResetCooldownStore, "claim">;
   tokenTtlMinutes: number;
   /** Minimum wait between two links an admin sends to the same person. */
   adminCooldownSeconds: number;
@@ -85,7 +91,9 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
     return deps.sendPasswordResetEmail({
       to: user.email,
       firstName: user.firstName,
-      resetUrl: `${deps.appUrl}/reset-password?token=${encodeURIComponent(token)}`,
+      // In the fragment (#), not the query (?): a browser never sends it to a server, so the
+      // token stays out of access logs and the Referer header.
+      resetUrl: `${deps.appUrl}/reset-password#token=${encodeURIComponent(token)}`,
       expiresInMinutes: deps.tokenTtlMinutes,
       // Only set for an admin's link, so the person's own email is built exactly as before.
       ...(sentByAdmin ? { sentByAdmin: true } : {}),
@@ -96,24 +104,29 @@ export function createPasswordResetService(deps: PasswordResetServiceDeps) {
     /**
      * AUTH-6: emails a reset link to an ACTIVE account with this email.
      * Resolves the same way, found or not: the caller (and so the person typing the email)
-     * must never be able to tell whether an account exists. The one exception is an ADMIN
-     * account, which throws a ValidationError (400): admins never reset by email link.
+     * must never be able to tell whether an account exists. That includes an ADMIN account:
+     * admins never reset by email link, but this public endpoint stays silent about it
+     * (no token, no email); sendResetLinkToUser tells a signed-in admin why.
+     *
+     * One request per address per minute, whoever sends it. This route is public, and every
+     * accepted request sends an email AND ends the person's older reset links, so without a limit
+     * anyone could fill an inbox and keep a victim from ever using a link. The limit comes first
+     * and applies to unknown addresses too, so it also answers the same 204 and tells nothing.
      */
     async requestReset(
       input: ForgotPasswordBody,
       now = new Date(),
     ): Promise<void> {
+      if (!(await deps.passwordResetCooldownStore.claim(input.email))) return;
+
       const user = await deps.passwordResetRepository.findActiveUserByEmail(
         input.email,
       );
       if (!user) return;
 
-      // Admin passwords are never reset by email link. Checked before any token is created.
-      if (user.role === "admin") {
-        throw new ValidationError(ADMIN_RESET_NOT_ALLOWED, {
-          fieldErrors: { email: [ADMIN_RESET_NOT_ALLOWED] },
-        });
-      }
+      // Admin passwords are never reset by email link. Checked before any token is created,
+      // and answered like an unknown email so admin addresses cannot be found out.
+      if (user.role === "admin") return;
 
       const { token } = await createLink(user, now);
 
@@ -254,6 +267,7 @@ export const passwordResetService = createPasswordResetService({
   hashPassword,
   verifyPassword,
   sendPasswordResetEmail,
+  passwordResetCooldownStore,
   tokenTtlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
   adminCooldownSeconds: PASSWORD_RESET_ADMIN_COOLDOWN_SECONDS,
   appUrl: env.APP_URL,

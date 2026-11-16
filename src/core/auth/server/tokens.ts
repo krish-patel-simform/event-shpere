@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../../../config/env";
@@ -36,6 +36,9 @@ function signToken(
     issuer: ISSUER,
     audience: AUDIENCE,
     subject,
+    // A random id in every token. Without it, two tokens for the same session signed in the
+    // same second are identical, and a refresh would not replace the old token at all.
+    jwtid: randomUUID(),
   });
   return { token, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
 }

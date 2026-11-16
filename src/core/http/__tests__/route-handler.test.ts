@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { readAccessTokenCookie } from "../../auth/server/auth-cookies";
@@ -27,7 +28,10 @@ const mockReadAccessTokenCookie = jest.mocked(readAccessTokenCookie);
 const mockResolveCurrentUser = jest.mocked(resolveCurrentUser);
 
 /** Simulates the request's access token: none, invalid (resolves to null), or a valid user. */
-function signInAs(user: CurrentUser | null, token: string | undefined = "access-token") {
+function signInAs(
+  user: CurrentUser | null,
+  token: string | undefined = "access-token",
+) {
   mockReadAccessTokenCookie.mockResolvedValue(token);
   mockResolveCurrentUser.mockResolvedValue(user);
 }
@@ -125,6 +129,75 @@ describe("route()", () => {
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
+
+  it("logs a failed query without its values, under the same request id the client gets", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const GET = route({ auth: "public" }, async () => {
+      throw new DrizzleQueryError(
+        'insert into "users" ("email") values ($1)',
+        ["ankit@speaker.test"],
+        Object.assign(new Error("duplicate key"), {
+          code: "23505",
+          detail: "Key (email)=(ankit@speaker.test) already exists.",
+        }),
+      );
+    });
+
+    const res = await GET(get(), noParams);
+
+    expect(res.status).toBe(500);
+    expect(log).toHaveBeenCalledTimes(1);
+    const [line, described] = log.mock.calls[0];
+    // The request id in the log line is the one in the response header.
+    expect(line).toContain(`[${res.headers.get("x-request-id")}]`);
+    expect(line).toContain("GET /api/test failed");
+    // Nothing that was logged holds the user's data or the SQL.
+    const everything = JSON.stringify(log.mock.calls);
+    expect(everything).not.toContain("ankit@speaker.test");
+    expect(everything).not.toContain("insert into");
+    expect(described).toMatchObject({ dbCode: "23505" });
+    log.mockRestore();
+  });
+
+  it("a thrown value that is not an Error is a generic 500, and is not printed", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const GET = route({ auth: "public" }, async () => {
+      // Some libraries throw plain strings or objects.
+      throw "token=secret-value";
+    });
+
+    const res = await GET(get(), noParams);
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe("INTERNAL_ERROR");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("secret-value");
+    expect(log.mock.calls[0][1]).toMatchObject({ name: "NonErrorThrown" });
+    log.mockRestore();
+  });
+
+  it("logs nothing for an expected (domain) error: it is not a bug", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const GET = route({ auth: "public" }, async () => {
+      throw new NotFoundError("Organizer not found");
+    });
+
+    await GET(get(), noParams);
+
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("puts the request id in the header of an error response too", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    const GET = route({ auth: "public" }, async () => {
+      throw new Error("boom");
+    });
+
+    const res = await GET(get(), noParams);
+
+    expect(res.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+    log.mockRestore();
+  });
 });
 
 describe("route() auth", () => {
@@ -173,7 +246,10 @@ describe("route() auth", () => {
   it("with several permissions, returns 403 if any one is missing", async () => {
     signInAs(admin); // has ORGANIZER_CREATE only
     const handler = jest.fn(async () => ok(true));
-    const GET = route({ permission: ["ORGANIZER_CREATE", "ORGANIZER_VERIFY"] }, handler);
+    const GET = route(
+      { permission: ["ORGANIZER_CREATE", "ORGANIZER_VERIFY"] },
+      handler,
+    );
 
     const res = await GET(get(), noParams);
 
@@ -182,9 +258,13 @@ describe("route() auth", () => {
   });
 
   it("with several permissions, allows the user who has all of them", async () => {
-    signInAs({ ...admin, permissions: new Set(["ORGANIZER_CREATE", "ORGANIZER_VERIFY"]) });
-    const GET = route({ permission: ["ORGANIZER_CREATE", "ORGANIZER_VERIFY"] }, async () =>
-      ok(true),
+    signInAs({
+      ...admin,
+      permissions: new Set(["ORGANIZER_CREATE", "ORGANIZER_VERIFY"]),
+    });
+    const GET = route(
+      { permission: ["ORGANIZER_CREATE", "ORGANIZER_VERIFY"] },
+      async () => ok(true),
     );
 
     const res = await GET(get(), noParams);
@@ -194,8 +274,9 @@ describe("route() auth", () => {
 
   it("passes the current user to the handler when the permission is granted", async () => {
     signInAs(admin);
-    const GET = route({ permission: ["ORGANIZER_CREATE"] }, async ({ currentUser }) =>
-      ok({ id: currentUser.id }),
+    const GET = route(
+      { permission: ["ORGANIZER_CREATE"] },
+      async ({ currentUser }) => ok({ id: currentUser.id }),
     );
 
     const res = await GET(get(), noParams);
@@ -207,8 +288,14 @@ describe("route() auth", () => {
   it("blocks a cross-site POST (CSRF) but allows same-origin and no-Origin requests", async () => {
     const POST = route({ auth: "public" }, async () => ok(true));
 
-    const crossSite = await POST(post("{}", { origin: "https://evil.example" }), noParams);
-    const sameSite = await POST(post("{}", { origin: "http://localhost" }), noParams);
+    const crossSite = await POST(
+      post("{}", { origin: "https://evil.example" }),
+      noParams,
+    );
+    const sameSite = await POST(
+      post("{}", { origin: "http://localhost" }),
+      noParams,
+    );
     const postman = await POST(post("{}"), noParams);
 
     expect(crossSite.status).toBe(403);
@@ -248,7 +335,9 @@ describe("parseBody()", () => {
 
 describe("parseQuery()", () => {
   it("coerces query strings with the schema", async () => {
-    const schema = z.object({ page: z.coerce.number().int().min(1).default(1) });
+    const schema = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+    });
     const GET = route({ auth: "public" }, async ({ req }) =>
       ok(parseQuery(req, schema)),
     );

@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { PageMeta } from "../../../core/api-client/base-api.service";
+import type { HallAvailabilityRequest } from "../schemas/hall-availability.schemas";
 import type {
   VenueDetailDto,
   VenueListItemDto,
@@ -17,6 +18,9 @@ export const venueQueryKeys = {
     ["venues", "browse", "list", params] as const,
   browseDetail: (venueId: string) =>
     ["venues", "browse", "detail", venueId] as const,
+  // Which halls are free for a time range: one entry per venue and range.
+  hallAvailability: (venueId: string, range: HallAvailabilityRequest) =>
+    ["venues", "hall-availability", venueId, range] as const,
 };
 
 /**
@@ -42,6 +46,18 @@ export function applyVenueUpdate(
   venue: VenueDetailDto,
 ) {
   queryClient.setQueryData(venueQueryKeys.detail(venue.id), venue);
+  return queryClient.invalidateQueries({ queryKey: venueQueryKeys.lists });
+}
+
+/**
+ * After a delete the venue is gone: drop its detail entry (so nothing can show it again, and the
+ * page that was showing it does not refetch a 404) and reload the lists.
+ */
+export function removeVenueFromCache(
+  queryClient: QueryClient,
+  venueId: string,
+) {
+  queryClient.removeQueries({ queryKey: venueQueryKeys.detail(venueId) });
   return queryClient.invalidateQueries({ queryKey: venueQueryKeys.lists });
 }
 

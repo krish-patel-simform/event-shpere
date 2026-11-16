@@ -70,7 +70,7 @@ function DeleteHallBody({
           <Alert tone="warning">
             Sessions are scheduled in this hall, so it cannot be deleted.
             Deactivate it instead: it keeps its history and takes no new
-            sessions.
+            sessions. That works once its sessions are over or cancelled.
           </Alert>
         )}
         {deactivate.isError && (

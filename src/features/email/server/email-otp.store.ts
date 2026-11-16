@@ -1,13 +1,18 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { getRedis } from "../../../core/redis/redis";
-import { EMAIL_OTP_MAX_ATTEMPTS, EMAIL_OTP_TTL_MINUTES } from "../constants";
+import {
+  EMAIL_OTP_MAX_ATTEMPTS,
+  EMAIL_OTP_RESEND_COOLDOWN_SECONDS,
+  EMAIL_OTP_TTL_MINUTES,
+} from "../constants";
 
-// One set of keys per (lowercase) email. Verify-email and resend add the attempts counter
-// and the resend cooldown under the same prefix.
+// One set of keys per (lowercase) email: the code, the wrong-attempts counter (verify-email)
+// and the resend cooldown (resend), all under the same prefix.
 const KEY_PREFIX = "otp:email-verify";
 const otpKey = (email: string) => `${KEY_PREFIX}:${email}`;
 const attemptsKey = (email: string) => `${KEY_PREFIX}:attempts:${email}`;
+const cooldownKey = (email: string) => `${KEY_PREFIX}:cooldown:${email}`;
 
 // Constant-time compare: `===` stops at the first different character, and that timing
 // difference can leak how much of a guess was right.
@@ -27,6 +32,23 @@ export const emailOtpStore = {
     const redis = getRedis();
     await redis.set(otpKey(email), otpHash, "EX", EMAIL_OTP_TTL_MINUTES * 60);
     await redis.del(attemptsKey(email));
+  },
+
+  /**
+   * Asks to send a resend email now. True = go ahead, and the cooldown starts; false = one was
+   * sent less than EMAIL_OTP_RESEND_COOLDOWN_SECONDS ago. SET ... NX only writes when the key
+   * does not exist, in one step, so two requests at the same moment cannot both get true.
+   * Redis deletes the key at the end of the cooldown.
+   */
+  async claimResend(email: string): Promise<boolean> {
+    const set = await getRedis().set(
+      cooldownKey(email),
+      "1",
+      "EX",
+      EMAIL_OTP_RESEND_COOLDOWN_SECONDS,
+      "NX",
+    );
+    return set === "OK";
   },
 
   /**

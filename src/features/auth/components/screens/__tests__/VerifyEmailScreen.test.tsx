@@ -177,8 +177,21 @@ describe("VerifyEmailScreen", () => {
       name: "This link is invalid or has expired",
     });
 
+  // The emailed link carries the token in the URL fragment: open it the way the user does.
+  function renderScreen(
+    token: string | null = "abc",
+    store?: ReturnType<typeof makeStore>,
+  ) {
+    window.history.replaceState(
+      null,
+      "",
+      token ? `/verify-email#token=${token}` : "/verify-email",
+    );
+    renderWithStoreAndQuery(<VerifyEmailScreen />, store);
+  }
+
   it("without a token: shows the invalid-link state and no form", () => {
-    renderWithStoreAndQuery(<VerifyEmailScreen token={null} />);
+    renderScreen(null);
 
     expect(invalidLinkHeading()).toBeInTheDocument();
     expect(
@@ -191,10 +204,17 @@ describe("VerifyEmailScreen", () => {
   });
 
   it("with a token: shows the code form", () => {
-    renderWithStoreAndQuery(<VerifyEmailScreen token="abc" />);
+    renderScreen("abc");
     expect(
       screen.getByRole("heading", { name: "Verify your email" }),
     ).toBeInTheDocument();
+  });
+
+  it("removes the token from the address bar once it has read it", () => {
+    renderScreen("abc");
+
+    expect(window.location.hash).toBe("");
+    expect(window.location.pathname).toBe("/verify-email");
   });
 
   it("after a good code: shows 'Email verified' and forgets the stored email", async () => {
@@ -206,7 +226,7 @@ describe("VerifyEmailScreen", () => {
         expiresInMinutes: 5,
       }),
     );
-    renderWithStoreAndQuery(<VerifyEmailScreen token="abc" />, store);
+    renderScreen("abc", store);
 
     await userEvent.type(code(), "482913");
     await submit();
@@ -236,7 +256,7 @@ describe("VerifyEmailScreen", () => {
         expiresInMinutes: 5,
       }),
     );
-    renderWithStoreAndQuery(<VerifyEmailScreen token="abc" />, store);
+    renderScreen("abc", store);
 
     await userEvent.type(code(), "000000");
     await submit();
@@ -256,7 +276,7 @@ describe("VerifyEmailScreen", () => {
         token: ["This link is invalid or has expired"],
       }),
     );
-    renderWithStoreAndQuery(<VerifyEmailScreen token="abc" />);
+    renderScreen("abc");
 
     await userEvent.type(code(), "482913");
     await submit();

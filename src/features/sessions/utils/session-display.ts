@@ -105,12 +105,8 @@ export function daysUntil(iso: string, now: string): number {
   return Math.max(0, Math.ceil(ms / 86_400_000));
 }
 
-/** "1.8 MB" */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// Shared with the events feature's image uploads: one implementation in core.
+export { formatFileSize } from "@/src/core/format/format-file-size";
 
 //* Registrations
 
@@ -220,9 +216,14 @@ export function isFiltering(filters: SessionFilters): boolean {
   );
 }
 
-/** The event names in the data, for the Event select. */
+/**
+ * The event names in the data, for the Event select. Alphabetical as a person reads it
+ * (localeCompare): a plain sort() would put "apple" after "Zebra" and "École" last.
+ */
 export function eventNames(sessions: readonly SessionItem[]): string[] {
-  return [...new Set(sessions.map((session) => session.eventName))].sort();
+  return [...new Set(sessions.map((session) => session.eventName))].sort(
+    (a, b) => a.localeCompare(b),
+  );
 }
 
 function matchesSearch(session: SessionItem, search: string): boolean {

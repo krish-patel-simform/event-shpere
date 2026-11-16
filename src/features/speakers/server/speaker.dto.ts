@@ -87,27 +87,37 @@ function toSummary(row: SpeakerRow, cms: CmsSpeaker) {
   };
 }
 
-// Public: name from Postgres, the rest from the CMS. No email, status or ids.
+// Public: name from Postgres, the rest from the CMS. No email or status. The profile id is the
+// one id shown (the same one a session's speakers carry): an organizer picks speakers by it.
+//
+// `includeAccount` is true only for someone who manages every speaker: then the account's state
+// is added, so an admin's screen can offer "Resend invite" to a pending speaker only. For anyone
+// else the key is not there at all.
 export function toSpeakerListItemDto(
   row: SpeakerRow,
   cms: CmsSpeaker | null,
+  includeAccount = false,
 ): SpeakerListItemDto {
   return {
+    id: row.id,
     slug: row.slug,
     firstName: row.firstName,
     lastName: row.lastName,
     profile: cms ? { ...toSummary(row, cms), expertise: cms.expertise } : null,
+    ...(includeAccount ? { accountStatus: row.status } : {}),
   };
 }
 
 export function toSpeakerProfileDto(
   row: SpeakerRow,
   cms: CmsSpeaker | null,
+  includeAccount = false,
 ): SpeakerProfileDto {
   return {
     slug: row.slug,
     firstName: row.firstName,
     lastName: row.lastName,
+    ...(includeAccount ? { accountStatus: row.status } : {}),
     profile: cms
       ? {
           ...toSummary(row, cms),

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Badge, buttonStyles } from "@/src/core/ui";
 import { ACCOUNT_SETUP_TOKEN_TTL_HOURS } from "../../constants";
+import { useFragmentToken } from "../../hooks/useFragmentToken";
 import { AUTH_ROUTES } from "../../routes";
 import { SetPasswordForm } from "../forms/SetPasswordForm";
 import { InviteBenefits } from "../preview/InviteBenefits";
@@ -16,12 +17,16 @@ import { StatusPanel } from "../states/StatusPanel";
 type Phase = "form" | "done" | "invalid";
 
 /**
- * Opened from the invitation email (/set-password?token=...): set the first password, then log in.
- * Without a token the link is already known to be bad; a token the server rejects ends in the
- * same "expired" state.
+ * Opened from the invitation email (/set-password#token=...): set the first password, then log in.
+ * The token is in the URL fragment, which only the browser can read. Without a token the link
+ * is already known to be bad; a token the server rejects ends in the same "expired" state.
  */
-export function SetPasswordScreen({ token }: { token: string | null }) {
+export function SetPasswordScreen() {
+  const { token, ready } = useFragmentToken();
   const [phase, setPhase] = useState<Phase>("form");
+
+  // Until the browser has read the fragment, nothing is known: show nothing, not "expired".
+  if (!ready) return null;
 
   return (
     <AuthShell
@@ -33,7 +38,11 @@ export function SetPasswordScreen({ token }: { token: string | null }) {
           <InviteBenefits />
         </BrandPanel>
       }
-      headerLink={{ prompt: "Already activated?", label: "Log in", href: AUTH_ROUTES.login }}
+      headerLink={{
+        prompt: "Already activated?",
+        label: "Log in",
+        href: AUTH_ROUTES.login,
+      }}
       supportPrompt="Didn't expect this invitation?"
     >
       {token === null || phase === "invalid" ? (
@@ -42,13 +51,16 @@ export function SetPasswordScreen({ token }: { token: string | null }) {
           tone="danger"
           title="This invitation link has expired"
           actions={
-            <Link href={AUTH_ROUTES.login} className={buttonStyles({ variant: "secondary" })}>
+            <Link
+              href={AUTH_ROUTES.login}
+              className={buttonStyles({ variant: "secondary" })}
+            >
               Back to log in
             </Link>
           }
         >
-          Invitation links are valid for {ACCOUNT_SETUP_TOKEN_TTL_HOURS} hours. Ask your
-          administrator to send a new one.
+          Invitation links are valid for {ACCOUNT_SETUP_TOKEN_TTL_HOURS} hours.
+          Ask your administrator to send a new one.
         </StatusPanel>
       ) : phase === "done" ? (
         <StatusPanel
@@ -56,12 +68,16 @@ export function SetPasswordScreen({ token }: { token: string | null }) {
           tone="success"
           title="Account activated"
           actions={
-            <Link href={AUTH_ROUTES.login} className={buttonStyles({ fullWidth: true })}>
+            <Link
+              href={AUTH_ROUTES.login}
+              className={buttonStyles({ fullWidth: true })}
+            >
               Go to log in
             </Link>
           }
         >
-          Your password is set. You can now log in with your email address and new password.
+          Your password is set. You can now log in with your email address and
+          new password.
         </StatusPanel>
       ) : (
         <>

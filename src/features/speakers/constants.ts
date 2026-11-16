@@ -11,6 +11,12 @@ export type SpeakerPhotoType = (typeof SPEAKER_PHOTO_TYPES)[number];
 export const SPEAKER_PHOTO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
 /**
+ * One inviter may add at most this many speakers per day. Each one sends an email to an
+ * address the inviter types, so this protects the Resend quota and the sender reputation.
+ */
+export const SPEAKER_INVITE_MAX_PER_DAY = 30;
+
+/**
  * Name of the file field in the multipart form. The body is streamed to Strapi as-is, and
  * Strapi's upload API reads its files from a field called "files".
  */

@@ -46,7 +46,12 @@ export async function sendEmail(
   );
 
   if (error) {
-    throw new Error(`Resend failed (${error.name}): ${error.message}`);
+    // The kind of failure (a fixed code from Resend) and the HTTP status, never `error.message`:
+    // that is Resend's own text, and it can repeat the address, the subject or the sender. This
+    // message is logged by the callers, so it must stay free of user data.
+    throw new Error(
+      `Resend failed (${error.name}, HTTP ${error.statusCode ?? "unknown"})`,
+    );
   }
 }
 

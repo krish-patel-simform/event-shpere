@@ -12,13 +12,19 @@ jest.mock("../../../api/auth-api.service", () => ({
 }));
 const completeAccountSetup = jest.mocked(authApiService.completeAccountSetup);
 
+// The emailed link carries the token in the URL fragment: open it the way the user does.
 function renderScreen(token: string | null = "tok123") {
+  window.history.replaceState(
+    null,
+    "",
+    token ? `/set-password#token=${token}` : "/set-password",
+  );
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
-      <SetPasswordScreen token={token} />
+      <SetPasswordScreen />
     </QueryClientProvider>,
   );
 }
@@ -47,6 +53,13 @@ describe("SetPasswordScreen", () => {
     expect(
       screen.getByRole("link", { name: "Back to log in" }),
     ).toHaveAttribute("href", "/login");
+  });
+
+  it("removes the token from the address bar once it has read it", () => {
+    renderScreen("tok123");
+
+    expect(window.location.hash).toBe("");
+    expect(window.location.pathname).toBe("/set-password");
   });
 
   it("shows the invitation notice and the form", () => {

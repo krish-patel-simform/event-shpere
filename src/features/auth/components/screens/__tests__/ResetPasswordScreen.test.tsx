@@ -12,13 +12,19 @@ jest.mock("../../../api/auth-api.service", () => ({
 }));
 const resetPassword = jest.mocked(authApiService.resetPassword);
 
+// The emailed link carries the token in the URL fragment: open it the way the user does.
 function renderScreen(token: string | null = "tok123") {
+  window.history.replaceState(
+    null,
+    "",
+    token ? `/reset-password#token=${token}` : "/reset-password",
+  );
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
-      <ResetPasswordScreen token={token} />
+      <ResetPasswordScreen />
     </QueryClientProvider>,
   );
 }

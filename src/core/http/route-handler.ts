@@ -7,6 +7,7 @@ import {
 import type { CurrentUser } from "../auth/server/auth-session";
 import { AppError, ForbiddenError } from "./errors";
 import { errorResponse } from "./response";
+import { describeError } from "./safe-error";
 
 /**
  * Who may call the route. Required on every route, so forgetting it is a compile error
@@ -113,11 +114,14 @@ function toErrorResponse(
     });
   }
 
-  // Unexpected: a bug or an outage. Log the real error, return a generic message so no
-  // stack trace or SQL ever reaches the client. (Sentry reporting is added with MON-*.)
+  // Unexpected: a bug or an outage. Return a generic message so no stack trace or SQL ever
+  // reaches the client. The log gets what kind of error and where, never the raw error: a
+  // database error carries the query and its values (emails, names). Search the logs by the
+  // request id, which is also the x-request-id response header. (Sentry reporting is added
+  // with MON-*; send describeError(error) there too, not the raw error.)
   console.error(
     `[${requestId}] ${req.method} ${req.nextUrl.pathname} failed:`,
-    error,
+    describeError(error),
   );
   return errorResponse(500, {
     code: "INTERNAL_ERROR",

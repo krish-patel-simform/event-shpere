@@ -218,7 +218,7 @@ describe("organizerService.createOrganizer", () => {
       to: "olga@acme.test",
       firstName: "Olga",
       passwordSetupUrl:
-        "http://localhost:3000/set-password?token=raw-token%2Fwith%2Bchars",
+        "http://localhost:3000/set-password#token=raw-token%2Fwith%2Bchars",
       loginUrl: "http://localhost:3000/login",
       expiresInHours: 24,
     });
@@ -1175,8 +1175,15 @@ describe("organizerService.getOwnApplication", () => {
 describe("organizerService.assertVerifiedOrganizer", () => {
   const organizer = { id: user.id, role: "organizer" as const };
 
+  // What events.organizer_id holds: the organizer PROFILE's id, not the user's.
+  const profileId = "b7e1c0a4-9d3f-4c52-8a61-2f0e5d4c3b21";
+
   function setupVerification(
-    profileRow: { verifiedAt: Date | null; rejectedAt: Date | null } | null,
+    profileRow: {
+      id?: string;
+      verifiedAt: Date | null;
+      rejectedAt: Date | null;
+    } | null,
   ) {
     return setup({
       organizerRepository: {
@@ -1186,7 +1193,9 @@ describe("organizerService.assertVerifiedOrganizer", () => {
         findForVerify: jest.fn(),
         findInviteeById: jest.fn(),
         deleteUnverifiedOrganizer: jest.fn(),
-        findVerificationByUserId: jest.fn().mockResolvedValue(profileRow),
+        findVerificationByUserId: jest
+          .fn()
+          .mockResolvedValue(profileRow && { id: profileId, ...profileRow }),
         rejectPendingOrganizer: jest.fn(),
         reopenRejectedOrganizer: jest.fn(),
         findApplicationByUserId: jest.fn(),
@@ -1195,15 +1204,16 @@ describe("organizerService.assertVerifiedOrganizer", () => {
     });
   }
 
-  it("lets an approved organizer through", async () => {
+  it("lets an approved organizer through and returns their profile id, not their user id", async () => {
     const { deps, service } = setupVerification({
       verifiedAt: verifiedRow.verifiedAt,
       rejectedAt: null,
     });
 
-    await expect(
-      service.assertVerifiedOrganizer(organizer),
-    ).resolves.toBeUndefined();
+    await expect(service.assertVerifiedOrganizer(organizer)).resolves.toBe(
+      profileId,
+    );
+    expect(profileId).not.toBe(user.id);
     expect(
       deps.organizerRepository.findVerificationByUserId,
     ).toHaveBeenCalledWith(user.id);
@@ -1245,12 +1255,12 @@ describe("organizerService.assertVerifiedOrganizer", () => {
     ).rejects.toMatchObject({ code: "ORGANIZER_NOT_VERIFIED" });
   });
 
-  it("never blocks an admin, and does not even look them up", async () => {
+  it("never blocks an admin and returns no profile id (an admin has none), without a lookup", async () => {
     const { deps, service } = setupVerification(null);
 
     await expect(
       service.assertVerifiedOrganizer({ id: user.id, role: "admin" }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
     expect(
       deps.organizerRepository.findVerificationByUserId,
     ).not.toHaveBeenCalled();

@@ -78,10 +78,6 @@ export function UserSignupForm() {
         router.push(AUTH_ROUTES.checkEmail);
       },
       onError: (error) => {
-        // Taken email: pin it to the field. Keep every value so the user can fix just that.
-        if (error.code === "EMAIL_TAKEN") {
-          return setError("email", { message: error.message });
-        }
         for (const field of FIELDS) {
           const message = error.fieldErrors[field]?.[0];
           if (message) setError(field, { message });
@@ -91,9 +87,7 @@ export function UserSignupForm() {
   });
   const { isPending, error } = userSignup;
   // Errors pinned to a field show under it; everything else (network, 5xx, rate limit) here.
-  const isFieldError =
-    error?.code === "EMAIL_TAKEN" ||
-    FIELDS.some((field) => error?.fieldErrors[field]);
+  const isFieldError = FIELDS.some((field) => error?.fieldErrors[field]);
 
   return (
     <FormProvider {...methods}>

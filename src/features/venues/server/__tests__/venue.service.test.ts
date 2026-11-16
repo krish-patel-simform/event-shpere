@@ -1,11 +1,12 @@
 import { ConflictError, NotFoundError } from "../../../../core/http/errors";
-import type { Hall, Venue } from "../../../../db/schemas";
+import type { Hall } from "../../../../db/schemas";
 import {
   createVenueBodySchema,
   createVenueResponseSchema,
   venueListQuerySchema,
   venueListResponseSchema,
 } from "../../schemas/venue.schemas";
+import type { VenueWithState } from "../venue.repository";
 import { createVenueService, type VenueServiceDeps } from "../venue.service";
 
 // Empty factory: the DB client and env are never loaded.
@@ -15,10 +16,13 @@ const createdAt = new Date("2026-10-30T10:00:00.000Z");
 const adminId = "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d";
 const admin = { id: adminId };
 
+const gujaratId = "3b7c2d1e-6f5a-4e8d-9a0b-1c2d3e4f5a6b";
+
 const body = createVenueBodySchema.parse({
   name: "GIFT City Convention Centre",
   addressLine: "Block 12, Zone 1, GIFT City",
   city: "Gandhinagar",
+  state: "Gujarat",
   latitude: 23.16,
   longitude: 72.68,
   halls: [
@@ -27,12 +31,13 @@ const body = createVenueBodySchema.parse({
   ],
 });
 
-const venueRow: Venue = {
+const venueRow: VenueWithState = {
   id: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
   name: "GIFT City Convention Centre",
   addressLine: "Block 12, Zone 1, GIFT City",
   city: "Gandhinagar",
-  state: null,
+  stateId: gujaratId,
+  stateName: "Gujarat",
   postalCode: null,
   country: "IN",
   timezone: "Asia/Kolkata",
@@ -71,6 +76,9 @@ function makeService(
     addHall?: jest.Mock;
     deleteHall?: jest.Mock;
     listVenues?: jest.Mock;
+    updateVenue?: jest.Mock;
+    updateHall?: jest.Mock;
+    deleteVenue?: jest.Mock;
   } = {},
 ) {
   const deps: VenueServiceDeps = {
@@ -83,6 +91,9 @@ function makeService(
       getHallById: extra.getHallById ?? jest.fn(),
       setVenueActive: extra.setVenueActive ?? jest.fn(),
       setHallsActive: extra.setHallsActive ?? jest.fn(),
+      updateVenue: extra.updateVenue ?? jest.fn(),
+      updateHall: extra.updateHall ?? jest.fn(),
+      deleteVenue: extra.deleteVenue ?? jest.fn(),
     },
   };
   return createVenueService(deps);
@@ -119,6 +130,35 @@ describe("venueService.createVenue", () => {
 
     expect(dto).not.toHaveProperty("createdBy");
     expect(dto).not.toHaveProperty("updatedAt");
+    expect(dto).not.toHaveProperty("stateId");
+  });
+
+  it("returns the state's name, and null for an old venue with no state", async () => {
+    const withState = jest
+      .fn()
+      .mockResolvedValue({ ok: true, venue: venueRow, halls: [] });
+    const withoutState = jest.fn().mockResolvedValue({
+      ok: true,
+      venue: { ...venueRow, stateId: null, stateName: null },
+      halls: [],
+    });
+
+    expect((await makeService(withState).createVenue(body, admin)).state).toBe(
+      "Gujarat",
+    );
+    expect(
+      (await makeService(withoutState).createVenue(body, admin)).state,
+    ).toBeNull();
+  });
+
+  it("answers 404 when the chosen state does not exist", async () => {
+    const createVenue = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "STATE_NOT_FOUND" });
+
+    await expect(
+      makeService(createVenue).createVenue(body, admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("returns null coordinates when the venue has no map pin", async () => {
@@ -162,6 +202,7 @@ const hallB = "b0000000-0000-4000-8000-000000000002";
 describe("venueService.setVenueStatus", () => {
   it("passes the hall choice to the repository and returns the venue with its halls", async () => {
     const setVenueActive = jest.fn().mockResolvedValue({
+      ok: true,
       venue: venueRow,
       halls: [
         hallRow(hallA, "Hall A", 200, 0),
@@ -180,13 +221,55 @@ describe("venueService.setVenueStatus", () => {
   });
 
   it("is a 404 when the venue does not exist", async () => {
-    const setVenueActive = jest.fn().mockResolvedValue(null);
+    const setVenueActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "VENUE_NOT_FOUND" });
 
     const error = await makeService(undefined, { setVenueActive })
       .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(NotFoundError);
+  });
+
+  it("is a 409 VENUE_HAS_SESSIONS naming the halls that still have sessions", async () => {
+    const busy = [
+      { id: hallA, name: "Hall A" },
+      { id: hallB, name: "Hall B" },
+    ];
+    const setVenueActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "HALLS_IN_USE", halls: busy });
+
+    const error = await makeService(undefined, { setVenueActive })
+      .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "VENUE_HAS_SESSIONS",
+      details: { halls: busy },
+    });
+    expect((error as Error).message).toContain(
+      "Hall A, Hall B have sessions that are not over yet",
+    );
+  });
+
+  it("says 'has' for a single busy hall", async () => {
+    const setVenueActive = jest.fn().mockResolvedValue({
+      ok: false,
+      reason: "HALLS_IN_USE",
+      halls: [{ id: hallA, name: "Hall A" }],
+    });
+
+    const error = await makeService(undefined, { setVenueActive })
+      .setVenueStatus(venueRow.id, { isActive: false, activateHalls: "none" })
+      .catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain(
+      "Hall A has sessions that are not over yet",
+    );
   });
 });
 
@@ -237,6 +320,28 @@ describe("venueService.setHallsStatus", () => {
       expect(error).toMatchObject({ status });
     },
   );
+
+  it("is a 409 HALL_HAS_SESSIONS naming the halls that cannot be turned off", async () => {
+    const busy = [{ id: hallA, name: "Hall A" }];
+    const setHallsActive = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "HALLS_IN_USE", halls: busy });
+
+    const error = await makeService(undefined, { setHallsActive })
+      .setHallsStatus(venueRow.id, { isActive: false, halls: [hallA, hallB] })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "HALL_HAS_SESSIONS",
+      details: { halls: busy },
+    });
+    expect((error as Error).message).toContain("Nothing was deactivated");
+    expect((error as Error).message).toContain(
+      "Hall A has sessions that are not over yet",
+    );
+  });
 });
 
 describe("venueService.addHall", () => {
@@ -318,6 +423,211 @@ describe("venueService.deleteHall", () => {
   );
 });
 
+describe("venueService.updateVenue", () => {
+  it("passes the body on and returns the venue with its halls", async () => {
+    const updateVenue = jest.fn().mockResolvedValue({
+      ok: true,
+      venue: { ...venueRow, name: "GIFT City Hall" },
+      halls: [hallRow(hallA, "Hall A", 200, 0)],
+    });
+
+    const dto = await makeService(undefined, { updateVenue }).updateVenue(
+      venueRow.id,
+      { name: "GIFT City Hall" },
+    );
+
+    expect(updateVenue).toHaveBeenCalledWith(venueRow.id, {
+      name: "GIFT City Hall",
+    });
+    expect(dto.name).toBe("GIFT City Hall");
+    expect(dto.halls.map((hall) => hall.id)).toEqual([hallA]);
+    expect(dto).not.toHaveProperty("createdBy");
+  });
+
+  it.each([
+    ["VENUE_NOT_FOUND", NotFoundError, 404, undefined],
+    ["STATE_NOT_FOUND", NotFoundError, 404, undefined],
+    ["VENUE_EXISTS", ConflictError, 409, "VENUE_EXISTS"],
+  ] as const)(
+    "maps %s to its HTTP error",
+    async (reason, errorClass, status, code) => {
+      const updateVenue = jest.fn().mockResolvedValue({ ok: false, reason });
+
+      const error = await makeService(undefined, { updateVenue })
+        .updateVenue(venueRow.id, { city: "Surat" })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(errorClass);
+      expect(error).toMatchObject(code ? { status, code } : { status });
+    },
+  );
+});
+
+describe("venueService.updateHall", () => {
+  it("passes the body on and returns the venue with its halls", async () => {
+    const updateHall = jest.fn().mockResolvedValue({
+      ok: true,
+      venue: venueRow,
+      halls: [hallRow(hallA, "Main Hall", 300, 0)],
+    });
+
+    const dto = await makeService(undefined, { updateHall }).updateHall(
+      venueRow.id,
+      hallA,
+      { name: "Main Hall", capacity: 300 },
+    );
+
+    expect(updateHall).toHaveBeenCalledWith(venueRow.id, hallA, {
+      name: "Main Hall",
+      capacity: 300,
+    });
+    expect(dto.halls[0]).toMatchObject({ name: "Main Hall", capacity: 300 });
+  });
+
+  it.each([
+    ["VENUE_NOT_FOUND", NotFoundError, 404, undefined],
+    ["HALL_NOT_FOUND", NotFoundError, 404, undefined],
+    ["HALL_EXISTS", ConflictError, 409, "HALL_EXISTS"],
+  ] as const)(
+    "maps %s to its HTTP error",
+    async (reason, errorClass, status, code) => {
+      const updateHall = jest.fn().mockResolvedValue({ ok: false, reason });
+
+      const error = await makeService(undefined, { updateHall })
+        .updateHall(venueRow.id, hallA, { name: "Hall B" })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(errorClass);
+      expect(error).toMatchObject(code ? { status, code } : { status });
+    },
+  );
+
+  describe("a hall that sessions not over yet still use", () => {
+    const session = (
+      title: string,
+      eventTitle: string,
+      startAt: Date | null,
+    ) => ({
+      title,
+      eventTitle,
+      startAt,
+    });
+    const refuse = async (
+      sessions: ReturnType<typeof session>[],
+      body: { name?: string; capacity?: number } = { capacity: 10 },
+    ) => {
+      const updateHall = jest
+        .fn()
+        .mockResolvedValue({
+          ok: false,
+          reason: "HALL_HAS_SESSIONS",
+          sessions,
+        });
+      return makeService(undefined, { updateHall })
+        .updateHall(venueRow.id, hallA, body)
+        .catch((e: unknown) => e);
+    };
+
+    it("refuses the edit with a 409 that names the session and its event", async () => {
+      const error = await refuse([
+        session(
+          "Design Tokens at Scale",
+          "Design Systems Day",
+          new Date("2026-11-14T05:30:00.000Z"),
+        ),
+      ]);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ status: 409, code: "HALL_HAS_SESSIONS" });
+      expect((error as ConflictError).message).toContain(
+        '"Design Tokens at Scale" (Design Systems Day)',
+      );
+      expect((error as ConflictError).message).toMatch(/Move or cancel them/);
+    });
+
+    it("refuses a rename the same way as a seat change", async () => {
+      const error = await refuse([session("Talk", "Summit", null)], {
+        name: "Grand Hall",
+      });
+
+      expect(error).toMatchObject({ status: 409, code: "HALL_HAS_SESSIONS" });
+    });
+
+    it("gives the sessions in the error details, with the start as an ISO time", async () => {
+      const error = await refuse([
+        session("Talk", "Summit", new Date("2026-11-14T05:30:00.000Z")),
+        session("Draft talk", "Summit", null),
+      ]);
+
+      expect(error).toMatchObject({
+        details: {
+          sessions: [
+            {
+              title: "Talk",
+              eventTitle: "Summit",
+              startAt: "2026-11-14T05:30:00.000Z",
+            },
+            { title: "Draft talk", eventTitle: "Summit", startAt: null },
+          ],
+        },
+      });
+    });
+
+    it("names the first three and says 'and more' when there are more", async () => {
+      const four = ["A", "B", "C", "D"].map((title) =>
+        session(title, "Summit", null),
+      );
+
+      const message = ((await refuse(four)) as ConflictError).message;
+
+      expect(message).toContain('"C" (Summit) and more');
+      expect(message).not.toContain('"D"');
+      const three = ((await refuse(four.slice(0, 3))) as ConflictError).message;
+      expect(three).not.toContain("and more");
+    });
+  });
+});
+
+describe("venueService.deleteVenue", () => {
+  it("deletes a venue that was never used", async () => {
+    const deleteVenue = jest.fn().mockResolvedValue({ ok: true });
+
+    await expect(
+      makeService(undefined, { deleteVenue }).deleteVenue(venueRow.id),
+    ).resolves.toBeUndefined();
+    expect(deleteVenue).toHaveBeenCalledWith(venueRow.id);
+  });
+
+  it.each([
+    ["VENUE_NOT_FOUND", NotFoundError, 404, undefined],
+    ["VENUE_IN_USE", ConflictError, 409, "VENUE_IN_USE"],
+  ] as const)(
+    "maps %s to its HTTP error",
+    async (reason, errorClass, status, code) => {
+      const deleteVenue = jest.fn().mockResolvedValue({ ok: false, reason });
+
+      const error = await makeService(undefined, { deleteVenue })
+        .deleteVenue(venueRow.id)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(errorClass);
+      expect(error).toMatchObject(code ? { status, code } : { status });
+    },
+  );
+
+  it("tells the admin to deactivate a venue that is in use", async () => {
+    const deleteVenue = jest
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "VENUE_IN_USE" });
+
+    const error = await makeService(undefined, { deleteVenue })
+      .deleteVenue(venueRow.id)
+      .catch((e: unknown) => e);
+
+    expect((error as ConflictError).message).toMatch(/deactivate/i);
+  });
+});
+
 describe("venueService.listVenues", () => {
   const guest = { canManage: false };
   const manager = { canManage: true };
@@ -327,7 +637,7 @@ describe("venueService.listVenues", () => {
     name: venueRow.name,
     addressLine: venueRow.addressLine,
     city: venueRow.city,
-    state: venueRow.state,
+    state: venueRow.stateName,
     country: venueRow.country,
     timezone: venueRow.timezone,
     isActive: true,
@@ -377,6 +687,36 @@ describe("venueService.listVenues", () => {
       limit: 10,
       offset: 0,
     });
+  });
+
+  it("passes the state name on to the repository, for guests too", async () => {
+    const listVenues = jest.fn().mockResolvedValue({ rows: [], total: 0 });
+    const service = makeService(undefined, { listVenues });
+
+    await service.listVenues({ ...query, state: "Gujarat" }, guest);
+    await service.listVenues({ ...query, state: "Gujarat" }, manager);
+
+    expect(listVenues).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ state: "Gujarat", status: "active" }),
+    );
+    expect(listVenues).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ state: "Gujarat" }),
+    );
+  });
+
+  it("treats a blank state as no state filter", async () => {
+    const listVenues = jest.fn().mockResolvedValue({ rows: [], total: 0 });
+
+    await makeService(undefined, { listVenues }).listVenues(
+      { ...query, state: "" },
+      manager,
+    );
+
+    expect(listVenues).toHaveBeenCalledWith(
+      expect.objectContaining({ state: undefined }),
+    );
   });
 
   it("treats a blank search as no search", async () => {

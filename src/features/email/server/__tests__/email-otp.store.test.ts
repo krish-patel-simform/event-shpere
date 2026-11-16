@@ -1,4 +1,8 @@
-import { EMAIL_OTP_MAX_ATTEMPTS, EMAIL_OTP_TTL_MINUTES } from "../../constants";
+import {
+  EMAIL_OTP_MAX_ATTEMPTS,
+  EMAIL_OTP_RESEND_COOLDOWN_SECONDS,
+  EMAIL_OTP_TTL_MINUTES,
+} from "../../constants";
 import { emailOtpStore } from "../email-otp.store";
 
 // A tiny in-memory stand-in for the Redis commands the store uses, so the tests need no server.
@@ -6,7 +10,15 @@ const mockData = new Map<string, string>();
 const mockTtls = new Map<string, number>();
 const mockRedis = {
   set: jest.fn(
-    async (key: string, value: string, _mode: "EX", seconds: number) => {
+    async (
+      key: string,
+      value: string,
+      _mode: "EX",
+      seconds: number,
+      only?: "NX",
+    ) => {
+      // Like Redis: with NX nothing is written when the key already exists, and the answer is null.
+      if (only === "NX" && mockData.has(key)) return null;
       mockData.set(key, value);
       mockTtls.set(key, seconds);
       return "OK";
@@ -68,6 +80,57 @@ describe("emailOtpStore.save", () => {
 
     await emailOtpStore.save(email, RIGHT);
 
+    expect(mockData.has(attemptsKey)).toBe(false);
+  });
+});
+
+describe("emailOtpStore.claimResend", () => {
+  const cooldownKey = `otp:email-verify:cooldown:${email}`;
+
+  it("lets the first resend through and starts the cooldown", async () => {
+    expect(await emailOtpStore.claimResend(email)).toBe(true);
+
+    expect(mockData.has(cooldownKey)).toBe(true);
+    expect(mockTtls.get(cooldownKey)).toBe(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
+  });
+
+  it("refuses a second resend while the cooldown runs", async () => {
+    await emailOtpStore.claimResend(email);
+
+    expect(await emailOtpStore.claimResend(email)).toBe(false);
+  });
+
+  it("does not restart the cooldown when it refuses (no extending it by hammering)", async () => {
+    await emailOtpStore.claimResend(email);
+    mockTtls.set(cooldownKey, 12); // some seconds have passed
+
+    await emailOtpStore.claimResend(email);
+
+    expect(mockTtls.get(cooldownKey)).toBe(12);
+  });
+
+  it("is atomic: of several resends at the same moment only one gets through", async () => {
+    const answers = await Promise.all([
+      emailOtpStore.claimResend(email),
+      emailOtpStore.claimResend(email),
+      emailOtpStore.claimResend(email),
+    ]);
+
+    expect(answers.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("counts each email address on its own", async () => {
+    await emailOtpStore.claimResend(email);
+
+    expect(await emailOtpStore.claimResend("other@acme.test")).toBe(true);
+  });
+
+  it("uses a key of its own: it does not touch the code or the attempts counter", async () => {
+    await emailOtpStore.save(email, RIGHT);
+
+    await emailOtpStore.claimResend(email);
+
+    expect(mockData.get(otpKey)).toBe(RIGHT);
     expect(mockData.has(attemptsKey)).toBe(false);
   });
 });

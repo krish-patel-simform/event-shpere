@@ -5,7 +5,6 @@ import {
   NotFoundError,
   RateLimitError,
   ServiceUnavailableError,
-  ValidationError,
 } from "../../../../core/http/errors";
 import {
   createPasswordResetService,
@@ -52,6 +51,8 @@ function setup(
     /** When that account's newest link was made; null = never. */
     lastLinkAt?: Date | null;
     sendFails?: boolean;
+    /** true = a "forgot password" request for this address was accepted in the last minute. */
+    cooldownRunning?: boolean;
     /** What findValidResetToken finds: the link's owner, or null for a bad link. */
     owner?: typeof owner | { userId: string; passwordHash: null } | null;
     /** verifyPassword's answer: true = the new password equals the current one. */
@@ -84,6 +85,9 @@ function setup(
     sendPasswordResetEmail: results.sendFails
       ? jest.fn().mockRejectedValue(new Error("Resend is down"))
       : jest.fn().mockResolvedValue(undefined),
+    passwordResetCooldownStore: {
+      claim: jest.fn().mockResolvedValue(!results.cooldownRunning),
+    },
     tokenTtlMinutes: 10,
     adminCooldownSeconds: 60,
     appUrl: "https://app.test",
@@ -94,7 +98,10 @@ function setup(
 /** The raw token is only in the email link: read it from there, like the user's browser would. */
 function tokenFromEmail(sendMock: jest.Mock): string {
   const { resetUrl } = sendMock.mock.calls[0][0] as { resetUrl: string };
-  const token = new URL(resetUrl).searchParams.get("token");
+  // The token is in the fragment (#token=...), not the query string.
+  const token = new URLSearchParams(new URL(resetUrl).hash.slice(1)).get(
+    "token",
+  );
   if (!token) throw new Error("no token in the link");
   return token;
 }
@@ -113,12 +120,12 @@ describe("passwordResetService.requestReset", () => {
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
-  it("rejects an admin account with a validation error (no token, no email)", async () => {
+  it("answers an admin account like an unknown email (same answer, no token, no email)", async () => {
     const { deps, service } = setup({ user: { ...user, role: "admin" } });
 
     await expect(
       service.requestReset({ email: user.email }, now),
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).resolves.toBeUndefined();
 
     expect(
       deps.passwordResetRepository.createResetToken,
@@ -180,7 +187,7 @@ describe("passwordResetService.requestReset", () => {
     expect(mail.firstName).toBe("Olga");
     expect(mail.expiresInMinutes).toBe(10);
     expect(
-      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+      mail.resetUrl.startsWith("https://app.test/reset-password#token="),
     ).toBe(true);
   });
 
@@ -231,6 +238,128 @@ describe("passwordResetService.requestReset", () => {
     await expect(
       service.requestReset({ email: user.email }, now),
     ).rejects.toThrow("db down");
+    expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("passwordResetService.requestReset cooldown (one request per address per minute)", () => {
+  it("claims the cooldown for the email it was given", async () => {
+    const { deps, service } = setup();
+
+    await service.requestReset({ email: user.email }, now);
+
+    expect(deps.passwordResetCooldownStore.claim).toHaveBeenCalledWith(
+      user.email,
+    );
+  });
+
+  it("while the cooldown runs: resolves like any other answer, with no lookup, no token and no email", async () => {
+    const { deps, service } = setup({ cooldownRunning: true });
+
+    await expect(
+      service.requestReset({ email: user.email }, now),
+    ).resolves.toBeUndefined();
+
+    expect(
+      deps.passwordResetRepository.findActiveUserByEmail,
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.passwordResetRepository.createResetToken,
+    ).not.toHaveBeenCalled();
+    expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not end the person's older links while the cooldown runs (the attack this stops)", async () => {
+    // Ending the old links happens inside createResetToken, so it must not even be called.
+    const { deps, service } = setup({ cooldownRunning: true });
+
+    await service.requestReset({ email: user.email }, now);
+    await service.requestReset({ email: user.email }, now);
+
+    expect(
+      deps.passwordResetRepository.createResetToken,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("the second request in a row gets no email: one email, one token", async () => {
+    // A fake store that behaves like Redis SET NX: the first claim wins, the next ones lose.
+    const { deps, service } = setup();
+    const claimed = new Set<string>();
+    deps.passwordResetCooldownStore.claim.mockImplementation(
+      async (email: string) => {
+        if (claimed.has(email)) return false;
+        claimed.add(email);
+        return true;
+      },
+    );
+
+    await service.requestReset({ email: user.email }, now);
+    await service.requestReset({ email: user.email }, now);
+
+    expect(deps.passwordResetRepository.createResetToken).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("another address is not held back by this one's cooldown", async () => {
+    const { deps, service } = setup();
+    const claimed = new Set<string>();
+    deps.passwordResetCooldownStore.claim.mockImplementation(
+      async (email: string) => {
+        if (claimed.has(email)) return false;
+        claimed.add(email);
+        return true;
+      },
+    );
+
+    await service.requestReset({ email: user.email }, now);
+    await service.requestReset({ email: "ada@acme.test" }, now);
+
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it("an unknown address also uses up the cooldown, so the answer says nothing about the account", async () => {
+    const { deps, service } = setup({ user: null });
+
+    await service.requestReset({ email: "nobody@acme.test" }, now);
+
+    expect(deps.passwordResetCooldownStore.claim).toHaveBeenCalledWith(
+      "nobody@acme.test",
+    );
+  });
+
+  it("claims the cooldown BEFORE it looks the account up", async () => {
+    const { deps, service } = setup();
+
+    await service.requestReset({ email: user.email }, now);
+
+    const claimed =
+      deps.passwordResetCooldownStore.claim.mock.invocationCallOrder[0];
+    const lookedUp =
+      deps.passwordResetRepository.findActiveUserByEmail.mock
+        .invocationCallOrder[0];
+    expect(claimed).toBeLessThan(lookedUp);
+  });
+
+  it("does not touch the admin's own cooldown: an admin sending a link is not blocked by it", async () => {
+    const { deps, service } = setup({ cooldownRunning: true });
+
+    await service.sendResetLinkToUser(target.id, now);
+
+    expect(deps.passwordResetCooldownStore.claim).not.toHaveBeenCalled();
+    expect(deps.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a store failure on (the route answers 500) instead of sending without a limit", async () => {
+    const { deps, service } = setup();
+    deps.passwordResetCooldownStore.claim.mockRejectedValue(
+      new Error("redis down"),
+    );
+
+    await expect(
+      service.requestReset({ email: user.email }, now),
+    ).rejects.toThrow("redis down");
     expect(deps.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 });
@@ -344,7 +473,7 @@ describe("passwordResetService.sendResetLinkToUser (an admin sends the link)", (
     expect(mail.expiresInMinutes).toBe(10);
     expect(mail.sentByAdmin).toBe(true);
     expect(
-      mail.resetUrl.startsWith("https://app.test/reset-password?token="),
+      mail.resetUrl.startsWith("https://app.test/reset-password#token="),
     ).toBe(true);
   });
 
@@ -401,13 +530,15 @@ describe("passwordResetService.sendResetLinkToUser (an admin sends the link)", (
     );
     expect(log).toHaveBeenCalledTimes(1);
     const logged = JSON.stringify(log.mock.calls);
-    const raw = new URL(
-      (deps.sendPasswordResetEmail.mock.calls[0][0] as { resetUrl: string })
-        .resetUrl,
-    ).searchParams.get("token");
+    const raw = new URLSearchParams(
+      new URL(
+        (deps.sendPasswordResetEmail.mock.calls[0][0] as { resetUrl: string })
+          .resetUrl,
+      ).hash.slice(1),
+    ).get("token");
     expect(logged).toContain("Resend is down");
     expect(logged).not.toContain(raw);
-    expect(logged).not.toContain("reset-password?token");
+    expect(logged).not.toContain("reset-password#token");
   });
 
   it('does not change "forgot password": that email has no admin wording', async () => {

@@ -4,18 +4,16 @@ import { apiRequest } from "../../../core/api-client/base-api.service";
 import {
   loginResponseSchema,
   meResponseSchema,
-  organizerSignUpResponseSchema,
-  userSignupResponseSchema,
+  signupResponseSchema,
   type AccountSetupBody,
   type AuthUserDto,
   type ForgotPasswordBody,
   type LoginBody,
   type MeDto,
-  type OrganizerSignUpResponseDto,
   type OrganizerSignupBody,
   type ResendOtpBody,
   type ResetPasswordBody,
-  type UserSignUpResponseDto,
+  type SignUpResponseDto,
   type UserSignupBody,
   type VerifyEmailBody,
 } from "../schemas/auth.schemas";
@@ -39,21 +37,25 @@ export const authApiService = {
     return apiRequest({ method: "GET", url: "/auth/me" }, meResponseSchema);
   },
 
-  /** Creates a pending attendee account and emails the verification code (201). No session yet. */
-  signUpUser(body: UserSignupBody): Promise<UserSignUpResponseDto> {
+  /**
+   * Creates a pending attendee account and emails the verification code (201). No session yet.
+   * The same 201 comes back for an email that already has an account (nothing is created).
+   */
+  signUpUser(body: UserSignupBody): Promise<SignUpResponseDto> {
     return apiRequest(
       { method: "POST", url: "/auth/signup/user", data: body },
-      userSignupResponseSchema,
+      signupResponseSchema,
     );
   },
 
-  /** Creates a pending organizer account (awaiting admin review) and emails the code (201). */
-  signUpOrganizer(
-    body: OrganizerSignupBody,
-  ): Promise<OrganizerSignUpResponseDto> {
+  /**
+   * Creates a pending organizer account (awaiting admin review) and emails the code (201).
+   * The same 201 comes back for an email that already has an account (nothing is created).
+   */
+  signUpOrganizer(body: OrganizerSignupBody): Promise<SignUpResponseDto> {
     return apiRequest(
       { method: "POST", url: "/auth/signup/organizer", data: body },
-      organizerSignUpResponseSchema,
+      signupResponseSchema,
     );
   },
 

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { buttonStyles } from "@/src/core/ui";
 import { useAppDispatch } from "@/src/redux/store";
 import { verificationCleared } from "@/src/redux/slices/auth-flow.slice";
+import { useFragmentToken } from "../../hooks/useFragmentToken";
 import { AUTH_ROUTES } from "../../routes";
 import { VerifyEmailForm } from "../forms/VerifyEmailForm";
 import { ProgressTracker, type ProgressStep } from "../preview/ProgressTracker";
@@ -26,14 +27,19 @@ const VERIFIED_STEPS: ProgressStep[] = [
 ];
 
 /**
- * Opened from the link in the signup email (/verify-email?token=...). Shows the code form,
- * then "Email verified". Without a token the link is already known to be bad; a token the
- * server rejects ends in the same "invalid or expired" state.
+ * Opened from the link in the signup email (/verify-email#token=...). Shows the code form,
+ * then "Email verified". The token is in the URL fragment, which only the browser can read.
+ * Without a token the link is already known to be bad; a token the server rejects ends in the
+ * same "invalid or expired" state.
  */
-export function VerifyEmailScreen({ token }: { token: string | null }) {
+export function VerifyEmailScreen() {
+  const { token, ready } = useFragmentToken();
   const dispatch = useAppDispatch();
   const [verified, setVerified] = useState(false);
   const [linkInvalid, setLinkInvalid] = useState(false);
+
+  // Until the browser has read the fragment, nothing is known: show nothing, not "invalid".
+  if (!ready) return null;
 
   function handleVerified() {
     setVerified(true);

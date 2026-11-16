@@ -15,7 +15,12 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import { speakersProfilesTable, usersTable } from "./auth.schema";
+import {
+  organizerProfilesTable,
+  speakersProfilesTable,
+  usersTable,
+} from "./auth.schema";
+import { statesTable } from "./locations.schema";
 
 // "Completed" is not a status: it is simply end_at < now().
 export const eventStatusEnum = pgEnum("event_status", [
@@ -25,7 +30,7 @@ export const eventStatusEnum = pgEnum("event_status", [
 ]);
 
 // Decides whether a venue or an online link is needed (DISC-3 "event type").
-export const eventModeEnum = pgEnum("event_mode", [
+export const sessionModeEnum = pgEnum("session_mode", [
   "in_person",
   "online",
   "hybrid",
@@ -83,7 +88,11 @@ export const venuesTable = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     addressLine: text("address_line").notNull(),
     city: varchar("city", { length: 100 }).notNull(),
-    state: varchar("state", { length: 100 }),
+    // Null only for a venue whose old free-text state matched no state; new venues pick one.
+    // restrict: a state in use cannot be deleted.
+    stateId: uuid("state_id").references(() => statesTable.id, {
+      onDelete: "restrict",
+    }),
     // Text, not a number: some countries use letters and some codes start with 0.
     postalCode: varchar("postal_code", { length: 20 }),
     // Two-letter ISO code.
@@ -110,6 +119,7 @@ export const venuesTable = pgTable(
       sql`lower(${t.city})`,
     ),
     index("venues_city_idx").on(t.city),
+    index("venues_state_id_idx").on(t.stateId),
     check("venues_country_two_letters", sql`${t.country} ~ '^[A-Z]{2}$'`),
     check("venues_timezone_shape", sql`${t.timezone} ~ ${TIMEZONE_SHAPE}`),
     check(
@@ -128,14 +138,15 @@ export const eventsTable = pgTable(
   "events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // The owner: powers "only the owner can edit" and the organizer's "my events".
+    // The owner: an organizer PROFILE (organizer_profiles.id), not the user. Only an organizer
+    // has one, so an admin (who has none) cannot own an event. Powers "only the owner can
+    // edit" and the organizer's "my events". restrict: an organizer with events cannot be deleted.
     organizerId: uuid("organizer_id")
       .notNull()
-      .references(() => usersTable.id, { onDelete: "restrict" }),
+      .references(() => organizerProfilesTable.id, { onDelete: "restrict" }),
     title: varchar("title", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull().unique(),
     status: eventStatusEnum("status").notNull().default("draft"),
-    mode: eventModeEnum("mode").notNull().default("in_person"),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     // IANA zone; filled from the venue when one is picked (online events choose their own).
@@ -148,7 +159,6 @@ export const eventsTable = pgTable(
       onDelete: "restrict",
     }),
     // Shown only to registered users, never on the public page.
-    onlineUrl: text("online_url"),
     // Null = no limit.
     capacity: integer("capacity"),
     // Paise: 150000 = ₹1,500. 0 = free.
@@ -230,12 +240,14 @@ export const hallsTable = pgTable(
  * Step 4: talks, workshops, panels, keynotes. A session can exist without a hall or time
  * (the "unplaced" tray on the board).
  *
- * NOT expressible in Drizzle, added in a custom migration (`drizzle-kit generate --custom`):
- * no two *scheduled* sessions in one hall at the same time, across all events.
+ * NOT expressible in Drizzle, added in a custom migration (0009_sessions_no_hall_overlap):
+ * no two sessions that HOLD a hall (not cancelled, with a time: draft or scheduled) in one hall at
+ * the same time, across all events. It is the safety net under the service's own check, for two
+ * saves at the same moment.
  *   CREATE EXTENSION IF NOT EXISTS btree_gist;
  *   ALTER TABLE sessions ADD CONSTRAINT sessions_no_hall_overlap
  *     EXCLUDE USING gist (hall_id WITH =, tstzrange(start_at, end_at) WITH &&)
- *     WHERE (status = 'scheduled' AND hall_id IS NOT NULL);
+ *     WHERE (status <> 'cancelled' AND hall_id IS NOT NULL AND start_at IS NOT NULL);
  */
 export const sessionsTable = pgTable(
   "sessions",
@@ -251,6 +263,12 @@ export const sessionsTable = pgTable(
     }),
     title: varchar("title", { length: 255 }).notNull(),
     // Strapi documentId of the Session Details entry; null until Strapi answers.
+
+    //session mode for the online hybrid and in person sesison
+    mode: sessionModeEnum("mode").notNull().default("in_person"),
+
+    onlineUrl: text("online_url"),
+
     cmsSessionId: text("cms_session_id").unique(),
     type: sessionTypeEnum("type").notNull(),
     status: sessionStatusEnum("status").notNull().default("draft"),
@@ -279,6 +297,11 @@ export const sessionsTable = pgTable(
     check(
       "sessions_scheduled_has_times",
       sql`${t.status} <> 'scheduled' OR ${t.startAt} IS NOT NULL`,
+    ),
+    // A join link must be https and contain no spaces (the full URL is validated by Zod).
+    check(
+      "sessions_online_url_https",
+      sql`${t.onlineUrl} IS NULL OR ${t.onlineUrl} ~ '^https://[^[:space:]]+$'`,
     ),
     check("sessions_price_non_negative", sql`${t.price} >= 0`),
     check(
@@ -427,9 +450,9 @@ export const venuesRelations = relations(venuesTable, ({ one, many }) => ({
 }));
 
 export const eventsRelations = relations(eventsTable, ({ one, many }) => ({
-  organizer: one(usersTable, {
+  organizer: one(organizerProfilesTable, {
     fields: [eventsTable.organizerId],
-    references: [usersTable.id],
+    references: [organizerProfilesTable.id],
   }),
   venue: one(venuesTable, {
     fields: [eventsTable.venueId],
@@ -522,7 +545,7 @@ export type NewVenue = typeof venuesTable.$inferInsert;
 export type EventRecord = typeof eventsTable.$inferSelect;
 export type NewEventRecord = typeof eventsTable.$inferInsert;
 export type EventStatus = (typeof eventStatusEnum.enumValues)[number];
-export type EventMode = (typeof eventModeEnum.enumValues)[number];
+export type SessionMode = (typeof sessionModeEnum.enumValues)[number];
 export type Hall = typeof hallsTable.$inferSelect;
 export type EventSession = typeof sessionsTable.$inferSelect;
 export type SessionType = (typeof sessionTypeEnum.enumValues)[number];

@@ -1,15 +1,6 @@
 import "server-only";
-import type {
-  OrganizerProfile,
-  RoleName,
-  User,
-  UserProfile,
-} from "../../../db/schemas";
-import type {
-  AuthUserDto,
-  OrganizerSignUpResponseDto,
-  UserSignUpResponseDto,
-} from "../schemas/auth.schemas";
+import type { RoleName } from "../../../db/schemas";
+import type { AuthUserDto, SignUpResponseDto } from "../schemas/auth.schemas";
 
 type UserRow = {
   id: string;
@@ -29,45 +20,14 @@ export function toAuthUserDto(user: UserRow, role: RoleName): AuthUserDto {
   };
 }
 
-// `user` is the full row (it has passwordHash): picking fields one by one keeps it out.
-export function toOrganizerSignUpDto(
-  user: User,
-  profile: OrganizerProfile,
+// The one answer of both signups. It takes only the email (never a database row) and it is the
+// same for a new email and for one that already has an account.
+export function toSignUpDto(
+  email: string,
   verification: { emailSent: boolean; expiresInMinutes: number },
-): OrganizerSignUpResponseDto {
+): SignUpResponseDto {
   return {
-    id: profile.id,
-    userId: user.id,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    status: user.status,
-    organizationName: profile.organizationName,
-    organizationWebsite: profile.organizationWebsite,
-    isVerified: profile.verifiedAt !== null,
-    createdAt: profile.createdAt.toISOString(),
-    verificationEmailSent: verification.emailSent,
-    verificationCodeExpiresInMinutes: verification.expiresInMinutes,
-  };
-}
-
-// The return type makes TypeScript check this against userSignupResponseSchema.
-export function toUserSignUpDto(
-  user: User,
-  profile: UserProfile,
-  verification: { emailSent: boolean; expiresInMinutes: number },
-): UserSignUpResponseDto {
-  return {
-    userId: user.id,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    status: user.status,
-    phone: profile.phone,
-    city: profile.city,
-    postalCode: profile.postalCode,
-    avatarUrl: profile.avatarUrl,
-    isVerified: user.emailVerifiedAt !== null,
+    email,
     verificationEmailSent: verification.emailSent,
     verificationCodeExpiresInMinutes: verification.expiresInMinutes,
   };

@@ -28,7 +28,10 @@ export function Card({
     <section
       aria-labelledby={title ? titleId : undefined}
       className={cn(
-        "overflow-hidden rounded-lg border border-line bg-surface",
+        "rounded-lg border border-line bg-surface",
+        // Only an edge-to-edge table needs its corners clipped. Clipping every card would cut
+        // off a dropdown list that opens past the card's bottom edge.
+        flush && "overflow-hidden",
         className,
       )}
     >

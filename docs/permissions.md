@@ -13,7 +13,7 @@ Every account has the base `user` role. Speakers, Organizers and Admins also kee
 | Registered User | `user` | yes | Attendee: registers for events, pays, builds a personal schedule, votes. |
 | Speaker | `speaker` | yes | Attendee abilities plus managing own speaker profile, own session materials and own session polls. |
 | Organizer | `organizer` | yes | Creates and runs events; manages sessions, speakers, polls, attendees, payments and analytics **for events they organize**. |
-| Admin | `admin` | yes | Platform operator: same abilities as Organizer on **any** event, plus users, CMS content, moderation and platform-wide views. |
+| Admin | `admin` | yes | Platform operator: same abilities as Organizer on **any** event (except creating one: an event belongs to an organizer), plus users, CMS content, moderation and platform-wide views. |
 
 ## Public access (no role, no permission)
 
@@ -51,7 +51,7 @@ Where one permission is shared by Organizer and Admin, the scope differs by role
 ### Events
 | # | Permission Code | Description | Scope | Used By |
 | --- | --- | --- | --- | --- |
-| 4 | EVENT_CREATE | Create a new event (saved as draft) | — | Organizer, Admin |
+| 4 | EVENT_CREATE | Create a new event (saved as draft). Every event is owned by an organizer profile, so admins cannot create events | — | Organizer |
 | 5 | EVENT_MANAGE_OWN | Update, cancel, or delete events the user created | Own | Organizer |
 | 6 | EVENT_MANAGE_ALL | Update, cancel, or delete any event | All | Admin |
 | 7 | EVENT_PUBLISH_OWN | Publish or unpublish events the user created | Own | Organizer |

@@ -16,6 +16,8 @@
     "worker:email": "tsx --conditions=react-server scripts/email-worker.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.9.2",
     "@neondatabase/serverless": "^1.2.0",
     "@node-rs/argon2": "^2.2.2",
@@ -32,6 +34,7 @@
     "next": "16.4.1",
     "pg": "^8.23.1",
     "react": "19.3.0",
+    "react-day-picker": "^10.0.2",
     "react-dom": "19.3.0",
     "react-hook-form": "^7.90.0",
     "react-redux": "^9.3.0",

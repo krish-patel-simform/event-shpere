@@ -109,6 +109,10 @@ describe("CheckEmailPanel", () => {
       expect(status).toHaveTextContent("If your signup is still waiting");
       expect(status).toHaveTextContent("ananya@example.com");
       expect(status).toHaveTextContent("Only the newest email works");
+      // The server refuses a resend within a minute of the last one, and answers the same.
+      expect(status).toHaveTextContent(
+        "If you asked again within a minute, no new email is sent, so use the last one.",
+      );
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 

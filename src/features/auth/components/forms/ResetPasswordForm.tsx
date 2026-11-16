@@ -13,7 +13,7 @@ import { PasswordWithConfirm } from "../fields/PasswordWithConfirm";
 import { AuthAlert } from "../states/AuthAlert";
 
 type ResetPasswordFormProps = {
-  /** The one-time token from the reset link (?token=...). */
+  /** The one-time token from the reset link (#token=...). */
   token: string;
   /** The password was changed. */
   onDone: () => void;

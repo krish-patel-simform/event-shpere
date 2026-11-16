@@ -2,6 +2,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
+import { hallAvailabilityResponseSchema } from "../../schemas/hall-availability.schemas";
 import {
   venueDetailResponseSchema,
   venueListResponseSchema,
@@ -17,6 +18,43 @@ jest.mock("../../../../core/api-client/base-api.service", () => ({
 beforeEach(() => jest.clearAllMocks());
 
 describe("venueApiService", () => {
+  it("getHallAvailability asks for the halls' free times of a range and parses the answer", () => {
+    const range = {
+      startAt: "2026-12-12T09:00:00+05:30",
+      endAt: "2026-12-12T17:00:00+05:30",
+    };
+
+    venueApiService.getHallAvailability(venueId, range);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: range,
+      },
+      hallAvailabilityResponseSchema,
+    );
+  });
+
+  it("getHallAvailability also sends the session being edited, so its own booking is left out", () => {
+    const range = {
+      startAt: "2026-12-12T09:00:00+05:30",
+      endAt: "2026-12-12T17:00:00+05:30",
+      exceptSessionId: "7c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e01",
+    };
+
+    venueApiService.getHallAvailability(venueId, range);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "GET",
+        url: `/venues/${venueId}/halls/availability`,
+        params: range,
+      },
+      hallAvailabilityResponseSchema,
+    );
+  });
+
   it("get reads one venue and parses the detail schema", () => {
     venueApiService.get(venueId);
 
@@ -93,6 +131,7 @@ describe("venueApiService", () => {
     venueApiService.list({
       status: "inactive",
       search: "pune",
+      state: "Maharashtra",
       sort: "halls",
       page: 3,
       pageSize: 25,
@@ -107,6 +146,7 @@ describe("venueApiService", () => {
           pageSize: 25,
           status: "inactive",
           search: "pune",
+          state: "Maharashtra",
           sort: "halls",
         },
       },
@@ -115,7 +155,7 @@ describe("venueApiService", () => {
   });
 
   it("list leaves out a blank search and an unset status, so the server does not filter by them", () => {
-    venueApiService.list({ search: "", pageSize: 10 });
+    venueApiService.list({ search: "", state: "", pageSize: 10 });
 
     const [config] = jest.mocked(apiRequestPage).mock.calls[0];
     expect(config.params).toEqual({ page: 1, pageSize: 10 });

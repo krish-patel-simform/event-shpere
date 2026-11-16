@@ -5,6 +5,7 @@ import {
   paginated,
   parseBody,
   parseQuery,
+  PER_USER_HEADERS,
   route,
 } from "@/src/core/http";
 import {
@@ -17,13 +18,16 @@ import { venueService } from "@/src/features/venues/server";
 
 // Public: a page of venues, with search (name or city), status, sort and paging. Guests only get
 // active venues; a signed-in admin with VENUE_MANAGE sees retired ones too (and can filter them).
+// The answer depends on the cookie, so no cache may keep it.
 export const GET = route({ auth: "public" }, async ({ req }) => {
   const query = parseQuery(req, venueListQuerySchema);
   const user = await getCurrentUser();
   const { items, meta } = await venueService.listVenues(query, {
     canManage: user?.permissions.has(PERMISSION.VENUE_MANAGE) ?? false,
   });
-  return paginated(venueListResponseSchema.parse(items), meta);
+  return paginated(venueListResponseSchema.parse(items), meta, {
+    headers: PER_USER_HEADERS,
+  });
 });
 
 // An admin adds a venue together with its halls. Anyone else gets 401/403 from the wrapper.

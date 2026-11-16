@@ -415,12 +415,18 @@ export const organizerRepository = {
     });
   },
 
-  /** The admin decision on a user's organizer profile. null = the user has no profile. */
-  async findVerificationByUserId(
-    userId: string,
-  ): Promise<{ verifiedAt: Date | null; rejectedAt: Date | null } | null> {
+  /**
+   * The admin decision on a user's organizer profile, with the profile's id (what an event's
+   * organizer_id points at). null = the user has no profile.
+   */
+  async findVerificationByUserId(userId: string): Promise<{
+    id: string;
+    verifiedAt: Date | null;
+    rejectedAt: Date | null;
+  } | null> {
     const [row] = await db
       .select({
+        id: organizerProfilesTable.id,
         verifiedAt: organizerProfilesTable.verifiedAt,
         rejectedAt: organizerProfilesTable.rejectedAt,
       })

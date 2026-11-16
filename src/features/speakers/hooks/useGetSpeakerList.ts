@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   speakersApiService,
+  type ListSpeakerSessionsParams,
   type ListSpeakersParams,
 } from "../api/speakers-api.service";
 
@@ -13,6 +14,9 @@ export const speakerQueryKeys = {
   lists: ["speakers", "list"] as const,
   list: (params: ListSpeakersParams) => ["speakers", "list", params] as const,
   detail: (slug: string) => ["speakers", "detail", slug] as const,
+  /** One category and page of a speaker's sessions. */
+  sessions: (slug: string, params: ListSpeakerSessionsParams) =>
+    ["speakers", "sessions", slug, params] as const,
   /** The logged-in speaker's own profile (the edit form). */
   own: ["speakers", "own"] as const,
 };

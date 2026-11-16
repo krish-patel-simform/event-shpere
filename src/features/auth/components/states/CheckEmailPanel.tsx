@@ -101,7 +101,8 @@ export function CheckEmailPanel({
         <Alert tone="success">
           If your signup is still waiting, we&apos;ve sent a new code and link
           to <strong className="break-words">{email}</strong>. Only the newest
-          email works.
+          email works. If you asked again within a minute, no new email is sent,
+          so use the last one.
         </Alert>
       )}
 

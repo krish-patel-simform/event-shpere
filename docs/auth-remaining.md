@@ -35,8 +35,9 @@ Tick an item when its API, UI and tests are done; then update its status in
 - [ ] **AUTH-8** Route protection in `proxy.ts`: guests going to `/dashboard`, `/profile`,
       `/admin/*` → `/login`; signed-in users going to `/login`, `/signup` → `/dashboard`. Only a quick
       cookie check; the real check stays in every API route.
-- [ ] **BE-7** Rate limiting on `login`, `forgot-password`, `reset-password`, `resend-otp`.
-      Today only resend-invite has a cooldown (`RateLimitError`).
+- [ ] **BE-7** Rate limiting on `login`, `forgot-password`, `reset-password`. Done so far:
+      resend-invite has a cooldown (`RateLimitError`), and `resend-otp` allows one email per
+      address per 60 seconds (`emailOtpStore.claimResend`, answers the usual quiet 204).
 - [ ] **ADM-6** Resend invite: marked "In progress"; finish and verify.
 
 ## 3. Frontend to build and integrate
