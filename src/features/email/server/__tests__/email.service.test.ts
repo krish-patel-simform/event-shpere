@@ -89,11 +89,52 @@ describe("sendEmail", () => {
   it("throws when Resend answers with an error (it does not throw by itself), so the queue retries", async () => {
     mockSend.mockResolvedValue({
       data: null,
-      error: { name: "validation_error", message: "Invalid from address" },
+      error: {
+        name: "validation_error",
+        message: "Invalid from address",
+        statusCode: 422,
+      },
     });
 
     await expect(sendEmail(message)).rejects.toThrow(
-      "Resend failed (validation_error): Invalid from address",
+      "Resend failed (validation_error, HTTP 422)",
+    );
+  });
+
+  it("never copies Resend's message into the error: it can repeat the address, and the callers log it", async () => {
+    mockSend.mockResolvedValue({
+      data: null,
+      error: {
+        name: "validation_error",
+        message:
+          "Invalid `to` field: user@example.com is not allowed. Subject: Reset your password",
+        statusCode: 422,
+      },
+    });
+
+    const error = await sendEmail(message).catch((e: Error) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    const text = (error as Error).message;
+    expect(text).not.toContain("@");
+    expect(text).not.toContain("user@example.com");
+    expect(text).not.toContain("Reset your password");
+    // Still says what kind of failure it was, so the log is useful.
+    expect(text).toContain("validation_error");
+  });
+
+  it("says the status is unknown when Resend gives none (a network failure has no HTTP status)", async () => {
+    mockSend.mockResolvedValue({
+      data: null,
+      error: {
+        name: "application_error",
+        message: "fetch failed",
+        statusCode: null,
+      },
+    });
+
+    await expect(sendEmail(message)).rejects.toThrow(
+      "Resend failed (application_error, HTTP unknown)",
     );
   });
 });
@@ -173,11 +214,11 @@ describe("sendPasswordResetEmail", () => {
   it("lets a Resend failure through, so the caller can decide what to do", async () => {
     mockSend.mockResolvedValue({
       data: null,
-      error: { name: "rate_limit", message: "Slow down" },
+      error: { name: "rate_limit", message: "Slow down", statusCode: 429 },
     });
 
     await expect(sendPasswordResetEmail(resetData)).rejects.toThrow(
-      /Resend failed/,
+      /Resend failed \(rate_limit, HTTP 429\)/,
     );
   });
 });
