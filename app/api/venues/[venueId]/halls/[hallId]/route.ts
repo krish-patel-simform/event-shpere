@@ -1,6 +1,12 @@
 import { PERMISSION } from "@/src/core/auth/permission-catalog";
 import { getCurrentUser } from "@/src/core/auth/server/auth-guards";
-import { ok, parseBody, parseInput, route } from "@/src/core/http";
+import {
+  ok,
+  parseBody,
+  parseInput,
+  PER_USER_HEADERS,
+  route,
+} from "@/src/core/http";
 import {
   getHallParam,
   hallDetailResponseSchema,
@@ -10,7 +16,8 @@ import {
 import { venueService } from "@/src/features/venues/server";
 
 // Public: one hall of a venue. Guests see it only when the hall and its venue are both active
-// (else 404); a signed-in admin with HALL_MANAGE sees it either way.
+// (else 404); a signed-in admin with HALL_MANAGE sees it either way. The answer depends on the
+// cookie, so no cache may keep it.
 export const GET = route<{ venueId: string; hallId: string }>(
   { auth: "public" },
   async ({ params }) => {
@@ -19,7 +26,9 @@ export const GET = route<{ venueId: string; hallId: string }>(
     const hall = await venueService.getHallDetail(venueId, hallId, {
       canManage: user?.permissions.has(PERMISSION.HALL_MANAGE) ?? false,
     });
-    return ok(hallDetailResponseSchema.parse(hall));
+    return ok(hallDetailResponseSchema.parse(hall), {
+      headers: PER_USER_HEADERS,
+    });
   },
 );
 
