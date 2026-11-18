@@ -12,7 +12,7 @@ import { sessionService } from "@/src/features/sessions/server";
 // session is in it (a foreign one is a 404), that every id is a real speaker profile (400), and
 // that the session is not cancelled or ended (409). Strapi content is not touched.
 export const PUT = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-write" },
   async ({ req, params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const body = await parseBody(req, replaceSessionSpeakersBodySchema);

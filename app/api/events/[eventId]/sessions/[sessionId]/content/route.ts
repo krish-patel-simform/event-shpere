@@ -14,7 +14,7 @@ import { sessionService } from "@/src/features/sessions/server";
 
 // The content form's current values.
 export const GET = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-read" },
   async ({ params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const content = await sessionService.getContent(
@@ -28,7 +28,7 @@ export const GET = route<{ eventId: string; sessionId: string }>(
 
 // Saves only the fields that were sent. The cover image has its own route.
 export const PATCH = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-write" },
   async ({ req, params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const body = await parseBody(req, updateSessionContentBodySchema);

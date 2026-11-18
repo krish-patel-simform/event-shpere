@@ -10,7 +10,11 @@ import { organizerService } from "@/src/features/organizer/server";
 // pending again (approve or reject again). 409 if it is not rejected. It is the same decision
 // as verify and reject, so it needs the same permission. No body: nothing to type.
 export const POST = route<{ organizerId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.ORGANIZER_VERIFY] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.ORGANIZER_VERIFY],
+    rateLimit: "user-write",
+  },
   async ({ params }) => {
     const { organizerId } = parseInput(
       reopenOrganizerParamsSchema,

@@ -5,7 +5,7 @@ import { eventService, readImageUpload } from "@/src/features/events/server";
 // Sets or replaces the event's cover image. The multipart body (file field "files") is
 // streamed straight on to Strapi: it is never read into memory or stored on this server.
 export const POST = route<{ eventId: string }>(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-upload" },
   async ({ req, params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const upload = readImageUpload(req);
@@ -16,7 +16,7 @@ export const POST = route<{ eventId: string }>(
 
 // Removes the cover image (also fine when there is none).
 export const DELETE = route<{ eventId: string }>(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-write" },
   async ({ params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     await eventService.removeCover(eventId, currentUser);

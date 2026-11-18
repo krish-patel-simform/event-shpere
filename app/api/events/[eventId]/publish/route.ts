@@ -10,7 +10,7 @@ import { eventService } from "@/src/features/events/server";
 // draft); if not, 409 EVENT_NOT_READY lists what is missing. Publishing twice answers the
 // published event again; a cancelled or ended event is a 409.
 export const POST = route<{ eventId: string }>(
-  { permission: [PERMISSION.EVENT_PUBLISH_OWN] },
+  { permission: [PERMISSION.EVENT_PUBLISH_OWN], rateLimit: "user-write" },
   async ({ params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const event = await eventService.publishEvent(eventId, currentUser);

@@ -7,7 +7,11 @@ import { speakerService } from "@/src/features/speakers/server";
 // ADM-6: an organizer or admin re-sends the set-password invite to a speaker who has not set
 // up their account yet. The old link stops working. Only pending accounts; 60s cooldown.
 export const POST = route<{ slug: string }>(
-  { auth: "signed-in", permission: [PERMISSION.SPEAKER_CREATE] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.SPEAKER_CREATE],
+    rateLimit: "user-write",
+  },
   async ({ params, currentUser }) => {
     const { slug } = parseInput(speakerSlugParamsSchema, await params);
     const result = await speakerService.resendInvite(slug, currentUser);

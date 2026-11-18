@@ -12,6 +12,8 @@ jest.mock("@/src/core/auth/server/auth-cookies", () => ({
 jest.mock("@/src/core/auth/server/auth-session", () => ({
   resolveCurrentUser: jest.fn(),
 }));
+// The rate limiter stays out too: it would count every test against the real Redis.
+jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
 const mockResendOtp = jest.mocked(authService.resendOtp);
 
 function resend(body: string, headers: Record<string, string> = {}) {

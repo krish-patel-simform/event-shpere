@@ -14,7 +14,7 @@ import {
 // SESSION_MANAGE is checked by the wrapper; the service checks the event is the caller's and
 // the session is in it, before a single byte moves.
 export const POST = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-upload" },
   async ({ req, params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const upload = readCoverUpload(req);
@@ -30,7 +30,7 @@ export const POST = route<{ eventId: string; sessionId: string }>(
 
 // Removes the cover image (also fine when there is none).
 export const DELETE = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-write" },
   async ({ params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     await sessionService.removeCover(eventId, sessionId, currentUser);

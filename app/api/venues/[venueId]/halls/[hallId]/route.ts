@@ -19,7 +19,7 @@ import { venueService } from "@/src/features/venues/server";
 // (else 404); a signed-in admin with HALL_MANAGE sees it either way. The answer depends on the
 // cookie, so no cache may keep it.
 export const GET = route<{ venueId: string; hallId: string }>(
-  { auth: "public" },
+  { auth: "public", rateLimit: "public-read-ip" },
   async ({ params }) => {
     const { venueId, hallId } = parseInput(getHallParam, await params);
     const user = await getCurrentUser();
@@ -37,7 +37,7 @@ export const GET = route<{ venueId: string; hallId: string }>(
 // the hall, so neither its name nor its seats can change; the message names the sessions).
 // Returns the venue with its halls.
 export const PATCH = route<{ venueId: string; hallId: string }>(
-  { permission: [PERMISSION.HALL_MANAGE] },
+  { permission: [PERMISSION.HALL_MANAGE], rateLimit: "user-write" },
   async ({ req, params }) => {
     const { venueId, hallId } = parseInput(getHallParam, await params);
     const body = await parseBody(req, updateHallBodySchema);
@@ -49,7 +49,7 @@ export const PATCH = route<{ venueId: string; hallId: string }>(
 // An admin permanently deletes a hall. Refused with 409 when it is the venue's last hall or when
 // sessions use it (turn it off with PATCH .../halls/status instead). Returns the remaining halls.
 export const DELETE = route<{ venueId: string; hallId: string }>(
-  { permission: [PERMISSION.HALL_MANAGE] },
+  { permission: [PERMISSION.HALL_MANAGE], rateLimit: "user-write" },
   async ({ params }) => {
     const { venueId, hallId } = parseInput(getHallParam, await params);
     const venue = await venueService.deleteHall(venueId, hallId);

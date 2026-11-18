@@ -9,7 +9,7 @@ import { sessionService } from "@/src/features/sessions/server";
 
 // One session of the event, for the edit form. A session of another event is a 404.
 export const GET = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-read" },
   async ({ params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const session = await sessionService.getSession(
@@ -27,7 +27,7 @@ export const GET = route<{ eventId: string; sessionId: string }>(
 // (409 HALL_BUSY; the session's own old slot does not count). Speakers and Strapi content have
 // their own routes.
 export const PATCH = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-write" },
   async ({ req, params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const body = await parseBody(req, updateSessionBodySchema);

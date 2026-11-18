@@ -10,7 +10,11 @@ import { userParamSchema } from "@/src/features/users";
 // the user is pending (use the set-password invite) or suspended, 429 within 60 s of the last
 // link, 503 if the email could not be sent. The response never contains the link.
 export const POST = route<{ userId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.USER_STATUS_MANAGE] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.USER_STATUS_MANAGE],
+    rateLimit: "user-write",
+  },
   async ({ params }) => {
     const { userId } = parseInput(userParamSchema, await params);
     const result = await passwordResetService.sendResetLinkToUser(userId);

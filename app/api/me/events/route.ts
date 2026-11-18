@@ -10,7 +10,7 @@ import { eventService } from "@/src/features/events/server";
 // can list another organizer's here. The service checks EVENT_MANAGE_OWN or EVENT_MANAGE_ALL
 // and that an organizer is approved.
 export const GET = route(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-read" },
   async ({ req, currentUser }) => {
     const query = parseQuery(req, myEventListQuerySchema);
     const { items, meta } = await eventService.listOwnEvents(

@@ -9,7 +9,7 @@ import { eventService, readImageUpload } from "@/src/features/events/server";
 // a full gallery, is a 409 and none is kept). Streamed to Strapi like the cover. Returns the
 // whole gallery.
 export const POST = route<{ eventId: string }>(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-upload" },
   async ({ req, params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const upload = readImageUpload(req);

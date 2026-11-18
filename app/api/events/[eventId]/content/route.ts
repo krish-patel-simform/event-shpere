@@ -12,7 +12,7 @@ import { eventService } from "@/src/features/events/server";
 
 // The edit form's current values.
 export const GET = route<{ eventId: string }>(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-read" },
   async ({ params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const content = await eventService.getContent(eventId, currentUser);
@@ -22,7 +22,7 @@ export const GET = route<{ eventId: string }>(
 
 // Saves only the fields that were sent. Images have their own routes (cover, gallery).
 export const PATCH = route<{ eventId: string }>(
-  { auth: "signed-in" },
+  { auth: "signed-in", rateLimit: "user-write" },
   async ({ req, params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const body = await parseBody(req, updateEventContentBodySchema);

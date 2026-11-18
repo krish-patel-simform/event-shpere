@@ -8,7 +8,7 @@ import { sessionService } from "@/src/features/sessions/server";
 // the service checks the event is the caller's and the session is in it (a foreign one is a 404).
 // Cancelling twice answers the cancelled session again; one that has ended is a 409.
 export const POST = route<{ eventId: string; sessionId: string }>(
-  { permission: [PERMISSION.SESSION_MANAGE] },
+  { permission: [PERMISSION.SESSION_MANAGE], rateLimit: "user-write" },
   async ({ params, currentUser }) => {
     const { eventId, sessionId } = parseInput(sessionParams, await params);
     const session = await sessionService.cancelSession(

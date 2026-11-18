@@ -9,6 +9,7 @@ export const GET = route(
   {
     auth: "signed-in",
     permission: [PERMISSION.ORGANIZER_PROFILE_MANAGE_OWN],
+    rateLimit: "user-read",
   },
   async ({ currentUser }) => {
     const application = await organizerService.getOwnApplication(

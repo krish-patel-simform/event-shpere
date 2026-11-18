@@ -11,7 +11,11 @@ import { speakerService } from "@/src/features/speakers/server";
 
 // The edit form's current values (bio as plain text, links as stored).
 export const GET = route(
-  { auth: "signed-in", permission: [PERMISSION.SPEAKER_MANAGE_OWN] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.SPEAKER_MANAGE_OWN],
+    rateLimit: "user-read",
+  },
   async ({ currentUser }) => {
     const profile = await speakerService.getOwnProfile(currentUser.id);
     return ok(ownSpeakerProfileResponseSchema.parse(profile));
@@ -20,7 +24,11 @@ export const GET = route(
 
 // Saves only the fields that were sent: names in Postgres, the rest in Strapi.
 export const PATCH = route(
-  { auth: "signed-in", permission: [PERMISSION.SPEAKER_MANAGE_OWN] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.SPEAKER_MANAGE_OWN],
+    rateLimit: "user-write",
+  },
   async ({ req, currentUser }) => {
     const body = await parseBody(req, updateOwnSpeakerProfileBodySchema);
     const profile = await speakerService.updateOwnProfile(currentUser.id, body);

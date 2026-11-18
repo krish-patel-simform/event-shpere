@@ -12,7 +12,7 @@ import { speakerService } from "@/src/features/speakers/server";
 // only for a pending one; nobody else ever sees it. The answer depends on the cookie, so no cache
 // may keep it.
 export const GET = route<{ slug: string }>(
-  { auth: "public" },
+  { auth: "public", rateLimit: "public-read-ip" },
   async ({ params }) => {
     const { slug } = parseInput(speakerSlugParamsSchema, await params);
     const user = await getCurrentUser();

@@ -4,6 +4,7 @@ import {
   readRefreshTokenCookie,
 } from "@/src/core/auth/server/auth-cookies";
 import { revokeAuthSession } from "@/src/core/auth/server/auth-session";
+import { assertRateLimit } from "@/src/core/http/rate-limit";
 import { POST } from "../route";
 
 // Cookies and the DB stay out of the test: only the route's decisions are checked.
@@ -16,9 +17,12 @@ jest.mock("@/src/core/auth/server/auth-session", () => ({
   resolveCurrentUser: jest.fn(),
   revokeAuthSession: jest.fn(),
 }));
+// The rate limiter stays out too: it would count every test against the real Redis.
+jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
 const mockReadRefreshTokenCookie = jest.mocked(readRefreshTokenCookie);
 const mockClearAuthCookies = jest.mocked(clearAuthCookies);
 const mockRevokeAuthSession = jest.mocked(revokeAuthSession);
+const mockAssertRateLimit = jest.mocked(assertRateLimit);
 
 function logout(headers: Record<string, string> = {}) {
   return POST(
@@ -71,6 +75,14 @@ describe("POST /api/auth/logout", () => {
     expect(res.status).toBe(204);
     expect(mockRevokeAuthSession).not.toHaveBeenCalled();
     expect(mockClearAuthCookies).toHaveBeenCalledTimes(1);
+  });
+
+  it("is never rate limited: logging out must always work", async () => {
+    mockReadRefreshTokenCookie.mockResolvedValue("refresh-jwt");
+
+    await logout({ "x-forwarded-for": "203.0.113.7" });
+
+    expect(mockAssertRateLimit).not.toHaveBeenCalled();
   });
 
   it("needs no access token: it works when only the refresh cookie is left", async () => {

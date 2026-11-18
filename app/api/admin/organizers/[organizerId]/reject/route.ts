@@ -11,7 +11,11 @@ import { organizerService } from "@/src/features/organizer/server";
 // gets an email with the reason. 409 if already verified or rejected. Rejecting is the other
 // half of the verify decision, so it needs the same permission.
 export const POST = route<{ organizerId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.ORGANIZER_VERIFY] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.ORGANIZER_VERIFY],
+    rateLimit: "user-write",
+  },
   async ({ req, params, currentUser }) => {
     const { organizerId } = parseInput(
       rejectOrganizerParamsSchema,

@@ -11,7 +11,8 @@ import { noContent, route } from "@/src/core/http";
 // the refresh cookie is the credential. Always 204, even with no cookie (already logged out).
 // If revoking fails (database down) the error is returned and the cookies are kept: telling the
 // user they are logged out while the session still works would be worse than showing an error.
-export const POST = route({ auth: "public" }, async () => {
+// Never rate limited: logging out must always work, and it only ends the caller's own session.
+export const POST = route({ auth: "public", rateLimit: "none" }, async () => {
   const refreshToken = await readRefreshTokenCookie();
   if (refreshToken) await revokeAuthSession(refreshToken);
 

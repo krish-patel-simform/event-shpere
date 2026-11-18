@@ -11,7 +11,7 @@ import { hallAvailabilityService } from "@/src/features/venues/server";
 // and the dates are chosen. Needs EVENT_CREATE (an approved organizer; an admin has no such
 // permission). Each hall comes with the times it is taken, never with what is booked or by whom.
 export const GET = route<{ venueId: string }>(
-  { permission: [PERMISSION.EVENT_CREATE] },
+  { permission: [PERMISSION.EVENT_CREATE], rateLimit: "user-read" },
   async ({ req, params, currentUser }) => {
     const { venueId } = parseInput(getVenueParam, await params);
     const query = parseQuery(req, hallAvailabilityQuerySchema);

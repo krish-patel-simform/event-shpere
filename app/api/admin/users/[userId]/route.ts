@@ -10,7 +10,11 @@ import { userService } from "@/src/features/users/server";
 // for every role; an organizer's application or a speaker's profile are on their own pages.
 // 404 if there is no such user. Read with the same permission as the list.
 export const GET = route<{ userId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.USER_VIEW] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.USER_VIEW],
+    rateLimit: "user-read",
+  },
   async ({ params }) => {
     const { userId } = parseInput(userParamSchema, await params);
     const user = await userService.getUserDetail(userId);

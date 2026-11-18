@@ -7,6 +7,7 @@ import {
   refreshAuthSession,
   type AuthTokens,
 } from "@/src/core/auth/server/auth-session";
+import { assertRateLimit } from "@/src/core/http/rate-limit";
 import { POST } from "../route";
 
 // Cookies, tokens and the DB stay out of the test: only the route's decisions are checked.
@@ -19,9 +20,12 @@ jest.mock("@/src/core/auth/server/auth-session", () => ({
   resolveCurrentUser: jest.fn(),
   refreshAuthSession: jest.fn(),
 }));
+// The rate limiter stays out too: it would count every test against the real Redis.
+jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
 const mockReadRefreshTokenCookie = jest.mocked(readRefreshTokenCookie);
 const mockWriteAuthCookies = jest.mocked(writeAuthCookies);
 const mockRefreshAuthSession = jest.mocked(refreshAuthSession);
+const mockAssertRateLimit = jest.mocked(assertRateLimit);
 
 const newTokens: AuthTokens = {
   accessToken: {
@@ -48,6 +52,7 @@ beforeEach(() => {
   mockReadRefreshTokenCookie.mockReset();
   mockWriteAuthCookies.mockReset();
   mockRefreshAuthSession.mockReset();
+  mockAssertRateLimit.mockReset();
 });
 
 describe("POST /api/auth/refresh", () => {
@@ -61,6 +66,18 @@ describe("POST /api/auth/refresh", () => {
     expect(await res.text()).toBe("");
     expect(mockRefreshAuthSession).toHaveBeenCalledWith("old-refresh");
     expect(mockWriteAuthCookies).toHaveBeenCalledWith(newTokens);
+  });
+
+  it("is limited under its own refresh-ip policy, by the caller's IP, not the strict login budget", async () => {
+    mockReadRefreshTokenCookie.mockResolvedValue("old-refresh");
+    mockRefreshAuthSession.mockResolvedValue(newTokens);
+
+    await refresh({ "x-forwarded-for": "203.0.113.7" });
+
+    expect(mockAssertRateLimit).toHaveBeenCalledWith(
+      "refresh-ip",
+      "203.0.113.7",
+    );
   });
 
   it("without a refresh cookie: 401 and nothing is refreshed or written", async () => {

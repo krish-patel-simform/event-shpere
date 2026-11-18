@@ -9,7 +9,11 @@ import { userService } from "@/src/features/users/server";
 // The admin's Users list: filter by role / status / search, sort, page. Admin only (USER_VIEW):
 // the rows include email addresses.
 export const GET = route(
-  { auth: "signed-in", permission: [PERMISSION.USER_VIEW] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.USER_VIEW],
+    rateLimit: "user-read",
+  },
   async ({ req }) => {
     const query = parseQuery(req, getUsersQueryParams);
     const { items, meta } = await userService.getUsers(query);

@@ -8,7 +8,11 @@ import { organizerService } from "@/src/features/organizer/server";
 
 // ADM-4: the admin verifies an organizer. Verifying again returns the original verification.
 export const POST = route<{ organizerId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.ORGANIZER_VERIFY] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.ORGANIZER_VERIFY],
+    rateLimit: "user-write",
+  },
   async ({ params, currentUser }) => {
     const { organizerId } = parseInput(
       verifyOrganizerParamsSchema,

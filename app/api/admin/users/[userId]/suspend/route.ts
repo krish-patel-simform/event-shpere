@@ -9,7 +9,11 @@ import { userService } from "@/src/features/users/server";
 // ADM-7: the admin suspends a user: no more login, their sessions end. No body. 403 for yourself
 // or an administrator, 404 unknown user, 409 if the user is not active.
 export const POST = route<{ userId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.USER_STATUS_MANAGE] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.USER_STATUS_MANAGE],
+    rateLimit: "user-write",
+  },
   async ({ params, currentUser }) => {
     const { userId } = parseInput(userParamSchema, await params);
     const user = await userService.suspendUser(userId, currentUser.id);

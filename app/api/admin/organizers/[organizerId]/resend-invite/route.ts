@@ -7,7 +7,11 @@ import { organizerService } from "@/src/features/organizer/server";
 // ADM-6: the admin re-sends the set-password invite to an organizer who has not set up their
 // account yet. The old link stops working. Only pending accounts; 60s cooldown.
 export const POST = route<{ organizerId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.ORGANIZER_CREATE] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.ORGANIZER_CREATE],
+    rateLimit: "user-write",
+  },
   async ({ params }) => {
     const { organizerId } = parseInput(
       resendOrganizerInviteParamsSchema,

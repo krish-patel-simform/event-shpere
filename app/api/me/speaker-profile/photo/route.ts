@@ -12,7 +12,11 @@ const MAX_BODY_BYTES = SPEAKER_PHOTO_MAX_BYTES + 64 * 1024;
 // Replaces the logged-in speaker's photo. The multipart body (file field "files") is
 // streamed straight on to Strapi: it is never read into memory or stored on this server.
 export const POST = route(
-  { auth: "signed-in", permission: [PERMISSION.SPEAKER_MANAGE_OWN] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.SPEAKER_MANAGE_OWN],
+    rateLimit: "user-upload",
+  },
   async ({ req, currentUser }) => {
     const contentType = req.headers.get("content-type") ?? "";
     if (!contentType.startsWith("multipart/form-data") || !req.body) {

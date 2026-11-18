@@ -9,7 +9,7 @@ import { venueService } from "@/src/features/venues/server";
 
 // An admin retires or reopens a venue. Retiring also retires all its halls.
 export const PATCH = route<{ venueId: string }>(
-  { permission: [PERMISSION.VENUE_MANAGE] },
+  { permission: [PERMISSION.VENUE_MANAGE], rateLimit: "user-write" },
   async ({ req, params }) => {
     const { venueId } = parseInput(getVenueParam, await params);
     const body = await parseBody(req, setVenueStatusBodySchema);

@@ -9,7 +9,11 @@ import { userService } from "@/src/features/users/server";
 // the account is already active or suspended, 429 within 60 s of the last invite. The response
 // never contains the link.
 export const POST = route<{ userId: string }>(
-  { auth: "signed-in", permission: [PERMISSION.USER_STATUS_MANAGE] },
+  {
+    auth: "signed-in",
+    permission: [PERMISSION.USER_STATUS_MANAGE],
+    rateLimit: "user-write",
+  },
   async ({ params }) => {
     const { userId } = parseInput(userParamSchema, await params);
     const result = await userService.resendInvite(userId);

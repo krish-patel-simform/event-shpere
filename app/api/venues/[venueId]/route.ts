@@ -19,7 +19,7 @@ import { venueService } from "@/src/features/venues/server";
 // (anything else is a 404); a signed-in admin with VENUE_MANAGE sees everything. The answer depends
 // on the cookie, so no cache may keep it.
 export const GET = route<{ venueId: string }>(
-  { auth: "public" },
+  { auth: "public", rateLimit: "public-read-ip" },
   async ({ params }) => {
     const { venueId } = parseInput(getVenueParam, await params);
     const user = await getCurrentUser();
@@ -35,7 +35,7 @@ export const GET = route<{ venueId: string }>(
 // An admin edits the venue's details; only the fields in the body change. 409 VENUE_EXISTS when the
 // new name is taken in that city. Halls and status have their own routes.
 export const PATCH = route<{ venueId: string }>(
-  { permission: [PERMISSION.VENUE_MANAGE] },
+  { permission: [PERMISSION.VENUE_MANAGE], rateLimit: "user-write" },
   async ({ req, params }) => {
     const { venueId } = parseInput(getVenueParam, await params);
     const body = await parseBody(req, updateVenueBodySchema);
@@ -47,7 +47,7 @@ export const PATCH = route<{ venueId: string }>(
 // An admin permanently deletes a venue that was never used. 409 VENUE_IN_USE when an event or a
 // session (of any date) points at it: deactivate it with PATCH .../status instead.
 export const DELETE = route<{ venueId: string }>(
-  { permission: [PERMISSION.VENUE_MANAGE] },
+  { permission: [PERMISSION.VENUE_MANAGE], rateLimit: "user-write" },
   async ({ params }) => {
     const { venueId } = parseInput(getVenueParam, await params);
     await venueService.deleteVenue(venueId);

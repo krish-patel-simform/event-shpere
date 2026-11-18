@@ -1,4 +1,4 @@
-import { ok, parseInput, route } from "@/src/core/http";
+import { ok, parseInput, PUBLIC_CACHE_HEADERS, route } from "@/src/core/http";
 import {
   publicSessionDetailSchema,
   publicSessionParams,
@@ -11,10 +11,13 @@ import { sessionService } from "@/src/features/sessions/server";
 // same reason as the event's public route: /api/events/[eventId]/sessions/[sessionId] is the
 // organizer's view, by id, with the join link, limited to the owner.
 export const GET = route<{ slug: string; sessionId: string }>(
-  { auth: "public" },
+  { auth: "public", rateLimit: "public-read-ip" },
   async ({ params }) => {
     const { slug, sessionId } = parseInput(publicSessionParams, await params);
     const session = await sessionService.getPublicSession(slug, sessionId);
-    return ok(publicSessionDetailSchema.parse(session));
+    // The same for every viewer: the CDN may keep it briefly (a 404 above is never kept).
+    return ok(publicSessionDetailSchema.parse(session), {
+      headers: PUBLIC_CACHE_HEADERS,
+    });
   },
 );

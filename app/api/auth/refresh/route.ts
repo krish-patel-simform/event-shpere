@@ -10,11 +10,15 @@ import { noContent, route, UnauthorizedError } from "@/src/core/http";
 // the only credential is the refresh cookie. The browser client calls it when a request gets 401.
 // On failure it does NOT clear the cookies: if two tabs refresh at once, the loser would
 // otherwise wipe the new cookies the winner just set and log both tabs out.
-export const POST = route({ auth: "public" }, async () => {
-  const refreshToken = await readRefreshTokenCookie();
-  const tokens = refreshToken ? await refreshAuthSession(refreshToken) : null;
-  if (!tokens) throw new UnauthorizedError("Session expired");
+// Its own limit: the client calls it by itself, so it must not share the strict login budget.
+export const POST = route(
+  { auth: "public", rateLimit: "refresh-ip" },
+  async () => {
+    const refreshToken = await readRefreshTokenCookie();
+    const tokens = refreshToken ? await refreshAuthSession(refreshToken) : null;
+    if (!tokens) throw new UnauthorizedError("Session expired");
 
-  await writeAuthCookies(tokens);
-  return noContent();
-});
+    await writeAuthCookies(tokens);
+    return noContent();
+  },
+);

@@ -10,7 +10,7 @@ import { eventService } from "@/src/features/events/server";
 // event is the caller's (someone else's is a 404). Cancelling twice answers the cancelled event
 // again; a draft or a completed event is a 409.
 export const POST = route<{ eventId: string }>(
-  { permission: [PERMISSION.EVENT_MANAGE_OWN] },
+  { permission: [PERMISSION.EVENT_MANAGE_OWN], rateLimit: "user-write" },
   async ({ params, currentUser }) => {
     const { eventId } = parseInput(eventIdParam, await params);
     const event = await eventService.cancelEvent(eventId, currentUser);
