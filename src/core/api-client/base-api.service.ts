@@ -48,7 +48,9 @@ function refreshSession(): Promise<void> {
 
 // Response interceptor: the access token lives 15 minutes. On a 401, trade the refresh cookie
 // for new tokens (the server sets the new cookies) and send the original request once more.
-// If the refresh fails, the original 401 is passed on, so the caller treats it as "signed out".
+// Only a 401 from the refresh means "signed out": then the original 401 is passed on. Any other
+// refresh failure (429 rate limited, 5xx, network down) says nothing about the session, so that
+// error is passed on as itself and the user is not logged out for it.
 baseApiService.interceptors.response.use(undefined, async (error: unknown) => {
   if (!isAxiosError(error) || error.response?.status !== 401 || !error.config) {
     throw error;
@@ -63,8 +65,10 @@ baseApiService.interceptors.response.use(undefined, async (error: unknown) => {
 
   try {
     await refreshSession();
-  } catch {
-    throw error;
+  } catch (refreshError) {
+    throw isAxiosError(refreshError) && refreshError.response?.status === 401
+      ? error
+      : refreshError;
   }
   return baseApiService.request({ ...config, _retriedAfterRefresh: true });
 });

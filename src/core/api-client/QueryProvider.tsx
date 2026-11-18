@@ -9,10 +9,15 @@ function makeQueryClient() {
     defaultOptions: {
       queries: {
         staleTime: 60_000,
-        // Retry only failures that may pass next time (network, 5xx), never a 4xx.
+        // Retry only failures that may pass next time (network, 5xx), never a 4xx (a 429 is one)
+        // and never a 503: that is the server asking for time, so an instant retry only adds load.
         retry: (failureCount, error) =>
           failureCount < 2 &&
-          !(error instanceof ApiError && error.status >= 400 && error.status < 500),
+          !(
+            error instanceof ApiError &&
+            ((error.status >= 400 && error.status < 500) ||
+              error.status === 503)
+          ),
       },
       // A mutation (login, set password) must never be silently sent twice.
       mutations: { retry: false },
@@ -23,5 +28,7 @@ function makeQueryClient() {
 /** One QueryClient per browser tab (useState), so the cache survives re-renders. */
 export function QueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
 }

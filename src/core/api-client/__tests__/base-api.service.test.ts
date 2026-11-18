@@ -94,7 +94,7 @@ describe("response interceptor: refresh on 401", () => {
     expect(urls()).toEqual(["/auth/me", "/auth/refresh"]);
   });
 
-  it("when the refresh cannot be reached (network down), the original 401 is reported", async () => {
+  it("when the refresh cannot be reached (network down), the network error is reported, not a 401", async () => {
     const adapter = baseApiService.defaults.adapter;
     baseApiService.defaults.adapter = async (config) => {
       if (config.url === "/auth/refresh") {
@@ -104,9 +104,40 @@ describe("response interceptor: refresh on 401", () => {
     };
     reply = () => unauthorized;
 
-    await expect(getMe()).rejects.toMatchObject({ status: 401 });
+    await expect(getMe()).rejects.toMatchObject({
+      status: 0,
+      code: "NETWORK_ERROR",
+    });
 
     baseApiService.defaults.adapter = adapter;
+  });
+
+  it("when the refresh is rate limited (429), that is reported, not a 401 'signed out'", async () => {
+    reply = (url) =>
+      url === "/auth/refresh"
+        ? {
+            status: 429,
+            data: { error: { code: "RATE_LIMITED", message: "Slow down" } },
+          }
+        : unauthorized;
+
+    await expect(getMe()).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+    });
+    expect(urls()).toEqual(["/auth/me", "/auth/refresh"]);
+  });
+
+  it("when the refresh fails with a 5xx, that error is reported, not a 401", async () => {
+    reply = (url) =>
+      url === "/auth/refresh"
+        ? {
+            status: 503,
+            data: { error: { code: "UNAVAILABLE", message: "Busy" } },
+          }
+        : unauthorized;
+
+    await expect(getMe()).rejects.toMatchObject({ status: 503 });
   });
 
   it("a 401 on the re-sent request is final: one refresh at most, no loop", async () => {
