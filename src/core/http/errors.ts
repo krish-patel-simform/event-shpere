@@ -84,24 +84,31 @@ export class PayloadTooLargeError extends AppError {
   }
 }
 
-/** 503: a service we depend on (e.g. the CMS) is down; trying again later can work. */
+/**
+ * 503: a service we depend on (the CMS, the database) is down or full; trying again later can
+ * work. `retryAfterSeconds` (when known) becomes the Retry-After header.
+ */
 export class ServiceUnavailableError extends AppError {
   readonly status = 503;
 
   constructor(
     readonly code: string,
     message: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
   }
 }
 
-/** 429: too many requests. */
+/** 429: too many requests. `retryAfterSeconds` (when known) becomes the Retry-After header. */
 export class RateLimitError extends AppError {
   readonly status = 429;
   readonly code = "RATE_LIMITED";
 
-  constructor(message = "Too many requests, try again later") {
+  constructor(
+    message = "Too many requests, try again later",
+    readonly retryAfterSeconds?: number,
+  ) {
     super(message);
   }
 }
