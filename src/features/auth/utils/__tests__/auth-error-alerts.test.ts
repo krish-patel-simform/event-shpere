@@ -36,6 +36,24 @@ describe("getAuthAlert", () => {
     });
   });
 
+  it("shows a rate-limited user a warning to wait a moment, with no retry button", () => {
+    const alert = getAuthAlert(new ApiError(429, "RATE_LIMITED", "Too many"));
+
+    expect(alert).toEqual({
+      tone: "warning",
+      title: "Too many attempts",
+      message:
+        "You've made too many requests. Please wait a moment and try again.",
+    });
+    expect(alert.retryable).toBeUndefined();
+  });
+
+  it("treats any 429 the same, even without our error code", () => {
+    expect(getAuthAlert(new ApiError(429, "UNKNOWN", "x")).tone).toBe(
+      "warning",
+    );
+  });
+
   it("links to support only for a suspended account", () => {
     expect(
       getAuthAlert(new ApiError(403, "ACCOUNT_SUSPENDED", "x")).supportLink,

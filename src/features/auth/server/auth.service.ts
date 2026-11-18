@@ -8,7 +8,11 @@ import {
   hashPassword,
   verifyPassword,
 } from "../../../core/auth/server/password";
-import { ForbiddenError, UnauthorizedError } from "../../../core/http/errors";
+import {
+  ForbiddenError,
+  RateLimitError,
+  UnauthorizedError,
+} from "../../../core/http/errors";
 import {
   createEmailOtp,
   EMAIL_OTP_TTL_MINUTES,
@@ -27,6 +31,10 @@ import type {
 import { createEmailVerifyToken } from "./account-activation.service";
 import { toAuthUserDto, toSignUpDto } from "./auth.dto";
 import { authRepository, type AuthRepository } from "./auth.repository";
+import {
+  loginFailureStore,
+  type LoginFailureStore,
+} from "./login-failure.store";
 
 const INVALID_LOGIN = "Invalid email or password";
 
@@ -45,6 +53,7 @@ export type AuthServiceDeps = {
   createEmailVerifyToken: typeof createEmailVerifyToken;
   createEmailOtp: typeof createEmailOtp;
   emailOtpStore: Pick<EmailOtpStore, "save" | "claimResend">;
+  loginFailureStore: LoginFailureStore;
   sendVerificationCodeEmail: typeof sendVerificationCodeEmail;
   verificationCodeTtlMinutes: number;
   /** Base URL for the verify-email link in the email. */
@@ -114,6 +123,18 @@ export function createAuthService(deps: AuthServiceDeps) {
       input: LoginBody,
       userAgent: string | null,
     ): Promise<{ user: AuthUserDto; tokens: AuthTokens }> {
+      // Count the attempt BEFORE anything else: one atomic step, so a burst of parallel guesses
+      // cannot all slip under the limit while argon2 is busy. A refused attempt costs no lookup
+      // and no hash. Known and unknown emails are counted the same, so the 429 never reveals
+      // which accounts exist.
+      const attempt = await deps.loginFailureStore.registerAttempt(input.email);
+      if (attempt.locked) {
+        throw new RateLimitError(
+          "Too many login attempts. Try again later.",
+          attempt.retryAfterSeconds,
+        );
+      }
+
       const user = await deps.authRepository.findUserForLogin(input.email);
 
       // Always run one argon2 verify, even for an unknown email or an account without a password
@@ -128,6 +149,11 @@ export function createAuthService(deps: AuthServiceDeps) {
       if (!user || !user.passwordHash || !passwordOk) {
         throw new UnauthorizedError(INVALID_LOGIN);
       }
+
+      // A correct password proves who this is: forget the earlier attempts, so a real user is
+      // never punished for old mistakes. Before the state checks: a pending or suspended
+      // account that knows its password is not a guesser either.
+      await deps.loginFailureStore.clear(input.email);
 
       // Only a correct password gets to hear the account state.
       if (user.status === "pending") {
@@ -281,6 +307,7 @@ export const authService = createAuthService({
   createEmailVerifyToken,
   createEmailOtp,
   emailOtpStore,
+  loginFailureStore,
   sendVerificationCodeEmail,
   verificationCodeTtlMinutes: EMAIL_OTP_TTL_MINUTES,
   appUrl: env.APP_URL,

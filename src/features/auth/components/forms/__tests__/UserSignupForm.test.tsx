@@ -182,16 +182,16 @@ describe("UserSignupForm", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("a rate-limited request shows the server's message in the alert", async () => {
+  it("a rate-limited request shows a wait-a-moment warning in the alert", async () => {
     signUpUser.mockRejectedValue(
-      new ApiError(429, "RATE_LIMITED", "Too many requests. Try again later."),
+      new ApiError(429, "RATE_LIMITED", "Too many requests."),
     );
     renderWithStoreAndQuery(<UserSignupForm />);
     await fillRequired();
     await userEvent.click(submitButton());
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Too many requests. Try again later.");
+    expect(alert).toHaveTextContent("Please wait a moment and try again.");
     expect(alert).toHaveFocus();
     expect(mockPush).not.toHaveBeenCalled();
   });

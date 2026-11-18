@@ -7,6 +7,13 @@ export const EMAIL_VERIFY_TOKEN_TTL_MINUTES = 5;
 export const PASSWORD_RESET_TOKEN_TTL_MINUTES = 10;
 /** Minimum wait between two reset links an admin sends to the same person (stops inbox spam). */
 export const PASSWORD_RESET_ADMIN_COOLDOWN_SECONDS = 60;
+/**
+ * Login attempts one email gets within the window. The next one is refused, even with the
+ * right password. A successful login clears the count.
+ */
+export const LOGIN_MAX_ATTEMPTS = 5;
+/** The window starts at the first attempt; later attempts (refused ones too) do not extend it. */
+export const LOGIN_ATTEMPTS_WINDOW_SECONDS = 15 * 60;
 export const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
 export const PASSWORD_REGEX_MESSAGE =

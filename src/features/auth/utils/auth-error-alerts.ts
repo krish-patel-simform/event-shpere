@@ -41,14 +41,25 @@ const BY_CODE: Record<string, AuthAlertConfig> = {
   },
 };
 
+// Too many requests (429): no retry button, because pressing it right away only gets blocked
+// again, and no wait time, because the user just needs to pause for a moment.
+const RATE_LIMITED: AuthAlertConfig = {
+  tone: "warning",
+  title: "Too many attempts",
+  message: "You've made too many requests. Please wait a moment and try again.",
+};
+
 /** Picks what to show for a failed auth request: by code first, then by kind of failure. */
 export function getAuthAlert(error: ApiError): AuthAlertConfig {
+  if (error.code === "RATE_LIMITED" || error.status === 429) {
+    return RATE_LIMITED;
+  }
   const byCode = BY_CODE[error.code];
   if (byCode) return byCode;
 
   // Network down, timeout, 5xx or a response we could not read: the user can try again.
   if (error.status === 0 || error.status >= 500) return UNEXPECTED;
 
-  // Any other 4xx (e.g. EMAIL_TAKEN, RATE_LIMITED): the server's own message is safe to show.
+  // Any other 4xx (e.g. EMAIL_TAKEN): the server's own message is safe to show.
   return { tone: "error", message: error.message };
 }

@@ -121,16 +121,16 @@ describe("ForgotPasswordScreen", () => {
     expect(checkEmailHeading()).not.toBeInTheDocument();
   });
 
-  it("shows the server's message when the request is rate limited", async () => {
+  it("shows a wait-a-moment warning when the request is rate limited", async () => {
     forgotPassword.mockRejectedValue(
-      new ApiError(429, "RATE_LIMITED", "Too many requests. Try again later."),
+      new ApiError(429, "RATE_LIMITED", "Too many requests."),
     );
     renderScreen();
     await userEvent.type(emailField(), "olga@acme.test");
     await submit();
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Too many requests. Try again later.");
+    expect(alert).toHaveTextContent("Please wait a moment and try again.");
     expect(alert).toHaveFocus();
     expect(emailField()).toHaveValue("olga@acme.test");
     expect(checkEmailHeading()).not.toBeInTheDocument();

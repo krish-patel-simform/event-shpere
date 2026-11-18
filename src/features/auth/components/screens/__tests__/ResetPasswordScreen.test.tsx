@@ -183,15 +183,15 @@ describe("ResetPasswordScreen", () => {
     expect(resetPassword).toHaveBeenCalledTimes(2);
   });
 
-  it("a rate-limited request shows the server's message in the alert", async () => {
+  it("a rate-limited request shows a wait-a-moment warning in the alert", async () => {
     resetPassword.mockRejectedValue(
-      new ApiError(429, "RATE_LIMITED", "Too many requests. Try again later."),
+      new ApiError(429, "RATE_LIMITED", "Too many requests."),
     );
     renderScreen();
     await fillAndSubmit();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Too many requests. Try again later.",
+      "Please wait a moment and try again.",
     );
     expect(updatedHeading()).not.toBeInTheDocument();
   });

@@ -1,4 +1,7 @@
-import { UnauthorizedError } from "../../../../core/http/errors";
+import {
+  RateLimitError,
+  UnauthorizedError,
+} from "../../../../core/http/errors";
 import {
   loginBodySchema,
   organizerSignupBodySchema,
@@ -14,6 +17,7 @@ jest.mock("../../../../core/auth/server/auth-session", () => ({}));
 jest.mock("../../../../core/auth/server/password", () => ({}));
 jest.mock("../auth.repository", () => ({}));
 jest.mock("../../../email/server", () => ({}));
+jest.mock("../login-failure.store", () => ({}));
 
 const activeUser = {
   id: "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10",
@@ -57,6 +61,11 @@ function setup(
       save: jest.fn(),
       // No cooldown running by default; the cooldown tests make it answer false.
       claimResend: jest.fn().mockResolvedValue(true),
+    },
+    loginFailureStore: {
+      // Not locked by default; the attempt limit tests make it answer locked.
+      registerAttempt: jest.fn().mockResolvedValue({ locked: false }),
+      clear: jest.fn().mockResolvedValue(undefined),
     },
     sendVerificationCodeEmail: jest.fn(),
     verificationCodeTtlMinutes: 5,
@@ -201,6 +210,107 @@ describe("authService.login", () => {
     );
 
     await expect(service.login(input, null)).rejects.toThrow(UnauthorizedError);
+  });
+
+  describe("attempt limit", () => {
+    const lockedStore = () => ({
+      registerAttempt: jest
+        .fn()
+        .mockResolvedValue({ locked: true, retryAfterSeconds: 600 }),
+      clear: jest.fn(),
+    });
+    const lockedAnswer = {
+      status: 429,
+      code: "RATE_LIMITED",
+      retryAfterSeconds: 600,
+      message: "Too many login attempts. Try again later.",
+    };
+
+    it("counts the attempt under the email BEFORE the password is checked", async () => {
+      const registerAttempt = jest.fn().mockResolvedValue({ locked: false });
+      const verifyPassword = jest.fn().mockResolvedValue(true);
+      const { service } = setup(activeUser, {
+        loginFailureStore: { registerAttempt, clear: jest.fn() },
+        verifyPassword,
+      });
+
+      await service.login(input, null);
+
+      expect(registerAttempt).toHaveBeenCalledWith("ada@example.com");
+      expect(registerAttempt.mock.invocationCallOrder[0]).toBeLessThan(
+        verifyPassword.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("refuses a locked email with a 429 that says when to come back, with no lookup and no hash", async () => {
+      const { deps, service } = setup(activeUser, {
+        loginFailureStore: lockedStore(),
+      });
+
+      const error = await service.login(input, null).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(RateLimitError);
+      expect(error).toMatchObject(lockedAnswer);
+      expect(deps.authRepository.findUserForLogin).not.toHaveBeenCalled();
+      expect(deps.verifyPassword).not.toHaveBeenCalled();
+      expect(deps.createAuthSession).not.toHaveBeenCalled();
+    });
+
+    it("refuses a locked email with no account in exactly the same way, so the answer never reveals which exist", async () => {
+      const { service } = setup(null, { loginFailureStore: lockedStore() });
+
+      const error = await service.login(input, null).catch((e: unknown) => e);
+
+      expect(error).toMatchObject(lockedAnswer);
+    });
+
+    it("forgets the attempts after a correct password", async () => {
+      const { deps, service } = setup();
+
+      await service.login(input, null);
+
+      expect(deps.loginFailureStore.clear).toHaveBeenCalledWith(
+        "ada@example.com",
+      );
+    });
+
+    it("forgets them for a pending account that knows its password too: it is not a guesser", async () => {
+      const { deps, service } = setup({ ...activeUser, status: "pending" });
+
+      await service.login(input, null).catch(() => undefined);
+
+      expect(deps.loginFailureStore.clear).toHaveBeenCalledWith(
+        "ada@example.com",
+      );
+    });
+
+    it("keeps the count after a wrong password, and for an unknown email", async () => {
+      const wrong = setup(activeUser, {
+        verifyPassword: jest.fn().mockResolvedValue(false),
+      });
+      const unknown = setup(null);
+
+      await wrong.service.login(input, null).catch(() => undefined);
+      await unknown.service.login(input, null).catch(() => undefined);
+
+      expect(wrong.deps.loginFailureStore.clear).not.toHaveBeenCalled();
+      expect(unknown.deps.loginFailureStore.clear).not.toHaveBeenCalled();
+    });
+
+    it("fails closed when the counter fails: the login fails and nobody is looked up", async () => {
+      const { deps, service } = setup(activeUser, {
+        loginFailureStore: {
+          registerAttempt: jest
+            .fn()
+            .mockRejectedValue(new Error("Redis is down")),
+          clear: jest.fn(),
+        },
+      });
+
+      await expect(service.login(input, null)).rejects.toThrow("Redis is down");
+      expect(deps.authRepository.findUserForLogin).not.toHaveBeenCalled();
+      expect(deps.createAuthSession).not.toHaveBeenCalled();
+    });
   });
 
   it("rejects an account without a role", async () => {
