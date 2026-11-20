@@ -370,8 +370,8 @@ export const eventRepository = {
    * with the total that matches (so the pager knows how many pages there are).
    */
   async listOwnEvents(params: {
-    /** The organizer PROFILE id (organizer_profiles.id). */
-    organizerId: string;
+    /** The organizer PROFILE id (organizer_profiles.id); null = every organizer's (an admin). */
+    organizerId: string | null;
     tab: EventTabKey;
     /** Matches the title, ignoring case. */
     search?: string;
@@ -383,7 +383,9 @@ export const eventRepository = {
     // The search text is a bound parameter (never pasted into SQL), and % and _ in it are
     // escaped so they search for themselves.
     const where = and(
-      eq(eventsTable.organizerId, params.organizerId),
+      params.organizerId
+        ? eq(eventsTable.organizerId, params.organizerId)
+        : undefined,
       tabCondition(params.tab, params.now),
       params.search
         ? ilike(eventsTable.title, `%${escapeLike(params.search)}%`)
@@ -409,8 +411,11 @@ export const eventRepository = {
     return { rows, total: countOf(totals) };
   },
 
-  /** How many events of the organizer each tab holds, whatever the search. */
-  async countOwnEventsByTab(organizerId: string, now: Date) {
+  /**
+   * How many events of the organizer each tab holds, whatever the search. A null organizer id
+   * counts every organizer's events (an admin).
+   */
+  async countOwnEventsByTab(organizerId: string | null, now: Date) {
     const inTab = (tab: EventTabKey) =>
       sql<number>`(count(*) filter (where ${tabCondition(tab, now) ?? sql`true`}))::int`;
 
@@ -423,7 +428,9 @@ export const eventRepository = {
         cancelled: inTab("cancelled"),
       })
       .from(eventsTable)
-      .where(eq(eventsTable.organizerId, organizerId));
+      .where(
+        organizerId ? eq(eventsTable.organizerId, organizerId) : undefined,
+      );
     return (
       row ?? { all: 0, draft: 0, published: 0, completed: 0, cancelled: 0 }
     );
@@ -900,14 +907,19 @@ export const eventRepository = {
   },
 
   /**
-   * Publishes a draft: status and publish time in one UPDATE. The status is part of the WHERE, so
-   * only a draft is published and two requests at once cannot both win: null = it was not a draft
-   * any more (published or cancelled a moment ago).
+   * Publishes a draft: status, publish time and the registration window in one UPDATE, so a
+   * published event always has its dates. The status is part of the WHERE, so only a draft is
+   * published and two requests at once cannot both win: null = it was not a draft any more
+   * (published or cancelled a moment ago).
    */
-  async publishEvent(eventId: string, at: Date): Promise<EventRecord | null> {
+  async publishEvent(
+    eventId: string,
+    at: Date,
+    window: { registrationOpensAt: Date; registrationClosesAt: Date },
+  ): Promise<EventRecord | null> {
     const [event] = await db
       .update(eventsTable)
-      .set({ status: "published", publishedAt: at })
+      .set({ status: "published", publishedAt: at, ...window })
       .where(and(eq(eventsTable.id, eventId), eq(eventsTable.status, "draft")))
       .returning();
     return event ?? null;

@@ -59,6 +59,7 @@ import type {
 import type {
   CreateEventBody,
   EventDto,
+  PublishEventBody,
   UpdateEventBody,
 } from "../schemas/events.schemas";
 import {
@@ -76,6 +77,7 @@ import {
   type EventRef,
   type EventRepository,
 } from "./event.repository";
+import { toFormDateTime } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import { createEventAccess, type EventActor } from "./event-access";
 import { EVENT_IMAGE_POLICY, type ImageUpload } from "./event-image";
@@ -192,6 +194,43 @@ function toStrapiUpdate(body: UpdateEventContentBody): StrapiEventPageUpdate {
           };
   }
   return data;
+}
+
+/**
+ * The registration window an organizer picks when publishing: it opens today or later and closes
+ * later than now, and both are before the event starts. "Today" is the calendar day in the
+ * EVENT's time zone (the organizer's day), compared as "YYYY-MM-DD", so a server in another zone
+ * does not refuse the day the organizer sees as today. Every problem is reported at once, each
+ * on its own field.
+ */
+function assertRegistrationWindow(
+  window: PublishEventBody,
+  event: { startAt: Date; timezone: string },
+  at: Date,
+): void {
+  const { registrationOpensAt: opens, registrationClosesAt: closes } = window;
+  const dayOf = (date: Date) =>
+    toFormDateTime(date.toISOString(), event.timezone).date;
+
+  const fieldErrors: Record<string, string[]> = {};
+  if (dayOf(opens) < dayOf(at)) {
+    fieldErrors.registrationOpensAt = ["Registration can't start before today"];
+  } else if (opens >= event.startAt) {
+    fieldErrors.registrationOpensAt = [
+      "Registration must start before the event starts",
+    ];
+  }
+  if (closes >= event.startAt) {
+    fieldErrors.registrationClosesAt = [
+      "Registration must end before the event starts",
+    ];
+  } else if (closes <= at) {
+    fieldErrors.registrationClosesAt = ["Registration must end in the future"];
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new ValidationError("Invalid request", { fieldErrors });
+  }
 }
 
 /**
@@ -587,9 +626,10 @@ export function createEventService(deps: EventServiceDeps) {
     },
 
     /**
-     * One page of the caller's OWN events (those of their organizer profile), by tab, search
-     * and sort. An admin has no organizer profile and owns no events, so their page is empty:
-     * every event of the platform is a separate admin page.
+     * One page of the events the caller manages, by tab, search and sort: an organizer's OWN
+     * events (those of their organizer profile), or EVERY event of the platform for an admin
+     * (an admin has no organizer profile, so `requireManager` answers null and nothing filters
+     * by owner). The rows carry the registered count, the capacity and the venue either way.
      */
     async listOwnEvents(
       query: MyEventListQuery,
@@ -598,10 +638,6 @@ export function createEventService(deps: EventServiceDeps) {
       const organizerId = await access.requireManager(actor);
 
       const { page, pageSize, status, search, sort } = query;
-      if (!organizerId) {
-        return { items: [], meta: { page, pageSize, total: 0 } };
-      }
-
       const at = now();
       const { rows, total } = await repo.listOwnEvents({
         organizerId,
@@ -621,12 +657,9 @@ export function createEventService(deps: EventServiceDeps) {
       };
     },
 
-    /** How many of the caller's events each tab holds (all zero for an admin, who owns none). */
+    /** How many events each tab holds: the caller's own, or every event for an admin. */
     async countOwnEvents(actor: EventActor): Promise<EventTabCounts> {
       const organizerId = await access.requireManager(actor);
-      if (!organizerId) {
-        return { all: 0, draft: 0, published: 0, completed: 0, cancelled: 0 };
-      }
       return repo.countOwnEventsByTab(organizerId, now());
     },
 
@@ -907,8 +940,17 @@ export function createEventService(deps: EventServiceDeps) {
      * - it has a live session, and no session is still a draft (every session has its slot)
      * - every session is inside the event's dates and in a hall of its venue
      * A missing item is 409 EVENT_NOT_READY with the list of what is missing.
+     *
+     * The organizer also says when registration opens and closes (both required): from today
+     * (in the event's time zone) up to before the event starts, and it must still close in the
+     * future. They are saved with the status, in the same UPDATE. A bad date is a 400 on its field.
+     * Publishing an event that is already published answers it as it is and ignores the dates.
      */
-    async publishEvent(eventId: string, actor: EventActor): Promise<EventDto> {
+    async publishEvent(
+      eventId: string,
+      actor: EventActor,
+      body: PublishEventBody,
+    ): Promise<EventDto> {
       if (actor.role !== "organizer") {
         throw new ForbiddenError("Only the organizer can publish an event");
       }
@@ -930,6 +972,9 @@ export function createEventService(deps: EventServiceDeps) {
           "An event that has already ended can't be published",
         );
       }
+
+      // Checked early: it needs no other lookup, and the organizer fixes it in the same dialog.
+      assertRegistrationWindow(body, current, at);
 
       if (current.venueId) {
         const venue = await repo.findVenue(current.venueId);
@@ -987,7 +1032,10 @@ export function createEventService(deps: EventServiceDeps) {
         );
       }
 
-      const published = await repo.publishEvent(eventId, at);
+      const published = await repo.publishEvent(eventId, at, {
+        registrationOpensAt: body.registrationOpensAt,
+        registrationClosesAt: body.registrationClosesAt,
+      });
       if (published) return toEventDto(published);
 
       // It stopped being a draft between the read and the write.
