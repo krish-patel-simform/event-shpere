@@ -90,8 +90,10 @@ IDs like `DISC-3` are from the catalog. "Static" means the screen exists but sho
 ### 3D. Organizer screens still static
 
 - [ ] **Attendees tab** `/organizer/events/[eventId]/attendees`: all sample data, Export CSV off.
-      Needs registrations and `GET /api/events/[eventId]/attendees` (search, status, paging,
-      owner check).
+      The API is done (`GET /api/events/[eventId]/attendees`: search by name, email or ticket
+      code, `status` and `checkedIn` filters, paging, owner check, tab counts in `meta.counts`).
+      Still to do: wire the page to it (hook, loading, empty and error states, tests) and
+      Export CSV.
 - [ ] **Quick actions** on the event overview (send notification, manage polls, view analytics) are
       switched off. They come with NOTIF-6, ORG-3, ORG-4 and DASH.
 - [ ] **Speaker "My sessions"** `/speaker/sessions`, its detail page and **submit a session**
@@ -154,9 +156,87 @@ IDs like `DISC-3` are from the catalog. "Static" means the screen exists but sho
 
 ### Registration and payments (REG-1 to REG-7)
 
-- [ ] Register, cancel, status. Tables `event_registrations`, `session_registrations`,
-      `event_check_ins` exist; there is no API or UI. Seat check and unique registration in one
-      transaction; free ticket is instant (REG-4).
+- [x] **Event registration API (REG-1, 2, 3, 4), no UI yet.** Done and tested: register
+      `POST /api/events/[eventId]/registrations` (free or complimentary ticket, seat check and
+      unique registration in one transaction, 409 `ALREADY_REGISTERED` on a repeat), my standing
+      in one event `GET …/registrations/me`, cancel `DELETE …/registrations/me` (until
+      registration closes, also frees the user's session seats), and my tickets
+      `GET /api/me/registrations` (paged, `status` and `when` filters). A price above 0 is a 409
+      `PAYMENT_NOT_AVAILABLE_YET` until Stripe is added.
+- [ ] **Registration UI**: Register / Cancel buttons on the event page, a My tickets page, loading,
+      empty and error states, and their tests. Hide the My tickets link from organizers and admins
+      (they have no `REGISTRATION_VIEW_OWN`; they use a separate user account to attend).
+- [x] **Organizer/admin registration APIs, no UI yet.** Done and tested: the attendee list
+      (see the Attendees tab item in 3D) and manual event check-in
+      `POST /api/events/[eventId]/check-ins` (body is only the ticket code; organizer for own
+      events, admin for any; window from 6 hours before the start until the end; one check-in per
+      person per event day in the event's time zone; 409 for a cancelled ticket, a repeat, a
+      draft or cancelled event; the window opens `CHECK_IN_OPENS_HOURS_BEFORE` hours before the
+      start: 6 in production, a year in `next dev`). Also done: the check-in log
+      `GET /api/events/[eventId]/check-ins` (one row per check-in with the person, day, time,
+      method and who did it; search by name, email or ticket code, `date` for one event day,
+      `sort` newest, oldest or name, paging, `meta.counts` of people checked in out of
+      registered), and `sort` (newest, oldest, name) on the attendee list.
+- [ ] **Check-ins tab and check-in box (UI).** A new "Check-ins" tab in `EventSectionTabs`
+      (`/organizer/events/[eventId]/check-ins`): the "142 of 250 checked in" badge, a box to check
+      a person in by ticket code (calls the POST), the log table with search, sort, a day filter
+      for multi-day events and paging, and loading, empty and error states. Same page for the
+      organizer and the admin. QR scan is BONUS-1.
+- [x] **Session attendees API, no UI yet.** Done and tested:
+      `GET /api/events/[eventId]/sessions/[sessionId]/attendees`: one row per seat with the
+      person, ticket code and `checkedInAt`; the event list's query (`status`, `checkedIn`
+      yes/no = pending, `search`, `sort` newest/oldest/name, paging); counts `registered`,
+      `cancelled`, `checkedIn` (from the check-in rows, so a session cancelled half-way keeps its
+      attendance) and `pending`. A session of another event is a 404. It also has the sort
+      `checkedIn` (latest check-in first).
+- [x] **Event attendee list: pending by day and the log's details, no UI yet.** Done and tested:
+      `GET /api/events/[eventId]/attendees` has an optional `date` (one event day, filters the
+      check-in by `event_check_ins.attendance_date`, so "pending on day 2" works and `checkedIn`,
+      `checkedInAt`, `checkedInBy` and the counts all mean that day; without it: any day and the
+      latest check-in), the sort `checkedIn` (latest check-in first, not checked in last), on each
+      row `checkedInBy` (name only) and `checkInMethod`, and `pending` in `meta.counts`. No
+      migration.
+- [ ] **Remove the event check-in LOG route (`GET /api/events/[eventId]/check-ins`) once the UI
+      is wired.** The attendee list now covers what the log shows (day, latest-first, who checked
+      in), so after the Check-ins tab uses the attendee list, delete the `GET` (keep the `POST`
+      in the same file) and the log's repository method, DTO, schemas and tests.
+- [x] **Session booking API, no UI yet.** Done and tested:
+      `POST /api/events/[eventId]/sessions/[sessionId]/registrations` (no body, 201 with the
+      booking). Needs a live event registration (409 `EVENT_REGISTRATION_REQUIRED`), booking stops
+      when the session starts (409 `SESSION_STARTED`), a repeat is 409 `ALREADY_BOOKED`, a speaker
+      of that session is refused (409 `SPEAKER_CANNOT_BOOK`), a paid session is 409
+      `PAYMENT_NOT_AVAILABLE_YET`, a full hall is 409 `SESSION_FULL`. The limit is the hall's
+      capacity; an online session has no hall and no limit; an in-person or hybrid session with no
+      hall yet cannot be booked. A cancelled booking is revived by booking again.
+- [x] **Session cancel API, no UI yet.** Done and tested:
+      `DELETE /api/events/[eventId]/sessions/[sessionId]/registrations/me` answers the booking as
+      `cancelled`. Allowed until registration for the event closes (`registrationClosesAt`, or the
+      event start): 409 `CANCELLATION_CLOSED` after. A seat used for the session check-in is 409
+      `ALREADY_CHECKED_IN`; cancelling twice answers the cancelled booking; no booking or a
+      session of another event is a 404. "Do I hold a seat?" is `bookedSessionIds` of
+      `GET /api/events/[eventId]/registrations/me` (no per-session GET on purpose).
+- [x] **Cancelling a SESSION or an EVENT (organizer) already cancels the seats and registrations**
+      in the same transaction (`session.repository.cancelSession`, `event.repository.cancelEvent`).
+      Both are final (no reopen). Still open for them: tell the attendees (notifications) and
+      refund paid tickets and paid sessions once Stripe exists (see the Stripe item).
+- [x] **Session check-in API, no UI yet.** Done and tested:
+      `POST /api/events/[eventId]/sessions/[sessionId]/check-ins` (body is only the ticket code,
+      which says who is at the door; organizer for own events, admin for any). Needs a registered
+      seat in that session (409 `SESSION_NOT_BOOKED`; a walk-in is not recorded) and the person's
+      event check-in of today (409 `EVENT_CHECK_IN_REQUIRED`). One per seat (409
+      `ALREADY_CHECKED_IN`). Window: from `SESSION_CHECK_IN_OPENS_HOURS_BEFORE` before the session
+      starts (2 in production, a year in `next dev`) until it ends (409 `CHECK_IN_NOT_OPEN` /
+      `CHECK_IN_CLOSED`); a cancelled session is 409 `SESSION_CANCELLED`.
+- [ ] **Session attendance: log, counts and UI.** A session check-in log and "checked in / booked"
+      count (like the event one), a check-in box on the session screen. Attendance must count
+      from `session_check_ins`, not from the booking status, so a session cancelled mid-way keeps
+      its numbers. Also: cancelling an EVENT should leave sessions that already ended alone.
+- [ ] **Registration window after publish.** Publishing now asks for when registration opens and
+      closes (both required, from today to before the event starts; `POST /api/events/[id]/publish`
+      and the Publish dialog). Still missing: change the window on a published event (`PATCH`
+      does not accept it yet, so a mistake cannot be fixed) and show the window on the
+      organizer's overview Details card. Events published before this have empty dates (open when
+      published, close at the start).
 - [ ] Stripe Checkout in test mode from the database price, payments table, webhook with signature
       check and idempotent confirmation, confirmation page, transaction history. The `stripe`
       package is not installed yet.
