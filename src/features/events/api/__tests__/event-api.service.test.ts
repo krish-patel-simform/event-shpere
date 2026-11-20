@@ -182,11 +182,16 @@ describe("eventApiService", () => {
     });
   });
 
-  it("publish posts to the event's publish endpoint, with no body", () => {
-    eventApiService.publish(eventId);
+  it("publish posts the registration dates to the event's publish endpoint", () => {
+    const body = {
+      registrationOpensAt: "2026-11-03T09:30:00+05:30",
+      registrationClosesAt: "2026-12-10T17:30:00+05:30",
+    };
+
+    eventApiService.publish(eventId, body);
 
     expect(apiRequest).toHaveBeenCalledWith(
-      { method: "POST", url: `/events/${eventId}/publish` },
+      { method: "POST", url: `/events/${eventId}/publish`, data: body },
       eventResponseSchema,
     );
   });

@@ -31,11 +31,11 @@ export function dayButtonName(key: string): RegExp {
 }
 
 /**
- * Chooses a day in the date picker named `label`, the way a person does: open the calendar, pick
- * the year and the month, click the day. `key` is "2026-12-12". A day the calendar disables can
- * not be clicked, so this throws for it.
+ * Opens the date picker named `label`, goes to the year and month of `key` ("2026-12-12") and
+ * returns that day's button. The button is there even when the calendar disables the day, so a
+ * test can check that a day cannot be chosen.
  */
-export async function chooseDate(label: string, key: string) {
+export async function findDayButton(label: string, key: string) {
   const user = userEvent.setup();
   const [year, month] = key.split("-").map(Number);
   const monthName = MONTHS[month - 1];
@@ -43,7 +43,12 @@ export async function chooseDate(label: string, key: string) {
   await user.click(
     screen.getByRole("button", { name: new RegExp(`^${label}`) }),
   );
-  const calendar = within(screen.getByRole("dialog"));
+  // Named, because a picker inside a dialog (the publish dialog) has two dialogs on screen.
+  const calendar = within(
+    screen.getByRole("dialog", {
+      name: new RegExp(`^Choose ${label.toLowerCase()}`),
+    }),
+  );
   await user.selectOptions(
     calendar.getByRole("combobox", { name: "Choose the Year" }),
     String(year),
@@ -52,7 +57,17 @@ export async function chooseDate(label: string, key: string) {
     calendar.getByRole("combobox", { name: "Choose the Month" }),
     monthName,
   );
-  await user.click(calendar.getByRole("button", { name: dayButtonName(key) }));
+  return calendar.getByRole("button", { name: dayButtonName(key) });
+}
+
+/**
+ * Chooses a day in the date picker named `label`, the way a person does: open the calendar, pick
+ * the year and the month, click the day. `key` is "2026-12-12". A day the calendar disables can
+ * not be clicked, so this throws for it.
+ */
+export async function chooseDate(label: string, key: string) {
+  const user = userEvent.setup();
+  await user.click(await findDayButton(label, key));
 }
 
 /** Chooses a time ("08:00") in the time picker named `label`: open the list, click the time. */

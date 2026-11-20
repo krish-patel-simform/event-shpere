@@ -16,6 +16,7 @@ import {
   EVENT_ROUTES,
   publicEventHref,
 } from "../routes";
+import type { PublishEventRequest } from "../schemas/events.schemas";
 import type {
   EventOverviewData,
   ManagedEvent,
@@ -30,6 +31,7 @@ import {
   QuickActionsCard,
 } from "./EventContentCards";
 import { CancelEventDialog, DeleteDraftDialog } from "./EventDialogs";
+import { PublishEventDialog } from "./PublishEventDialog";
 import {
   AttentionCard,
   DangerZoneCard,
@@ -84,9 +86,25 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const remove = useDeleteEvent();
   useLayoutEffect(() => () => setDeleting(null), []);
 
-  // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else.
+  // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else. It
+  // asks when registration opens and closes first, in a dialog that stays open if the server
+  // refuses and closes when the event is published (or when the page is hidden).
   const canPublish = useHasPermission("EVENT_PUBLISH_OWN");
+  const [publishing, setPublishing] = useState<ManagedEvent | null>(null);
   const publish = usePublishEvent();
+  useLayoutEffect(() => () => setPublishing(null), []);
+
+  function askToPublish() {
+    publish.reset();
+    setPublishing(event);
+  }
+  function confirmPublish(body: PublishEventRequest) {
+    if (publish.isPending) return;
+    publish.mutate(
+      { eventId: event.id, body },
+      { onSuccess: () => setPublishing(null) },
+    );
+  }
 
   function askToCancel() {
     cancel.reset();
@@ -179,11 +197,6 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           </Link>
         </Alert>
       )}
-      {publish.isError && (
-        <Alert tone="error" title="We couldn't publish the event">
-          {publish.error.message}
-        </Alert>
-      )}
       {cancel.isSuccess && (
         <Alert tone="success" title={`${cancel.data.title} was cancelled`} />
       )}
@@ -215,9 +228,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           {event.status === "draft" && (
             <PublishChecklistCard
               checklist={checklist}
-              onPublish={
-                canPublish ? () => publish.mutate(event.id) : undefined
-              }
+              onPublish={canPublish ? askToPublish : undefined}
               isPublishing={publish.isPending}
             />
           )}
@@ -252,6 +263,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         </div>
       </div>
 
+      <PublishEventDialog
+        event={publishing}
+        isPending={publish.isPending}
+        error={publish.error}
+        onClose={() => setPublishing(null)}
+        onSubmit={confirmPublish}
+      />
       <CancelEventDialog
         event={cancelling}
         isPending={cancel.isPending}

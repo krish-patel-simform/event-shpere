@@ -1,5 +1,6 @@
 import {
   createEventBodySchema,
+  publishEventBodySchema,
   updateEventBodySchema,
 } from "../events.schemas";
 
@@ -208,5 +209,55 @@ describe("updateEventBodySchema", () => {
     ["a fractional price", { ticketPrice: 1.5 }, "ticketPrice"],
   ])("rejects %s", (_label, body, path) => {
     expect(paths(body)).toContain(path);
+  });
+});
+
+describe("publishEventBodySchema", () => {
+  const valid = {
+    registrationOpensAt: "2026-11-03T09:30:00+05:30",
+    registrationClosesAt: "2026-12-10T17:30:00+05:30",
+  };
+  const pathsOf = (body: unknown) => {
+    const result = publishEventBodySchema.safeParse(body);
+    return result.success
+      ? []
+      : result.error.issues.map((issue) => issue.path.join("."));
+  };
+
+  it("accepts both dates and turns them into Dates", () => {
+    const parsed = publishEventBodySchema.parse(valid);
+
+    expect(parsed.registrationOpensAt).toBeInstanceOf(Date);
+    expect(parsed.registrationClosesAt).toBeInstanceOf(Date);
+  });
+
+  it("needs both dates: neither is optional", () => {
+    expect(pathsOf({})).toEqual(
+      expect.arrayContaining(["registrationOpensAt", "registrationClosesAt"]),
+    );
+    expect(pathsOf({ registrationOpensAt: valid.registrationOpensAt })).toEqual(
+      ["registrationClosesAt"],
+    );
+    expect(
+      pathsOf({ registrationClosesAt: valid.registrationClosesAt }),
+    ).toEqual(["registrationOpensAt"]);
+  });
+
+  it("rejects a date without an offset", () => {
+    expect(
+      pathsOf({ ...valid, registrationOpensAt: "2026-11-03T09:30:00" }),
+    ).toContain("registrationOpensAt");
+  });
+
+  it("rejects closing at or before the opening", () => {
+    expect(
+      pathsOf({ ...valid, registrationClosesAt: valid.registrationOpensAt }),
+    ).toEqual(["registrationClosesAt"]);
+    expect(
+      pathsOf({
+        registrationOpensAt: valid.registrationClosesAt,
+        registrationClosesAt: valid.registrationOpensAt,
+      }),
+    ).toEqual(["registrationClosesAt"]);
   });
 });

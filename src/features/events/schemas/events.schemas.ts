@@ -115,6 +115,28 @@ export const updateEventBodySchema = z
 export type UpdateEventBody = z.infer<typeof updateEventBodySchema>;
 export type UpdateEventRequest = z.input<typeof updateEventBodySchema>;
 
+//* POST /api/events/[eventId]/publish: the organizer publishes a draft AND says when registration
+// opens and closes. Both are required: nobody is left guessing when they can register. Whether
+// the dates fit the event (from today up to before it starts) depends on the event, so the
+// service checks that; this schema only checks what the two dates say about each other.
+export const publishEventBodySchema = z
+  .object({
+    registrationOpensAt: isoDate,
+    registrationClosesAt: isoDate,
+  })
+  .superRefine((body, ctx) => {
+    if (body.registrationClosesAt <= body.registrationOpensAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["registrationClosesAt"],
+        message: "Registration must end after it starts",
+      });
+    }
+  });
+
+export type PublishEventBody = z.infer<typeof publishEventBodySchema>;
+export type PublishEventRequest = z.input<typeof publishEventBodySchema>;
+
 // What the API returns. The DTO picks these fields one by one: organizerId and cmsEventId
 // stay internal.
 export const eventResponseSchema = z.object({

@@ -114,10 +114,13 @@ export {
 export {
   createEventBodySchema,
   eventResponseSchema,
+  publishEventBodySchema,
   updateEventBodySchema,
   type CreateEventBody,
   type CreateEventRequest,
   type EventDto,
+  type PublishEventBody,
+  type PublishEventRequest,
   type UpdateEventBody,
   type UpdateEventRequest,
 } from "./schemas/events.schemas";
