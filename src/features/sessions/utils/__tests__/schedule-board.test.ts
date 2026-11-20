@@ -7,6 +7,7 @@ import {
   describeClash,
   dropTarget,
   eventDays,
+  MAX_DAYS,
   findMoveClash,
   formatMinute,
   frameFor,
@@ -83,18 +84,32 @@ describe("eventDays", () => {
     ).toHaveLength(2);
   });
 
-  it("draws all the days of a 20-day event, and stops there", () => {
+  it("draws every day of a long event: 1 Dec to 31 Jan is 62 days, not 20", () => {
+    // 09:00 IST on 1 Dec 2026 to 18:00 IST on 31 Jan 2027.
     const days = eventDays(
       "2026-12-01T03:30:00.000Z",
-      "2026-12-20T12:30:00.000Z",
+      "2027-01-31T12:30:00.000Z",
       ZONE,
     );
-    expect(days).toHaveLength(20);
-    expect(days[19].label).toBe("Sun 20 Dec");
 
+    expect(days).toHaveLength(62);
+    expect(days[0]).toEqual({
+      index: 0,
+      key: "2026-12-01",
+      label: "Tue 1 Dec",
+    });
+    expect(days[19].label).toBe("Sun 20 Dec");
+    expect(days[61]).toEqual({
+      index: 61,
+      key: "2027-01-31",
+      label: "Sun 31 Jan",
+    });
+  });
+
+  it("stops at a year for a badly dated event, so it never draws thousands of tabs", () => {
     expect(
       eventDays("2026-01-01T03:30:00.000Z", "2030-01-01T03:30:00.000Z", ZONE),
-    ).toHaveLength(20);
+    ).toHaveLength(MAX_DAYS);
   });
 });
 
