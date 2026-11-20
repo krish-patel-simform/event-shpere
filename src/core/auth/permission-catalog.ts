@@ -46,8 +46,8 @@ export const PERMISSIONS = [
     description: "View every registration on the platform",
   },
   {
-    code: "REGISTRATION_MANAGE",
-    description: "Update or cancel own registration",
+    code: "REGISTRATION_MANAGE_OWN",
+    description: "Cancel own event registration or session booking",
   },
   {
     code: "REGISTRATION_CHECKIN_EVENT",
