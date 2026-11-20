@@ -2,6 +2,7 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
+import { UPLOAD_TIMEOUT_MS } from "../../../../core/api-client/file-upload";
 import { resendInviteResponseSchema } from "../../../auth";
 import {
   createSpeakerResponseSchema,
@@ -165,6 +166,7 @@ describe("speakersApiService own profile", () => {
         url: "/me/speaker-profile/photo",
         data: expect.any(FormData),
         headers: { "Content-Type": undefined },
+        timeout: UPLOAD_TIMEOUT_MS,
       },
       speakerPhotoResponseSchema,
     );

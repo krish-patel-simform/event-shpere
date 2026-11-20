@@ -1,4 +1,4 @@
-import { fileUploadRequest } from "../file-upload";
+import { fileUploadRequest, UPLOAD_TIMEOUT_MS } from "../file-upload";
 
 describe("fileUploadRequest", () => {
   const file = new File(["x"], "cover.png", { type: "image/png" });
@@ -42,6 +42,13 @@ describe("fileUploadRequest", () => {
     it("sends nothing for an empty list", () => {
       expect([...fileUploadRequest("/x", "files", []).data.keys()]).toEqual([]);
     });
+  });
+
+  it("waits up to a minute for the answer, longer than the shared client's 15 s", () => {
+    const request = fileUploadRequest("/x", "files", file);
+
+    expect(request.timeout).toBe(UPLOAD_TIMEOUT_MS);
+    expect(UPLOAD_TIMEOUT_MS).toBe(60_000);
   });
 
   it("clears the JSON content type, so the browser adds the multipart boundary", () => {
