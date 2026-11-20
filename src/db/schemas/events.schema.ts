@@ -440,6 +440,44 @@ export const eventCheckInsTable = pgTable(
   ],
 );
 
+// A person walking into one session. Only a person with a session booking is recorded here (a
+// walk-in without a booking can sit in but is not counted), and only after they checked in to the
+// event that day: the event check-in is a column, so Postgres refuses a row without one.
+export const sessionCheckInsTable = pgTable(
+  "session_check_ins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The booking that was used: it gives the session and the person, so neither is copied here.
+    sessionRegistrationId: uuid("session_registration_id")
+      .notNull()
+      .references(() => sessionRegistrationsTable.id, { onDelete: "restrict" }),
+    // The event check-in this builds on: it gives the day the person arrived. The service picks the
+    // one for the day of THIS check-in (in the event's time zone), so a day-1 check-in is never
+    // used on day 2.
+    eventCheckInId: uuid("event_check_in_id")
+      .notNull()
+      .references(() => eventCheckInsTable.id, { onDelete: "restrict" }),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // The organizer who checked the person in. set null: keep the record if that user is deleted.
+    checkedInBy: uuid("checked_in_by").references(() => usersTable.id, {
+      onDelete: "set null",
+    }),
+    method: checkInMethodEnum("method").notNull(),
+  },
+  (t) => [
+    // One check-in per booking: a session happens once, so a second scan is rejected by Postgres.
+    uniqueIndex("session_check_ins_session_registration_unique").on(
+      t.sessionRegistrationId,
+    ),
+    // "Has this event check-in been used for sessions?" and the restrict check on delete.
+    index("session_check_ins_event_check_in_idx").on(t.eventCheckInId),
+    // Arrivals per session.
+    index("session_check_ins_checked_in_at_idx").on(t.checkedInAt),
+  ],
+);
+
 export const venuesRelations = relations(venuesTable, ({ one, many }) => ({
   createdByUser: one(usersTable, {
     fields: [venuesTable.createdBy],
@@ -540,6 +578,24 @@ export const eventCheckInsRelations = relations(
   }),
 );
 
+export const sessionCheckInsRelations = relations(
+  sessionCheckInsTable,
+  ({ one }) => ({
+    sessionRegistration: one(sessionRegistrationsTable, {
+      fields: [sessionCheckInsTable.sessionRegistrationId],
+      references: [sessionRegistrationsTable.id],
+    }),
+    eventCheckIn: one(eventCheckInsTable, {
+      fields: [sessionCheckInsTable.eventCheckInId],
+      references: [eventCheckInsTable.id],
+    }),
+    checkedInByUser: one(usersTable, {
+      fields: [sessionCheckInsTable.checkedInBy],
+      references: [usersTable.id],
+    }),
+  }),
+);
+
 export type Venue = typeof venuesTable.$inferSelect;
 export type NewVenue = typeof venuesTable.$inferInsert;
 export type EventRecord = typeof eventsTable.$inferSelect;
@@ -556,3 +612,4 @@ export type SessionRegistration = typeof sessionRegistrationsTable.$inferSelect;
 export type RegistrationStatus =
   (typeof registrationStatusEnum.enumValues)[number];
 export type EventCheckIn = typeof eventCheckInsTable.$inferSelect;
+export type SessionCheckIn = typeof sessionCheckInsTable.$inferSelect;
