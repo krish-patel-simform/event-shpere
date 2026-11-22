@@ -10,7 +10,6 @@ import {
 } from "../../../core/http/errors";
 import type { PageMeta } from "../../../core/http/response";
 import type { EventRecord } from "../../../db/schemas";
-import { toFormDateTime } from "../../events";
 import {
   eventAccess,
   type EventAccess,
@@ -26,6 +25,7 @@ import type {
 import type {
   CheckInBody,
   CheckInCounts,
+  EventCheckInBody,
   CheckInDto,
   CheckInListQuery,
   CheckInLogItemDto,
@@ -39,6 +39,7 @@ import type {
   SessionBookingDto,
 } from "../schemas/registrations.schemas";
 import {
+  alreadyCheckedInDetails,
   heldTicketPrice,
   toAttendeeDto,
   toSessionAttendeeDto,
@@ -56,6 +57,7 @@ import {
   type RegistrationRepository,
   type SessionForBooking,
 } from "./registration.repository";
+import { dayCheckInWindow, eventDayOf } from "../utils/attendance-day";
 import { generateTicketCode } from "./ticket-code";
 
 /** Who is asking: the signed-in user from the access token. */
@@ -170,12 +172,13 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
 
   /**
    * The session must be scheduled, and now must be inside its check-in window: from
-   * `sessionCheckInOpensHoursBefore` before it starts until it ends.
+   * `sessionCheckInOpensHoursBefore` before it starts until it ends. Returns its start, which a
+   * scheduled session always has.
    */
   function assertSessionCheckInOpen(
     session: SessionForBooking,
     at: Date,
-  ): void {
+  ): Date {
     // A draft is not on the schedule, so it is "not found", not "closed".
     if (session.status === "draft") {
       throw new NotFoundError("Session not found");
@@ -210,10 +213,21 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
         } before the session starts`,
       );
     }
+    return session.startAt;
   }
 
-  /** The event must be published and not cancelled, and now must be inside the check-in window. */
-  function assertCheckInOpen(event: EventRecord, at: Date): void {
+  /**
+   * The event must be published and not cancelled, `date` must be one of its days, and now must be
+   * inside THAT day's check-in window: from `checkInOpensHoursBefore` before the day's start (6 in
+   * production, a year in dev) until that day's hours end, the event's end for the last day (see
+   * dayCheckInWindow). So a late arrival is accepted while the day is still running, and a past
+   * day is always refused.
+   */
+  function assertCheckInOpenFor(
+    event: EventRecord,
+    date: string,
+    at: Date,
+  ): void {
     assertEventPublished(event);
     if (at >= event.endAt) {
       throw new ConflictError(
@@ -221,15 +235,25 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
         "Check-in is closed: this event is over",
       );
     }
-    if (
-      at.getTime() <
-      event.startAt.getTime() - checkInOpensHoursBefore * HOUR_MS
-    ) {
+    const window = dayCheckInWindow(date, event, checkInOpensHoursBefore);
+    if (!window) {
+      throw new ConflictError(
+        "NOT_AN_EVENT_DAY",
+        `${date} is not a day of this event`,
+      );
+    }
+    if (at < window.opensAt) {
       throw new ConflictError(
         "CHECK_IN_NOT_OPEN",
-        `Check-in opens ${checkInOpensHoursBefore} ${
+        `Check-in for ${date} opens ${checkInOpensHoursBefore} ${
           checkInOpensHoursBefore === 1 ? "hour" : "hours"
-        } before the event starts`,
+        } before that day starts`,
+      );
+    }
+    if (at >= window.closesAt) {
+      throw new ConflictError(
+        "CHECK_IN_CLOSED",
+        `Check-in for ${date} is over`,
       );
     }
   }
@@ -303,7 +327,10 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
       actor: EventActor,
     ): Promise<{
       items: AttendeeDto[];
-      meta: PageMeta & { counts: AttendeeCounts };
+      meta: PageMeta & {
+        counts: AttendeeCounts;
+        checkInOpensHoursBefore: number;
+      };
     }> {
       if (
         !actor.permissions.has(PERMISSION.REGISTRATION_VIEW_ALL) &&
@@ -334,7 +361,8 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
       ]);
       return {
         items: rows.map(toAttendeeDto),
-        meta: { page, pageSize, total, counts },
+        // The setting, so the door screen can tell which days are open (same rule, same number).
+        meta: { page, pageSize, total, counts, checkInOpensHoursBefore },
       };
     },
 
@@ -354,7 +382,10 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
       actor: EventActor,
     ): Promise<{
       items: SessionAttendeeDto[];
-      meta: PageMeta & { counts: SessionAttendeeCounts };
+      meta: PageMeta & {
+        counts: SessionAttendeeCounts;
+        checkInOpensHoursBefore: number;
+      };
     }> {
       if (
         !actor.permissions.has(PERMISSION.REGISTRATION_VIEW_ALL) &&
@@ -386,7 +417,13 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
       ]);
       return {
         items: rows.map(toSessionAttendeeDto),
-        meta: { page, pageSize, total, counts },
+        meta: {
+          page,
+          pageSize,
+          total,
+          counts,
+          checkInOpensHoursBefore: sessionCheckInOpensHoursBefore,
+        },
       };
     },
 
@@ -453,12 +490,14 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
      * cancel do, so a check-in and a cancel of the same ticket take turns and cannot both win:
      * the event is published, not cancelled and inside the check-in window, the code belongs to a
      * ticket of THIS event (another event's code is a 404), the ticket is still registered, and
-     * the person has not been checked in today. The day is the event day in the event's time zone,
-     * so a two-day event checks a person in once per day.
+     * the person has not been checked in for this event day. The door sends the day
+     * (`attendanceDate`); it must be a day of the event whose window is open now
+     * (`assertCheckInOpenFor`), so a multi-day event checks a person in once per event day and
+     * every check-in lands on a day of the event.
      */
     async checkInAttendee(
       eventId: string,
-      body: CheckInBody,
+      body: EventCheckInBody,
       actor: EventActor,
     ): Promise<CheckInDto> {
       if (
@@ -475,7 +514,7 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
       return repo.transaction(async (tx) => {
         const event = await repo.lockEvent(tx, eventId);
         if (!event) throw new NotFoundError("Event not found");
-        assertCheckInOpen(event, at);
+        assertCheckInOpenFor(event, body.attendanceDate, at);
 
         const found = await repo.findRegistrationByTicketCode(
           tx,
@@ -492,21 +531,30 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
 
         const checkIn = await repo.insertEventCheckIn(tx, {
           registrationId: found.registration.id,
-          attendanceDate: toFormDateTime(at.toISOString(), event.timezone).date,
+          // The day the door picked, checked above: one of the event's days, open right now.
+          attendanceDate: body.attendanceDate,
           checkedInBy: actor.id,
           at,
         });
-        if (!checkIn) {
-          throw new ConflictError(
-            "ALREADY_CHECKED_IN",
-            `${found.firstName} ${found.lastName} is already checked in today`,
-          );
-        }
-        return toCheckInDto(checkIn, {
+        const person = {
           firstName: found.firstName,
           lastName: found.lastName,
           ticketCode: found.registration.ticketCode,
-        });
+        };
+        if (!checkIn) {
+          // Say who it is and since when, so the door can tell the person apart from a mistake.
+          const first = await repo.findEventCheckIn(
+            tx,
+            found.registration.id,
+            body.attendanceDate,
+          );
+          throw new ConflictError(
+            "ALREADY_CHECKED_IN",
+            `${found.firstName} ${found.lastName} is already checked in today`,
+            first ? alreadyCheckedInDetails(person, first.checkedInAt) : {},
+          );
+        }
+        return toCheckInDto(checkIn, person);
       });
     },
 
@@ -553,7 +601,7 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
           sessionId,
         );
         if (!session) throw new NotFoundError("Session not found");
-        assertSessionCheckInOpen(session, at);
+        const sessionStart = assertSessionCheckInOpen(session, at);
 
         // Who is at the door: the ticket of THIS event that holds the code.
         const found = await repo.findRegistrationByTicketCode(
@@ -576,11 +624,14 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
           );
         }
 
-        // The event check-in this one builds on: today's, written at the door of the event.
+        // The event check-in this one builds on: the one for the event day this SESSION belongs
+        // to (the first day whose hours had not ended when the session starts; see eventDayOf).
+        // The session check-in window above ensures the session is on now, so this is the day
+        // that is running at the event door.
         const eventCheckIn = await repo.findEventCheckIn(
           tx,
           found.registration.id,
-          toFormDateTime(at.toISOString(), event.timezone).date,
+          eventDayOf(sessionStart, event),
         );
         if (!eventCheckIn) {
           throw new ConflictError(
@@ -595,17 +646,20 @@ export function createRegistrationService(deps: RegistrationServiceDeps) {
           checkedInBy: actor.id,
           at,
         });
-        if (!checkIn) {
-          throw new ConflictError(
-            "ALREADY_CHECKED_IN",
-            `${name} is already checked in to this session`,
-          );
-        }
-        return toSessionCheckInDto(checkIn, sessionId, {
+        const person = {
           firstName: found.firstName,
           lastName: found.lastName,
           ticketCode: found.registration.ticketCode,
-        });
+        };
+        if (!checkIn) {
+          const first = await repo.findSessionCheckIn(tx, booking.id);
+          throw new ConflictError(
+            "ALREADY_CHECKED_IN",
+            `${name} is already checked in to this session`,
+            first ? alreadyCheckedInDetails(person, first.checkedInAt) : {},
+          );
+        }
+        return toSessionCheckInDto(checkIn, sessionId, person);
       });
     },
 

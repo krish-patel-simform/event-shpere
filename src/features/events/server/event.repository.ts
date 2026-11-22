@@ -23,6 +23,7 @@ import {
   eventRegistrationsTable,
   eventsTable,
   hallsTable,
+  organizerProfilesTable,
   sessionRegistrationsTable,
   sessionsTable,
   sessionSpeakersTable,
@@ -115,6 +116,9 @@ export type ManagedEventRow = {
   venueName: string | null;
   venueCity: string | null;
   venueState: string | null;
+  /** The owner's organizer PROFILE id (organizer_profiles.id) and organisation name. */
+  organizerId: string;
+  organizerName: string;
   registered: number;
   cancelledRegistrations: number;
   sessionsTotal: number;
@@ -131,7 +135,7 @@ export type DeletedDraft = {
 
 /** One published or cancelled event for its public page: only what the public may see. */
 export type PublicEventRow = {
-  /** Only to find the event's sessions: the public DTO never carries it. */
+  /** Finds the event's sessions, and the page sends it so the registration routes can be called. */
   id: string;
   slug: string;
   title: string;
@@ -291,6 +295,8 @@ async function selectManagedEvents(
       venueName: venuesTable.name,
       venueCity: venuesTable.city,
       venueState: statesTable.name,
+      organizerId: eventsTable.organizerId,
+      organizerName: organizerProfilesTable.organizationName,
       registered,
       cancelledRegistrations: sql<number>`coalesce(${registrationStats.cancelled}, 0)`,
       sessionsTotal: sql<number>`coalesce(${sessionStats.total}, 0)`,
@@ -298,6 +304,11 @@ async function selectManagedEvents(
       sessionsCancelled: sql<number>`coalesce(${sessionStats.cancelled}, 0)`,
     })
     .from(eventsTable)
+    // Every event has an owner (organizer_id is NOT NULL, ON DELETE RESTRICT): an inner join.
+    .innerJoin(
+      organizerProfilesTable,
+      eq(organizerProfilesTable.id, eventsTable.organizerId),
+    )
     .leftJoin(venuesTable, eq(venuesTable.id, eventsTable.venueId))
     .leftJoin(statesTable, eq(statesTable.id, venuesTable.stateId))
     .leftJoin(sessionStats, eq(sessionStats.eventId, eventsTable.id))

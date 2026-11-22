@@ -175,8 +175,12 @@ describe("registrationService.checkInToSession", () => {
       );
     });
 
-    it("takes the day from the event's time zone, not from UTC", async () => {
-      // 19:00 UTC on the 12th is 00:30 on the 13th in Asia/Kolkata: a late session of a long day.
+    it("needs the event check-in of the event day the session belongs to (a late-night session of a long day)", async () => {
+      // 18:30 UTC on the 12th is 00:00 on the 13th in Asia/Kolkata. The event runs from 09:30 on
+      // the 12th until 03:30 on the 13th: ONE day that goes past midnight, so this session is part
+      // of day 1, the day the person came through the event door that evening.
+      // By calendar date it would be the 13th, and the door would wrongly say "check them in at the
+      // event door first".
       const lateStart = new Date("2026-12-12T18:30:00.000Z");
       const lateEnd = new Date("2026-12-12T21:00:00.000Z");
       const { service, repo } = setupAtDoor(
@@ -190,6 +194,30 @@ describe("registrationService.checkInToSession", () => {
         ...bookableSession,
         startAt: lateStart,
         endAt: lateEnd,
+      });
+
+      await service.checkInToSession(eventId, sessionId, body, organizerActor);
+
+      expect(repo.findEventCheckIn).toHaveBeenCalledWith(
+        expect.anything(),
+        ticketHolder.registration.id,
+        "2026-12-12",
+      );
+    });
+
+    it("needs the check-in of day 2 for a session on day 2", async () => {
+      // A two-day event (12–13 Dec, 09:30 IST each day); a session on 13 Dec at 11:00 IST.
+      const { service, repo } = setupAtDoor(
+        new Date("2026-12-13T05:00:00.000Z"),
+      );
+      repo.lockEvent.mockResolvedValue({
+        ...publishedEvent,
+        endAt: new Date("2026-12-13T12:00:00.000Z"),
+      });
+      repo.findSessionForBooking.mockResolvedValue({
+        ...bookableSession,
+        startAt: new Date("2026-12-13T05:30:00.000Z"),
+        endAt: new Date("2026-12-13T06:30:00.000Z"),
       });
 
       await service.checkInToSession(eventId, sessionId, body, organizerActor);
@@ -283,7 +311,7 @@ describe("registrationService.checkInToSession", () => {
       expect(repo.insertSessionCheckIn).not.toHaveBeenCalled();
     });
 
-    it("answers 409 ALREADY_CHECKED_IN with the name when the seat was already used", async () => {
+    it("answers 409 ALREADY_CHECKED_IN with who it is and when the seat was first used", async () => {
       const { service, repo } = setupAtDoor();
       repo.insertSessionCheckIn.mockResolvedValue(null);
 
@@ -293,6 +321,33 @@ describe("registrationService.checkInToSession", () => {
         status: 409,
         code: "ALREADY_CHECKED_IN",
         message: "Priya Shah is already checked in to this session",
+        details: {
+          attendee: {
+            firstName: "Priya",
+            lastName: "Shah",
+            ticketCode: "ESEVT7K3Q9P",
+          },
+          checkedInAt: "2026-12-12T04:30:00.000Z",
+        },
+      });
+      expect(repo.findSessionCheckIn).toHaveBeenCalledWith(
+        expect.anything(),
+        heldBooking.id,
+      );
+    });
+
+    it("still answers ALREADY_CHECKED_IN (with no details) if the first check-in cannot be read", async () => {
+      const { service, repo } = setupAtDoor();
+      repo.insertSessionCheckIn.mockResolvedValue(null);
+      repo.findSessionCheckIn.mockResolvedValue(null);
+
+      const failure = await service
+        .checkInToSession(eventId, sessionId, body, organizerActor)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({
+        code: "ALREADY_CHECKED_IN",
+        details: {},
       });
     });
   });

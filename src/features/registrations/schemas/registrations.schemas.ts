@@ -78,6 +78,8 @@ export const myTicketEventSchema = z.object({
   startAt: z.iso.datetime(),
   endAt: z.iso.datetime(),
   timezone: z.string().min(1),
+  /** Cancelling stops here, or at `startAt` when null (the same rule as route 3). */
+  registrationClosesAt: z.iso.datetime().nullable(),
   venueName: z.string().nullable(),
   venueCity: z.string().nullable(),
 });

@@ -92,6 +92,7 @@ export type MyRegistrationRow = {
     | "timezone"
     | "ticketPrice"
     | "currency"
+    | "registrationClosesAt"
   >;
   venueName: string | null;
   venueCity: string | null;
@@ -414,6 +415,7 @@ export const registrationRepository = {
             timezone: eventsTable.timezone,
             ticketPrice: eventsTable.ticketPrice,
             currency: eventsTable.currency,
+            registrationClosesAt: eventsTable.registrationClosesAt,
           },
           venueName: venuesTable.name,
           venueCity: venuesTable.city,
@@ -1152,6 +1154,20 @@ export const registrationRepository = {
         target: [sessionCheckInsTable.sessionRegistrationId],
       })
       .returning();
+    return checkIn ?? null;
+  },
+
+  /** The seat's session check-in, or null if it has not been used. */
+  async findSessionCheckIn(
+    tx: DbTransaction,
+    sessionRegistrationId: string,
+  ): Promise<SessionCheckIn | null> {
+    const [checkIn] = await tx
+      .select()
+      .from(sessionCheckInsTable)
+      .where(
+        eq(sessionCheckInsTable.sessionRegistrationId, sessionRegistrationId),
+      );
     return checkIn ?? null;
   },
 

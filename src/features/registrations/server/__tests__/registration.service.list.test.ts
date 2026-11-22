@@ -108,12 +108,35 @@ describe("registrationService.listMyRegistrations", () => {
             startAt: "2026-12-12T04:00:00.000Z",
             endAt: "2026-12-12T12:00:00.000Z",
             timezone: "Asia/Kolkata",
+            registrationClosesAt: null,
             venueName: "Grand Hall",
             venueCity: "Pune",
           },
           bookedSessionCount: 2,
         },
       ]);
+    });
+
+    it("sends when registration closes (cancelling stops then), as an ISO string", async () => {
+      const { service, repo } = setupRegistrationService();
+      repo.listOwnRegistrations.mockResolvedValue({
+        rows: [
+          {
+            ...ticketRow,
+            event: {
+              ...ticketRow.event,
+              registrationClosesAt: new Date("2026-12-10T12:30:00.000Z"),
+            },
+          },
+        ],
+        total: 1,
+      });
+
+      const { items } = await service.listMyRegistrations(defaultQuery, actor);
+
+      expect(items[0].event.registrationClosesAt).toBe(
+        "2026-12-10T12:30:00.000Z",
+      );
     });
 
     it("matches the response schema and leaks no user id, capacity or internal date", async () => {

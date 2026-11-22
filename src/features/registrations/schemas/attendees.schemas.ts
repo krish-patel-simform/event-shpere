@@ -71,6 +71,12 @@ export const attendeeListMetaSchema = z.object({
   pageSize: z.number().int().min(1),
   total: z.number().int().min(0),
   counts: attendeeCountsSchema,
+  /**
+   * How early each event day's door opens (the CHECK_IN_OPENS_HOURS_BEFORE setting: 6 in
+   * production, a year in dev). The door screen runs the same `dayCheckInWindow` as the server
+   * with it, so it can grey out the days that are not open.
+   */
+  checkInOpensHoursBefore: z.number().positive(),
 });
 export type AttendeeListMeta = z.infer<typeof attendeeListMetaSchema>;
 
@@ -113,6 +119,11 @@ export const sessionAttendeeListMetaSchema = z.object({
   pageSize: z.number().int().min(1),
   total: z.number().int().min(0),
   counts: sessionAttendeeCountsSchema,
+  /**
+   * How early the session's door opens before it starts (SESSION_CHECK_IN_OPENS_HOURS_BEFORE:
+   * 2 in production, a year in dev). It closes when the session ends.
+   */
+  checkInOpensHoursBefore: z.number().positive(),
 });
 export type SessionAttendeeListMeta = z.infer<
   typeof sessionAttendeeListMetaSchema

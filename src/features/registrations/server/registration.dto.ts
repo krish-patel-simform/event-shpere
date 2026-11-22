@@ -11,6 +11,7 @@ import type {
   SessionAttendeeDto,
 } from "../schemas/attendees.schemas";
 import type {
+  AlreadyCheckedInDetails,
   CheckInDto,
   CheckInLogItemDto,
   SessionCheckInDto,
@@ -152,6 +153,21 @@ export function toCheckInDto(
  * The answer to a session check-in: the check-in and who walked in (name and ticket code, never
  * the email or the user id). The row only knows the seat, so the caller passes the session.
  */
+/** The `details` of a 409 ALREADY_CHECKED_IN: who it is and when they were first checked in. */
+export function alreadyCheckedInDetails(
+  person: { firstName: string; lastName: string; ticketCode: string },
+  firstCheckedInAt: Date,
+): AlreadyCheckedInDetails {
+  return {
+    attendee: {
+      firstName: person.firstName,
+      lastName: person.lastName,
+      ticketCode: person.ticketCode,
+    },
+    checkedInAt: firstCheckedInAt.toISOString(),
+  };
+}
+
 export function toSessionCheckInDto(
   checkIn: SessionCheckIn,
   sessionId: string,
@@ -196,8 +212,9 @@ export function toCheckInLogItemDto(row: CheckInLogRow): CheckInLogItemDto {
 
 /**
  * One "My tickets" card: the user's ticket (priced like every held ticket), the event fields the
- * card shows and how many sessions they booked. Nothing else of the event (capacity, organizer,
- * registration window) leaves the server here.
+ * card shows and how many sessions they booked. Of the registration window only the closing time
+ * is sent (it is when cancelling stops, so the card can hide "Cancel"); nothing else of the event
+ * (capacity, organizer, opening time) leaves the server here.
  */
 export function toMyTicketDto(row: MyRegistrationRow): MyTicketDto {
   return {
@@ -213,6 +230,8 @@ export function toMyTicketDto(row: MyRegistrationRow): MyTicketDto {
       startAt: row.event.startAt.toISOString(),
       endAt: row.event.endAt.toISOString(),
       timezone: row.event.timezone,
+      registrationClosesAt:
+        row.event.registrationClosesAt?.toISOString() ?? null,
       venueName: row.venueName,
       venueCity: row.venueCity,
     },

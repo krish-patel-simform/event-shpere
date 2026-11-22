@@ -189,7 +189,14 @@ describe("registrationService.listSessionAttendees", () => {
         organizerActor,
       );
 
-      expect(meta).toEqual({ page: 2, pageSize: 5, total: 13, counts });
+      // checkInOpensHoursBefore: the SESSION setting's production default (2).
+      expect(meta).toEqual({
+        page: 2,
+        pageSize: 5,
+        total: 13,
+        counts,
+        checkInOpensHoursBefore: 2,
+      });
       expect(repo.countSessionAttendees).toHaveBeenCalledWith(sessionId);
       expect(() => sessionAttendeeListMetaSchema.parse(meta)).not.toThrow();
     });
@@ -211,8 +218,25 @@ describe("registrationService.listSessionAttendees", () => {
           pageSize: 10,
           total: 0,
           counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
+          checkInOpensHoursBefore: 2,
         },
       });
+    });
+
+    it("sends the SESSION door's setting, not the event day's", async () => {
+      const { service } = setupRegistrationService(undefined, {
+        checkInOpensHoursBefore: 6,
+        sessionCheckInOpensHoursBefore: 8760,
+      });
+
+      const { meta } = await service.listSessionAttendees(
+        eventId,
+        sessionId,
+        defaultQuery,
+        organizerActor,
+      );
+
+      expect(meta.checkInOpensHoursBefore).toBe(8760);
     });
   });
 
@@ -316,15 +340,32 @@ describe("registrationService.listSessionAttendees", () => {
 });
 
 describe("sessionAttendeeListMetaSchema", () => {
-  it("accepts the paging fields with the session's counts", () => {
+  it("accepts the paging fields with the session's counts and the door's setting", () => {
     expect(
       sessionAttendeeListMetaSchema.safeParse({
         page: 1,
         pageSize: 10,
         total: 0,
         counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
+        checkInOpensHoursBefore: 2,
       }).success,
     ).toBe(true);
+  });
+
+  it("needs the door's setting, a positive number of hours", () => {
+    const meta = {
+      page: 1,
+      pageSize: 10,
+      total: 0,
+      counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
+    };
+    expect(sessionAttendeeListMetaSchema.safeParse(meta).success).toBe(false);
+    expect(
+      sessionAttendeeListMetaSchema.safeParse({
+        ...meta,
+        checkInOpensHoursBefore: 0,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects negative counts and a missing pending count", () => {

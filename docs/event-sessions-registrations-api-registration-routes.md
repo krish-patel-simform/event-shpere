@@ -173,17 +173,22 @@ Query (`attendeeListQuerySchema`):
   "checkInMethod": "manual" | "qr_scan" | null }
 ```
 
-`meta`: `{ page, pageSize, total, counts: { registered, cancelled, checkedIn, pending } }`. `total` follows
-the search and filters; `counts` cover the whole event (and the asked `date`), so badges do not move
-while typing. `checkedIn` counts registered people only; `pending` = registered with no check-in.
+`meta`: `{ page, pageSize, total, counts: { registered, cancelled, checkedIn, pending },
+checkInOpensHoursBefore }`. `total` follows the search and filters; `counts` cover the whole event (and
+the asked `date`), so badges do not move while typing. `checkedIn` counts registered people only;
+`pending` = registered with no check-in. `checkInOpensHoursBefore` is the `CHECK_IN_OPENS_HOURS_BEFORE`
+setting (6 in production, a year in dev): the door screen runs the same `dayCheckInWindow` with it to
+pick the running day and switch off the days the server would refuse.
 
 ### 6. `POST /api/events/{eventId}/check-ins`
 
 Check a person in at the event door by ticket code. `auth: "signed-in"`, `user-write`.
 Service permission: `REGISTRATION_CHECKIN_EVENT` (own event) or `REGISTRATION_CHECKIN_ALL`.
 
-Body: `{ "ticketCode": "esevt7k3q9p" }` (trimmed and upper-cased; 1..32 chars). The code only says
-**who** is at the door. **201** `data` (`checkInResponseSchema`):
+Body (`eventCheckInBodySchema`): `{ "ticketCode": "esevt7k3q9p", "attendanceDate": "2026-12-12" }`.
+The code (trimmed and upper-cased; 1..32 chars) says **who** is at the door; `attendanceDate`
+(`YYYY-MM-DD`, in the event's time zone, required) says **which event day** they are checked in for.
+The door screen picks the day that is running. **201** `data` (`checkInResponseSchema`):
 
 ```json
 {
@@ -200,12 +205,26 @@ Body: `{ "ticketCode": "esevt7k3q9p" }` (trimmed and upper-cased; 1..32 chars). 
 }
 ```
 
-Rules: event reachable (404); unknown code or a code of another event → 404 `Ticket not found`;
-draft → 409 `EVENT_NOT_PUBLISHED`; cancelled → `EVENT_CANCELLED`; cancelled ticket →
-`REGISTRATION_CANCELLED`; window: opens `CHECK_IN_OPENS_HOURS_BEFORE` hours before the start
-(6 in production, a year in `next dev`) and closes at the event end → `CHECK_IN_NOT_OPEN` /
-`CHECK_IN_CLOSED`; a second check-in the same day → `ALREADY_CHECKED_IN` (a multi-day event checks a
-person in once per day). The day is the check-in moment's date in the event's time zone.
+Rules, in order: event reachable (404); draft → 409 `EVENT_NOT_PUBLISHED`; cancelled →
+`EVENT_CANCELLED`; event over → `CHECK_IN_CLOSED`; `attendanceDate` not a day of the event →
+`NOT_AN_EVENT_DAY`; that day's window → `CHECK_IN_NOT_OPEN` / `CHECK_IN_CLOSED`; unknown code or a
+code of another event → 404 `Ticket not found`; cancelled ticket → `REGISTRATION_CANCELLED`; a
+second check-in for the same day → `ALREADY_CHECKED_IN` (a multi-day event checks a person in once
+per event day). That 409 carries `error.details = { attendee: { firstName, lastName, ticketCode },
+checkedInAt }` (`alreadyCheckedInDetailsSchema`): who it is and when they were FIRST checked in that
+day, so the door can name them. No email, no user id. Route 11 sends the same details for the seat.
+
+**The window of one event day** (`dayCheckInWindow` in `src/features/registrations/utils/attendance-day.ts`).
+Every day runs on the same hours: from day 1's start time to the end's clock time (an end time at or
+before the start time runs past midnight, so 22:00 → 02:00 is **one** day, keyed by the date it
+starts). A day **opens** `CHECK_IN_OPENS_HOURS_BEFORE` before its own start (6 in production, a year
+in `next dev`) and **closes when that day's hours end** (the last day's end is the event's end).
+Example, 12–14 Dec, 09:30 → 17:30 IST: day 1's door is open 12 Dec 03:30 → 17:30, day 2's 13 Dec
+03:30 → 17:30, day 3's 14 Dec 03:30 → the end. So a late arrival is let in while the day is still
+running; between days the door is shut; a past day is refused everywhere; in dev a future day can be
+tried early. If the next day's door opens before the running day ends (short nights), both days are
+accepted during that overlap and the screen defaults to the running day. Days that start very early
+work too: with 01:00 starts, day 2 opens at 19:00 the evening before.
 
 ### 7. `GET /api/events/{eventId}/check-ins` (planned for removal)
 
@@ -269,7 +288,9 @@ check-in first.
 `meta.counts`: `{ registered, cancelled, checkedIn, pending }` for the whole session. `checkedIn` counts the
 **check-in rows**, not the seat status, so a session cancelled half-way (which cancels every seat) keeps its
 attendance; `pending` = registered seats with no check-in. `ticketCode` is the person's **event** ticket
-(the door types it into route 11).
+(the door types it into route 11). `meta.checkInOpensHoursBefore` is the
+`SESSION_CHECK_IN_OPENS_HOURS_BEFORE` setting (2 in production, a year in dev), so the session's door
+screen knows when it opens (it closes when the session ends).
 
 ### 11. `POST /api/events/{eventId}/sessions/{sessionId}/check-ins`
 
@@ -295,9 +316,13 @@ another event, or a draft session → 404; cancelled session → `SESSION_CANCEL
 `SESSION_CHECK_IN_OPENS_HOURS_BEFORE` hours before the session starts (2 in production, a year in
 `next dev`) until it ends → `CHECK_IN_NOT_OPEN` / `CHECK_IN_CLOSED`; unknown code or code of another event
 → 404; **no registered seat in this session** → `SESSION_NOT_BOOKED` (a walk-in is not recorded; a
-cancelled ticket has no seat so it fails here too); **no event check-in for today** →
-`EVENT_CHECK_IN_REQUIRED` (check them in at the event door first); a repeat → `ALREADY_CHECKED_IN`.
-"Today" = the day of this check-in in the event's time zone, the same day the event check-in was written for.
+cancelled ticket has no seat so it fails here too); **no event check-in for the session's event day** →
+`EVENT_CHECK_IN_REQUIRED` (check them in at the event door first); a repeat → `ALREADY_CHECKED_IN`
+(with the same `details` as route 6: who, and when the seat was first used).
+The body is only the code (no date): a session belongs to the event day its **start** falls in, by the
+event's daily hours (`eventDayOf`): the first day whose hours have not ended when the session starts.
+So a 01:00 session of a night event (22:00 → 02:00) belongs to the night it started, and a session
+between two days belongs to the next one.
 
 ### Also changed (not new routes)
 
@@ -321,7 +346,8 @@ cancelled ticket has no seat so it fails here too); **no event check-in for toda
 | `ALREADY_CHECKED_IN`                            | 3, 6, 9, 11 | already used                                                           |
 | `REGISTRATION_CHANGED` / `BOOKING_CHANGED`      | 3 / 9       | row changed while cancelling (guard; should not happen under the lock) |
 | `REGISTRATION_CANCELLED`                        | 6           | ticket was cancelled                                                   |
-| `CHECK_IN_NOT_OPEN` / `CHECK_IN_CLOSED`         | 6, 11       | outside the check-in window                                            |
+| `CHECK_IN_NOT_OPEN` / `CHECK_IN_CLOSED`         | 6, 11       | outside the check-in window (6: of the `attendanceDate` sent)          |
+| `NOT_AN_EVENT_DAY`                              | 6           | `attendanceDate` is not a day of the event                             |
 | `EVENT_REGISTRATION_REQUIRED`                   | 8           | register for the event first                                           |
 | `ALREADY_BOOKED`                                | 8           | seat already held                                                      |
 | `SPEAKER_CANNOT_BOOK`                           | 8           | speaker of this session                                                |
@@ -330,7 +356,7 @@ cancelled ticket has no seat so it fails here too); **no event check-in for toda
 | `SESSION_NOT_BOOKABLE`                          | 8           | no booking needed, or no hall yet                                      |
 | `SESSION_FULL`                                  | 8           | hall capacity reached                                                  |
 | `SESSION_NOT_BOOKED`                            | 11          | no registered seat in this session                                     |
-| `EVENT_CHECK_IN_REQUIRED`                       | 11          | not through the event door today                                       |
+| `EVENT_CHECK_IN_REQUIRED`                       | 11          | not through the event door for the session's event day                 |
 
 ## 5. Rules and decisions worth knowing
 
@@ -341,9 +367,13 @@ cancelled ticket has no seat so it fails here too); **no event check-in for toda
 - **The ticket code** identifies the person at the door; it is not re-validated against the registration
   window (a row exists only if registration was open). It is unique per event registration; cancelling
   kills the code, registering again issues a new one.
-- **Check-in windows:** event `CHECK_IN_OPENS_HOURS_BEFORE` (default 6 in production, `24*365` elsewhere),
-  session `SESSION_CHECK_IN_OPENS_HOURS_BEFORE` (default 2 in production, `24*365` elsewhere); both close
-  at the end. Set them in `.env` to try the real rule locally. Defined in `src/config/env.ts`.
+- **Check-in windows:** event `CHECK_IN_OPENS_HOURS_BEFORE` (default 6 in production, `24*365` elsewhere)
+  is how early **each event day** opens; a day closes when its own hours end (day 1's start time to the
+  end's clock time) or at the event end. Session `SESSION_CHECK_IN_OPENS_HOURS_BEFORE` (default 2 in production,
+  `24*365` elsewhere) opens a session's door; it closes at the session end. Set them in `.env` to try the
+  real rule locally. Defined in `src/config/env.ts`.
+- **Which day a check-in counts for:** the event door sends it (`attendanceDate`, route 6). To test day 2
+  or 3 locally, send that date while it is not yet over (in dev any future day of the event works).
 - **Organizer and admin cannot attend** (no attendee permissions); they use a separate account.
 - **Session cancel and event cancel** (organizer routes, existing) cancel the seats and registrations in the
   same transaction and are final (no reopen; refunds will make that impossible). A session's `endAt` in the

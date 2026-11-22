@@ -132,7 +132,12 @@ export function toPublicSessionDetailDto(
       name: `${speaker.firstName} ${speaker.lastName}`,
       role: speaker.role,
     })),
-    event: row.event,
+    event: {
+      ...row.event,
+      startAt: row.event.startAt.toISOString(),
+      registrationClosesAt:
+        row.event.registrationClosesAt?.toISOString() ?? null,
+    },
     content,
   };
 }

@@ -132,6 +132,16 @@ export const FINTECH_ID = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f03";
 export const MEETUP_ID = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f04";
 export const FUTURES_ID = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f05";
 
+/** Two organizers (organizer_profiles), so the admin's list shows who runs which event. */
+export const KINETIC = {
+  id: "8e1d2c3b-4a5f-4e6d-9c7b-8a9f0e1d2c01",
+  name: "Kinetic Events",
+} as const;
+export const BRIGHTSIDE = {
+  id: "8e1d2c3b-4a5f-4e6d-9c7b-8a9f0e1d2c02",
+  name: "Brightside Events",
+} as const;
+
 export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
   {
     id: SUMMIT_ID,
@@ -142,6 +152,7 @@ export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
     endAt: "2026-12-05T12:30:00.000Z",
     timezone: "Asia/Kolkata",
     venue: venueRef(0),
+    organizer: KINETIC,
     capacity: 600,
     registered: 480,
     cancelledRegistrations: 0,
@@ -157,6 +168,7 @@ export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
     endAt: "2026-11-14T12:00:00.000Z",
     timezone: "Asia/Kolkata",
     venue: venueRef(1),
+    organizer: KINETIC,
     capacity: 200,
     registered: 188,
     cancelledRegistrations: 0,
@@ -172,6 +184,7 @@ export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
     endAt: "2026-12-12T12:00:00.000Z",
     timezone: "Asia/Kolkata",
     venue: venueRef(2),
+    organizer: KINETIC,
     capacity: 250,
     registered: 0,
     cancelledRegistrations: 0,
@@ -187,6 +200,7 @@ export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
     endAt: "2026-10-12T15:30:00.000Z",
     timezone: "Asia/Kolkata",
     venue: venueRef(4),
+    organizer: KINETIC,
     capacity: 120,
     registered: 0,
     cancelledRegistrations: 86,
@@ -202,6 +216,7 @@ export const SAMPLE_EVENTS: readonly ManagedEvent[] = [
     endAt: "2026-09-14T12:30:00.000Z",
     timezone: "Asia/Kolkata",
     venue: venueRef(0),
+    organizer: BRIGHTSIDE,
     capacity: 450,
     registered: 420,
     cancelledRegistrations: 0,

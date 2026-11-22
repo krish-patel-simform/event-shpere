@@ -50,6 +50,7 @@ export function toManagedEventDto(
             state: row.venueState,
           }
         : null,
+    organizer: { id: row.organizerId, name: row.organizerName },
     capacity: row.capacity,
     registered: row.registered,
     cancelledRegistrations: row.cancelledRegistrations,
@@ -207,6 +208,7 @@ export function toPublicEventDetailDto(
   sessions: PublicSessionRow[],
 ): PublicEventDetailDto {
   return {
+    id: row.id,
     slug: row.slug,
     title: row.title,
     // The query only finds these two; a draft never gets here.

@@ -18,6 +18,7 @@ jest.mock("../../../events/server", () =>
 const slug = "tech-conf-2026";
 const sessionId = "8c1f4f6e-2f4b-4c43-9a59-0d6f2a1b7e10";
 const speakerId = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01";
+const eventId = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f";
 
 let errorSpy: jest.SpyInstance;
 beforeEach(() => {
@@ -45,10 +46,13 @@ const row = (overrides: Partial<PublicSessionRow> = {}): PublicSessionRow => ({
     city: "Pune",
   },
   event: {
+    id: eventId,
     slug,
     title: "Tech Conf",
     status: "published",
     timezone: "Asia/Kolkata",
+    startAt: new Date("2026-12-12T03:30:00.000Z"),
+    registrationClosesAt: new Date("2026-12-10T12:30:00.000Z"),
   },
   speakers: [
     {
@@ -160,11 +164,15 @@ describe("sessionService.getPublicSession", () => {
         addressLine: "12 MG Road",
         city: "Pune",
       },
+      // The event's id and registration window are sent for the booking card, as ISO strings.
       event: {
+        id: eventId,
         slug,
         title: "Tech Conf",
         status: "published",
         timezone: "Asia/Kolkata",
+        startAt: "2026-12-12T03:30:00.000Z",
+        registrationClosesAt: "2026-12-10T12:30:00.000Z",
       },
       content: {
         description: "First paragraph.\n\nSecond paragraph.",

@@ -137,7 +137,14 @@ describe("registrationService.listAttendees", () => {
         organizerActor,
       );
 
-      expect(meta).toEqual({ page: 2, pageSize: 5, total: 4, counts });
+      // checkInOpensHoursBefore: the production default (6) when the service gets none.
+      expect(meta).toEqual({
+        page: 2,
+        pageSize: 5,
+        total: 4,
+        counts,
+        checkInOpensHoursBefore: 6,
+      });
       // No `date` was asked, so the counts are for any day.
       expect(repo.countAttendees).toHaveBeenCalledWith(eventId, undefined);
       expect(() => attendeeListMetaSchema.parse(meta)).not.toThrow();
@@ -155,8 +162,24 @@ describe("registrationService.listAttendees", () => {
           pageSize: 10,
           total: 0,
           counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
+          checkInOpensHoursBefore: 6,
         },
       });
+    });
+
+    it("sends the door's setting it was built with, so the door screen opens the same days as the server", async () => {
+      const { service } = setupRegistrationService(undefined, {
+        checkInOpensHoursBefore: 8760,
+        sessionCheckInOpensHoursBefore: 2,
+      });
+
+      const { meta } = await service.listAttendees(
+        eventId,
+        defaultQuery,
+        organizerActor,
+      );
+
+      expect(meta.checkInOpensHoursBefore).toBe(8760);
     });
   });
 

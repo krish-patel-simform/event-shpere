@@ -35,6 +35,11 @@ export const managedEventSchema = z.object({
       state: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * Who runs the event: organizer_profiles.id (the admin's organizer page) and the organisation's
+   * name. The admin's list shows it; an organizer's list holds only their own.
+   */
+  organizer: z.object({ id: z.uuid(), name: z.string() }),
   /** null = no limit. */
   capacity: z.number().int().nullable(),
   registered: z.number().int().min(0),

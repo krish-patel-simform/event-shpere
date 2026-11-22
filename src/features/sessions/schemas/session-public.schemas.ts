@@ -44,12 +44,20 @@ export const publicSessionDetailSchema = publicSessionSchema.extend({
     .nullable(),
   /** The event the session belongs to, for the breadcrumb, the back link and the time zone. */
   event: z.object({
+    /**
+     * For the booking routes and the user's standing in the event (route 2). Not a secret: the
+     * event page sends it too, and every route behind it checks the login.
+     */
+    id: z.uuid(),
     slug: z.string(),
     title: z.string(),
     /** A cancelled event stays visible: its sessions show a cancelled banner. */
     status: z.enum(["published", "cancelled"]),
     /** IANA zone the times are shown in (the venue's). */
     timezone: z.string(),
+    startAt: z.iso.datetime(),
+    /** A seat can be cancelled until this (or until `startAt` when it is null). */
+    registrationClosesAt: z.iso.datetime().nullable(),
   }),
   /** null = the CMS did not answer: the page still shows the facts above. */
   content: publicSessionContentSchema.nullable(),

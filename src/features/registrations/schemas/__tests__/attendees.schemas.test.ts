@@ -115,7 +115,19 @@ describe("attendeeSchema", () => {
 });
 
 describe("attendeeListMetaSchema", () => {
-  it("accepts the paging fields with the event's counts", () => {
+  it("accepts the paging fields with the event's counts and the door's setting", () => {
+    expect(
+      attendeeListMetaSchema.safeParse({
+        page: 1,
+        pageSize: 10,
+        total: 0,
+        counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
+        checkInOpensHoursBefore: 6,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("needs the door's setting (the screen greys out closed days with it)", () => {
     expect(
       attendeeListMetaSchema.safeParse({
         page: 1,
@@ -123,7 +135,7 @@ describe("attendeeListMetaSchema", () => {
         total: 0,
         counts: { registered: 0, cancelled: 0, checkedIn: 0, pending: 0 },
       }).success,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("rejects counts without the pending number", () => {

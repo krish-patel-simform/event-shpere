@@ -3,7 +3,7 @@ import { checkInMethodEnum } from "../../../db/schemas";
 
 //* POST /api/events/[eventId]/check-ins: the organizer (or admin) checks a person in at the door
 // by typing the ticket code. The event comes from the URL and who checks in from the session, so
-// the request carries ONLY the code: no user id, no method, no time.
+// the request carries the code (and, at the event door, the day): no user id, no method, no time.
 export const checkInBodySchema = z.object({
   // Typed by hand, so spaces around it and lower case are forgiven.
   ticketCode: z
@@ -14,6 +14,15 @@ export const checkInBodySchema = z.object({
     .transform((code) => code.toUpperCase()),
 });
 export type CheckInBody = z.infer<typeof checkInBodySchema>;
+
+// The event door's body: the code AND the event day the person is checked in for
+// ("2026-12-04", in the event's time zone). The door screen picks the day that is running; the
+// server only accepts a day of the event whose check-in window is open right now, so a past or a
+// future day is refused. The session door does not send one: a session belongs to one day.
+export const eventCheckInBodySchema = checkInBodySchema.extend({
+  attendanceDate: z.iso.date("Attendance date must be a date (YYYY-MM-DD)"),
+});
+export type EventCheckInBody = z.infer<typeof eventCheckInBodySchema>;
 
 // What the door needs to see after a successful check-in: who walked in. No email and no user id.
 export const checkInResponseSchema = z.object({
@@ -48,6 +57,21 @@ export const sessionCheckInResponseSchema = z.object({
   }),
 });
 export type SessionCheckInDto = z.infer<typeof sessionCheckInResponseSchema>;
+
+// The `details` of a 409 ALREADY_CHECKED_IN from either door: who the ticket belongs to and when
+// they were FIRST checked in (for that day, or for that session), so the door can say "Asha Rao
+// is already checked in, since 09:41". No email and no user id, as in the success answer.
+export const alreadyCheckedInDetailsSchema = z.object({
+  attendee: z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    ticketCode: z.string().min(1),
+  }),
+  checkedInAt: z.iso.datetime(),
+});
+export type AlreadyCheckedInDetails = z.infer<
+  typeof alreadyCheckedInDetailsSchema
+>;
 
 //* GET /api/events/[eventId]/check-ins: the check-in LOG of one event, one page: one row per
 // check-in, so a person on a two-day event appears once per day. For the organizer's Check-ins
