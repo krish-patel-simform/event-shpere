@@ -4,6 +4,7 @@ import {
 } from "../../../../core/api-client/base-api.service";
 import { hallAvailabilityResponseSchema } from "../../schemas/hall-availability.schemas";
 import {
+  createVenueResponseSchema,
   venueDetailResponseSchema,
   venueListResponseSchema,
 } from "../../schemas/venue.schemas";
@@ -163,5 +164,86 @@ describe("venueApiService", () => {
 
   it("the detail schema accepts the venue the screen tests use", () => {
     expect(venueDetailResponseSchema.parse(giftCity)).toEqual(giftCity);
+  });
+
+  it("the detail schema refuses a venue whose halls are not a list", () => {
+    expect(
+      venueDetailResponseSchema.safeParse({ ...giftCity, halls: "none" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("create posts the venue with its halls and parses the created venue", () => {
+    const body = {
+      name: "GIFT City Convention Centre",
+      addressLine: "Block 12, Zone 1, GIFT City",
+      city: "Gandhinagar",
+      state: "Gujarat",
+      country: "IN",
+      timezone: "Asia/Kolkata",
+      halls: [{ name: "Main Auditorium", capacity: 300 }],
+    };
+
+    venueApiService.create(body);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: "/venues", data: body },
+      createVenueResponseSchema,
+    );
+  });
+
+  it("the create schema refuses an answer without the venue's creation time", () => {
+    // giftCity is a detail answer: it has no createdAt.
+    expect(createVenueResponseSchema.safeParse(giftCity).success).toBe(false);
+    expect(
+      createVenueResponseSchema.safeParse({
+        ...giftCity,
+        createdAt: "2026-11-01T10:00:00.000Z",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("update patches only the fields it is given", () => {
+    venueApiService.update(venueId, { city: "Surat", postalCode: null });
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "PATCH",
+        url: `/venues/${venueId}`,
+        data: { city: "Surat", postalCode: null },
+      },
+      venueDetailResponseSchema,
+    );
+  });
+
+  it("delete deletes the venue and expects no body back (204)", () => {
+    venueApiService.delete(venueId);
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      method: "DELETE",
+      url: `/venues/${venueId}`,
+    });
+    // No schema: a 204 has nothing to parse.
+    expect(jest.mocked(apiRequest).mock.calls[0]).toHaveLength(1);
+  });
+
+  it("updateHall patches one hall of the venue with what changed", () => {
+    venueApiService.updateHall(venueId, hallIds.workshop, { capacity: 90 });
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      {
+        method: "PATCH",
+        url: `/venues/${venueId}/halls/${hallIds.workshop}`,
+        data: { capacity: 90 },
+      },
+      venueDetailResponseSchema,
+    );
+  });
+
+  it("passes on the API's failure to the caller", async () => {
+    const failure = new Error("This venue was used by an event");
+    jest.mocked(apiRequest).mockRejectedValueOnce(failure);
+
+    await expect(venueApiService.delete(venueId)).rejects.toBe(failure);
   });
 });
