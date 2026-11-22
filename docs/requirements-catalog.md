@@ -66,15 +66,15 @@ IDs marked **(added)** are not in the original spec text; they were added after 
 
 ## Week 3 – Registration + Stripe
 
-| ID    | Requirement                                                                         | Week | Status      |
-| ----- | ----------------------------------------------------------------------------------- | ---- | ----------- |
-| REG-1 | Register for an event (transaction: seat check + unique registration)               | 3    | In progress |
-| REG-2 | Cancel registration                                                                 | 3    | In progress |
-| REG-3 | View registration status                                                            | 3    | In progress |
-| REG-4 | Free ticket: instant registration                                                   | 3    | In progress |
-| REG-5 | Paid ticket: Stripe Checkout (test mode), confirmed by verified webhook, idempotent | 3    | Todo        |
-| REG-6 | Payment confirmation page                                                           | 3    | Todo        |
-| REG-7 | Transaction history                                                                 | 3    | Todo        |
+| ID    | Requirement                                                                         | Week | Status |
+| ----- | ----------------------------------------------------------------------------------- | ---- | ------ |
+| REG-1 | Register for an event (transaction: seat check + unique registration)               | 3    | Done   |
+| REG-2 | Cancel registration                                                                 | 3    | Done   |
+| REG-3 | View registration status                                                            | 3    | Done   |
+| REG-4 | Free ticket: instant registration                                                   | 3    | Done   |
+| REG-5 | Paid ticket: Stripe Checkout (test mode), confirmed by verified webhook, idempotent | 3    | Todo   |
+| REG-6 | Payment confirmation page                                                           | 3    | Todo   |
+| REG-7 | Transaction history                                                                 | 3    | Todo   |
 
 ---
 
