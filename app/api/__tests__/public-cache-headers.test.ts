@@ -33,8 +33,9 @@ const mockListSpeakerSessions = jest.mocked(
   speakerSessionService.listSpeakerSessions,
 );
 
-const PUBLIC_CACHE =
-  "public, max-age=0, s-maxage=30, stale-while-revalidate=60";
+// The browser always asks again; only Vercel's CDN keeps a copy (30 s, then 60 s stale).
+const BROWSER_CACHE = "public, max-age=0, must-revalidate";
+const CDN_CACHE = "s-maxage=30, stale-while-revalidate=60";
 const SESSION_ID = "0b7c2d1e-3f4a-4b5c-8d6e-7f8091a2b3c4";
 
 const request = (path: string) =>
@@ -88,7 +89,13 @@ describe("public GET routes that are the same for everyone", () => {
     const res = await call();
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe(PUBLIC_CACHE);
+    expect(res.headers.get("Cache-Control")).toBe(BROWSER_CACHE);
+    expect(res.headers.get("Vercel-CDN-Cache-Control")).toBe(CDN_CACHE);
+    // stale-while-revalidate in Cache-Control would let the BROWSER answer a refetch with an old
+    // copy (seats left not moving after registering): it belongs to the CDN header only.
+    expect(res.headers.get("Cache-Control")).not.toMatch(
+      /stale-while-revalidate|s-maxage/,
+    );
     // Nothing in the answer depends on the cookie, so no Vary or Set-Cookie ties it to a viewer.
     expect(res.headers.get("Vary")).toBeNull();
     expect(res.headers.get("Set-Cookie")).toBeNull();
@@ -104,6 +111,7 @@ describe("public GET routes that are the same for everyone", () => {
 
     expect(res.status).toBe(404);
     expect(res.headers.get("Cache-Control")).toBeNull();
+    expect(res.headers.get("Vercel-CDN-Cache-Control")).toBeNull();
   });
 
   it("never lets the CDN keep a validation error", async () => {

@@ -16,14 +16,24 @@ export const PER_USER_HEADERS = {
 /**
  * For a public GET whose answer is the SAME for everyone (no cookie, no role changes it): the
  * CDN may keep it for 30 seconds and serve a slightly older copy for 60 more while it fetches a
- * fresh one, so 10,000 people opening one event page cost one database query, not 10,000.
- * `max-age=0` makes browsers ask again, so only the CDN holds a copy. The price is that an
- * edit (publish, cancel) can take up to about 90 seconds to show for guests. Never use it for a
- * route that reads the viewer (use PER_USER_HEADERS there) and never on an error response: it
- * is only passed in `ok()` / `paginated()`, so a 404, 429 or 503 is not kept. Pass as `init.headers`.
+ * fresh one, so 10,000 people opening one event page cost one database query, not 10,000. The
+ * price is that an edit (publish, cancel) can take up to about 90 seconds to show for guests.
+ *
+ * Two headers, because browsers and the CDN must behave differently:
+ * - `Cache-Control` is for the BROWSER: `max-age=0, must-revalidate` = never answer from your own
+ *   copy, always ask. It must not carry `stale-while-revalidate`: browsers apply that directive to
+ *   their own cache too, and would answer a refetch with the old copy (a registration's "seats
+ *   left" stayed the same until a second reload).
+ * - `Vercel-CDN-Cache-Control` is for Vercel's CDN only: it holds the 30 s + 60 s rule, and Vercel
+ *   strips it before the answer reaches the browser (https://vercel.com/docs/caching/cache-control-headers).
+ *
+ * Never use it for a route that reads the viewer (use PER_USER_HEADERS there) and never on an
+ * error response: it is only passed in `ok()` / `paginated()`, so a 404, 429 or 503 is not kept.
+ * Pass as `init.headers`.
  */
 export const PUBLIC_CACHE_HEADERS = {
-  "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60",
+  "Cache-Control": "public, max-age=0, must-revalidate",
+  "Vercel-CDN-Cache-Control": "s-maxage=30, stale-while-revalidate=60",
 } as const;
 
 export function ok<T>(data: T, init?: ResponseInit): Response {
