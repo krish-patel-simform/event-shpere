@@ -9,7 +9,9 @@ export { EditSession } from "./components/EditSession";
 export { EventHalls } from "./components/EventHalls";
 export { EventSchedule } from "./components/EventSchedule";
 export { EventSpeakers } from "./components/EventSpeakers";
+export { EventSessionDetail } from "./components/EventSessionDetail";
 export { EventSessions } from "./components/EventSessions";
+export { ManageSessions } from "./components/ManageSessions";
 export { MySessions } from "./components/MySessions";
 export { PublicSessionDetail } from "./components/PublicSessionDetail";
 export { PublicSessionDetailSkeleton } from "./components/PublicSessionDetailSkeleton";
@@ -19,6 +21,7 @@ export { SessionListSkeleton } from "./components/SessionListSkeleton";
 export { SubmitSession } from "./components/SubmitSession";
 export {
   eventSessionEditHref,
+  eventSessionHref,
   eventSessionNewHref,
   parseSessionSpeaker,
   parseSessionStep,

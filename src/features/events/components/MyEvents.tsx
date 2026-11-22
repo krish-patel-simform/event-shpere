@@ -1,18 +1,30 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import Link from "next/link";
-import { useLayoutEffect, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import { useDebouncedValue } from "@/src/core/hooks/use-debounced-value";
-import { Alert, Button, buttonStyles, tabId, Tabs } from "@/src/core/ui";
+import {
+  Alert,
+  Button,
+  buttonStyles,
+  Kpi,
+  SourceBadge,
+  tabId,
+  Tabs,
+} from "@/src/core/ui";
 import { useCancelEvent } from "../hooks/useCancelEvent";
 import { useDeleteEvent } from "../hooks/useDeleteEvent";
 import { useGetMyEventCounts } from "../hooks/useGetMyEventCounts";
 import { useGetMyEventList } from "../hooks/useGetMyEventList";
 import { EVENT_ROUTES } from "../routes";
-import type { EventTabKey } from "../schemas/event-manage.schemas";
+import type {
+  EventTabCounts,
+  EventTabKey,
+} from "../schemas/event-manage.schemas";
 import type { ManagedEvent } from "../types/event-manage.types";
 import {
+  ADMIN_TAB_DESCRIPTIONS,
   DEFAULT_EVENT_FILTERS,
   EVENT_TABS,
   isFiltering,
@@ -21,25 +33,45 @@ import {
 } from "../utils/event-display";
 import { CancelEventDialog, DeleteDraftDialog } from "./EventDialogs";
 import { EventFilters } from "./EventFilters";
-import { EventsTable } from "./EventsTable";
+import { EventsTable, type EventListVariant } from "./EventsTable";
 
 const PANEL_ID = "events-panel";
 const PAGE_SIZE = 10;
 const SEARCH_DELAY_MS = 300;
+const STATIC_SELECT_CLASS =
+  "rounded-md border border-field bg-surface px-3 py-2 text-sm disabled:text-muted";
 
 /**
- * The organizer's "My events" page: their events by status tab, with a search and a sort. The
- * tab, the search, the sort and the page are all asked of the server (GET /api/me/events); the
- * numbers on the tabs come from GET /api/me/events/counts and do not change with the search.
- * Only the selected query is requested, and while a new one loads the page shows the skeleton,
- * never the rows of the previous one.
+ * The organizer's "My events" page: their events by status tab, with a search and a sort.
  */
 export function MyEvents() {
+  return <EventList variant="organizer" />;
+}
+
+/**
+ * The admin's "Manage events" page: every organizer's events, with the same tabs, search, sort
+ * and row actions, plus count cards, an Organizer column and shortcuts to each event's
+ * registrations, sessions and organizer. The same API answers both (GET /api/me/events and
+ * /counts return every event for EVENT_MANAGE_ALL).
+ */
+export function ManageEvents() {
+  return <EventList variant="admin" />;
+}
+
+/**
+ * One list of events. The tab, the search, the sort and the page are all asked of the server
+ * (GET /api/me/events); the numbers on the tabs (and the admin's count cards) come from
+ * GET /api/me/events/counts and do not change with the search. Only the selected query is
+ * requested, and while a new one loads the page shows the skeleton, never the rows of the
+ * previous one.
+ */
+function EventList({ variant }: { variant: EventListVariant }) {
+  const isAdmin = variant === "admin";
   const [tab, setTab] = useState<EventTabKey>("all");
   const [filters, setFilters] = useState<Filters>(DEFAULT_EVENT_FILTERS);
   const [page, setPage] = useState(1);
 
-  // The box updates at once; the API is asked once the organizer stops typing.
+  // The box updates at once; the API is asked once the user stops typing.
   const term = useDebouncedValue(filters.search.trim(), SEARCH_DELAY_MS);
 
   const list = useGetMyEventList({
@@ -56,7 +88,7 @@ export function MyEvents() {
   const cancel = useCancelEvent();
 
   // Leaving the page hides it (React <Activity>) instead of unmounting it, so an open dialog
-  // would still be open when the organizer comes back. Close it as the page is hidden.
+  // would still be open when the user comes back. Close it as the page is hidden.
   useLayoutEffect(() => () => setCancelling(null), []);
 
   // The draft whose "Delete draft" dialog is open; null = closed. Same shape as cancelling.
@@ -107,21 +139,51 @@ export function MyEvents() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">My events</h1>
-          <p className="max-w-xl text-muted">
-            The events you organise. Drafts are only visible to you.
-          </p>
-        </div>
-        <Link
-          href={EVENT_ROUTES.new}
-          className={buttonStyles({ variant: "primary" })}
-        >
-          <Plus aria-hidden="true" className="size-4" />
-          Create event
-        </Link>
-      </header>
+      {isAdmin ? (
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Manage events</h1>
+            <p className="max-w-xl text-muted">
+              Every event from every organizer, by status. Open an event to see
+              its registrations and sessions.
+            </p>
+          </div>
+          {/* No export API yet: shown, switched off, and marked Static. */}
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" disabled>
+              <Download aria-hidden="true" className="size-4" />
+              Export CSV
+            </Button>
+            <SourceBadge source="static" />
+          </div>
+        </header>
+      ) : (
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">My events</h1>
+            <p className="max-w-xl text-muted">
+              The events you organise. Drafts are only visible to you.
+            </p>
+          </div>
+          <Link
+            href={EVENT_ROUTES.new}
+            className={buttonStyles({ variant: "primary" })}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            Create event
+          </Link>
+        </header>
+      )}
+
+      {isAdmin && (
+        <>
+          <AdminEventKpis counts={counts.data} />
+          <Alert tone="info" title="Only organizers create events">
+            Open an event to edit it, manage its sessions or cancel it. What you
+            change applies to the organizer&apos;s event.
+          </Alert>
+        </>
+      )}
 
       {cancel.isSuccess && (
         <Alert tone="success" title={`${cancel.data.title} was cancelled`}>
@@ -153,7 +215,9 @@ export function MyEvents() {
         panelId={PANEL_ID}
       />
 
-      <EventFilters filters={filters} onChange={changeFilters} />
+      <EventFilters filters={filters} onChange={changeFilters}>
+        {isAdmin && <AdminStaticFilters />}
+      </EventFilters>
 
       <div
         id={PANEL_ID}
@@ -161,7 +225,9 @@ export function MyEvents() {
         aria-labelledby={tabId(PANEL_ID, tab)}
         className="overflow-hidden rounded-lg border border-line bg-surface"
       >
-        <p className="sr-only">{TAB_DESCRIPTIONS[tab]}</p>
+        <p className="sr-only">
+          {(isAdmin ? ADMIN_TAB_DESCRIPTIONS : TAB_DESCRIPTIONS)[tab]}
+        </p>
         {list.isPending ? (
           <div
             role="status"
@@ -174,7 +240,14 @@ export function MyEvents() {
           </div>
         ) : error ? (
           <div className="p-5">
-            <Alert tone="error" title="We couldn't load your events">
+            <Alert
+              tone="error"
+              title={
+                isAdmin
+                  ? "We couldn't load the events"
+                  : "We couldn't load your events"
+              }
+            >
               {error}
               <Button
                 variant="secondary"
@@ -187,6 +260,7 @@ export function MyEvents() {
           </div>
         ) : (
           <EventsTable
+            variant={variant}
             events={events}
             total={total}
             page={page}
@@ -212,6 +286,73 @@ export function MyEvents() {
         onClose={() => setDeleting(null)}
         onConfirm={confirmDelete}
       />
+    </div>
+  );
+}
+
+/**
+ * The admin's count cards, from the same counts as the tabs ("—" while they load or if they
+ * failed: the tabs and the list still work). Registrations across every event has no API yet,
+ * so that card is marked Static.
+ */
+function AdminEventKpis({ counts }: { counts: EventTabCounts | undefined }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <Kpi
+        label="Total events"
+        value={counts?.all}
+        note="From every organizer"
+      />
+      <Kpi
+        label="Published"
+        value={counts?.published}
+        note="Open for registration"
+      />
+      <Kpi label="Completed" value={counts?.completed} note="Already held" />
+      <Kpi label="Drafts" value={counts?.draft} note="Not published yet" />
+      <Kpi
+        label="Cancelled"
+        value={counts?.cancelled}
+        note="Registration closed"
+      />
+      <Kpi
+        label="Registrations"
+        value={undefined}
+        note="Across every event"
+        badge={<SourceBadge source="static" />}
+      />
+    </div>
+  );
+}
+
+/**
+ * The design's organizer, format and date filters. GET /api/me/events cannot filter by them
+ * yet, so they are shown, switched off and marked Static rather than dropped.
+ */
+function AdminStaticFilters() {
+  const id = useId();
+  const selects = [
+    { key: "organizer", label: "Organizer", option: "All organizers" },
+    { key: "format", label: "Format", option: "Any format" },
+    { key: "date", label: "Date", option: "Any date" },
+  ] as const;
+  return (
+    <div className="flex flex-wrap items-center gap-2.5">
+      {selects.map((select) => (
+        <span key={select.key}>
+          <label htmlFor={`${id}-${select.key}`} className="sr-only">
+            {select.label}
+          </label>
+          <select
+            id={`${id}-${select.key}`}
+            disabled
+            className={STATIC_SELECT_CLASS}
+          >
+            <option>{select.option}</option>
+          </select>
+        </span>
+      ))}
+      <SourceBadge source="static" />
     </div>
   );
 }

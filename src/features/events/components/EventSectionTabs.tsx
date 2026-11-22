@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/src/core/ui";
 import {
   eventAttendeesHref,
+  eventCheckInHref,
   eventHallsHref,
   eventHref,
   eventScheduleHref,
@@ -11,7 +12,13 @@ import {
 
 /** The tabs of an event's organizer pages; the page you are on is marked. */
 export type EventSection =
-  "overview" | "sessions" | "schedule" | "speakers" | "halls" | "attendees";
+  | "overview"
+  | "sessions"
+  | "schedule"
+  | "speakers"
+  | "halls"
+  | "attendees"
+  | "check-in";
 
 type Section = {
   label: string;
@@ -29,10 +36,15 @@ export const EVENT_SECTION_LABELS: Record<EventSection, string> = {
   schedule: "Schedule board",
   speakers: "Speakers",
   halls: "Halls",
-  attendees: "Attendees",
+  // The key and the URL stay "attendees"; the tab reads "Registrations", like the design.
+  attendees: "Registrations",
+  "check-in": "Check-in",
 };
 
-/** The tabs every event page shares: Overview, Sessions, Schedule board, Speakers, Halls, Attendees. */
+/**
+ * The tabs every event page shares: Overview, Sessions, Schedule board, Speakers, Halls,
+ * Registrations, Check-in.
+ */
 export function EventSectionTabs({
   eventId,
   current,
@@ -77,10 +89,15 @@ export function EventSectionTabs({
       count: counts.halls,
     },
     {
-      label: "Attendees",
+      label: EVENT_SECTION_LABELS.attendees,
       key: "attendees",
       href: eventAttendeesHref(eventId),
       count: counts.attendees,
+    },
+    {
+      label: EVENT_SECTION_LABELS["check-in"],
+      key: "check-in",
+      href: eventCheckInHref(eventId),
     },
   ];
 

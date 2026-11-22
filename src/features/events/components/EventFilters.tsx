@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import type { ReactNode } from "react";
 import type { EventSort } from "../schemas/event-manage.schemas";
 import type { EventFilters as Filters } from "../utils/event-display";
 
@@ -7,14 +8,17 @@ const selectClass =
 
 /**
  * Search box plus the sort select. Controlled: the page owns the values. The status is picked
- * with the tabs above, so there is no status select.
+ * with the tabs above, so there is no status select. `children` go after the sort (the admin's
+ * extra filters).
  */
 export function EventFilters({
   filters,
   onChange,
+  children,
 }: {
   filters: Filters;
   onChange: (patch: Partial<Filters>) => void;
+  children?: ReactNode;
 }) {
   return (
     <div role="search" className="flex flex-wrap gap-2.5">
@@ -43,6 +47,7 @@ export function EventFilters({
         <option value="soonest">Date: soonest first</option>
         <option value="latest">Date: latest first</option>
       </select>
+      {children}
     </div>
   );
 }

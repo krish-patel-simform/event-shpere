@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { ApiError } from "../../../../core/api-client/base-api.service";
+import { PUBLIC_EVENT_DETAILS_KEY } from "../../../registrations";
 import { eventApiService } from "../../api/event-api.service";
 import type { EventDto } from "../../schemas/events.schemas";
 import { eventQueryKeys, SESSIONS_QUERY_ROOT } from "../event-cache";
@@ -82,5 +83,10 @@ describe("useCancelEvent", () => {
 
   it("uses the same root key as the sessions feature", () => {
     expect(SESSIONS_QUERY_ROOT).toEqual(["sessions"]);
+  });
+
+  it("has the public page key the registrations feature reloads after registering", () => {
+    // Registering changes "seats left": that feature repeats this key, as it cannot import it.
+    expect(PUBLIC_EVENT_DETAILS_KEY).toEqual(eventQueryKeys.publicDetails);
   });
 });

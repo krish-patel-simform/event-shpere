@@ -1,4 +1,14 @@
-import { Ban, CalendarDays, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import {
+  Ban,
+  CalendarDays,
+  ExternalLink,
+  ListChecks,
+  Pencil,
+  ScanLine,
+  ShieldCheck,
+  Trash2,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { formatCount } from "@/src/core/format/format-number";
 import {
@@ -10,10 +20,14 @@ import {
   TablePagination,
   type ActionMenuItem,
 } from "@/src/core/ui";
+import { adminOrganizerHref } from "@/src/features/organizer";
 import {
+  eventAttendeesHref,
+  eventCheckInHref,
   eventEditHref,
   eventHref,
   EVENT_ROUTES,
+  eventSessionsHref,
   publicEventHref,
 } from "../routes";
 import type { ManagedEvent } from "../types/event-manage.types";
@@ -30,7 +44,15 @@ import { SeatsBar } from "./SeatsBar";
 
 const TH = "px-4 py-2.5 font-semibold";
 
+/**
+ * Whose list this is: the organizer's own events ("My events"), or the admin's list of every
+ * organizer's events ("Manage events"), which adds an Organizer column and shortcuts to the
+ * event's registrations, sessions and organizer.
+ */
+export type EventListVariant = "organizer" | "admin";
+
 type EventsTableProps = {
+  variant?: EventListVariant;
   /** The events of this page, already filtered and sorted. */
   events: readonly ManagedEvent[];
   /** Events matching the filters, over all pages. */
@@ -48,15 +70,23 @@ type EventsTableProps = {
 };
 
 /**
- * What a row's menu offers: open it, edit it (a completed or cancelled event is read-only), see
- * its public page (not for a draft: it has none yet), and last, in red, the way out: a published
- * event is cancelled, a draft is deleted.
+ * What a row's menu offers.
+ *
+ * - The organizer (their own events): open it, edit it (a completed or cancelled event is
+ *   read-only), see its public page (not for a draft: it has none yet), and last, in red, the way
+ *   out: a published event is cancelled, a draft is deleted.
+ * - The admin (every organizer's events): VIEW only, the way the server allows it: the event,
+ *   its registrations, its sessions, the check-in door, the organizer and the public page. No
+ *   edit, cancel or delete: those are the organizer's (the server answers 403).
  */
 function rowActions(
   event: ManagedEvent,
+  variant: EventListVariant,
   onCancel: (event: ManagedEvent) => void,
   onDelete: (event: ManagedEvent) => void,
 ): ActionMenuItem[] {
+  if (variant === "admin") return adminRowActions(event);
+
   const items: ActionMenuItem[] = [
     { label: "Manage event", href: eventHref(event.id), icon: CalendarDays },
   ];
@@ -95,8 +125,50 @@ function rowActions(
   return items;
 }
 
-/** The organizer's events: one row per event, the whole row opens its overview. */
+/** The admin's view-only menu. A draft has no registrations, door or public page yet. */
+function adminRowActions(event: ManagedEvent): ActionMenuItem[] {
+  const live = event.status !== "draft";
+  const items: ActionMenuItem[] = [
+    { label: "View event", href: eventHref(event.id), icon: CalendarDays },
+  ];
+  if (live) {
+    items.push({
+      label: "View registrations",
+      href: eventAttendeesHref(event.id),
+      icon: Users,
+    });
+  }
+  items.push({
+    label: "View sessions",
+    href: eventSessionsHref(event.id),
+    icon: ListChecks,
+  });
+  // Admins may still check people in (help at the door), while the event runs.
+  if (event.status === "published") {
+    items.push({
+      label: "Check in at the door",
+      href: eventCheckInHref(event.id),
+      icon: ScanLine,
+    });
+  }
+  items.push({
+    label: "View organizer",
+    href: adminOrganizerHref(event.organizer.id),
+    icon: ShieldCheck,
+  });
+  if (live) {
+    items.push({
+      label: "View public page",
+      href: publicEventHref(event.slug),
+      icon: ExternalLink,
+    });
+  }
+  return items;
+}
+
+/** A list of events: one row per event, the whole row opens its overview. */
 export function EventsTable({
+  variant = "organizer",
   events,
   total,
   page,
@@ -115,6 +187,11 @@ export function EventsTable({
           Clear filters
         </Button>
       </div>
+    ) : variant === "admin" ? (
+      // Only organizers create events, so the admin gets no "Create" button here.
+      <div className="px-5 py-10 text-center">
+        <p className="text-muted">No organizer has created an event yet.</p>
+      </div>
     ) : (
       <div className="space-y-3 px-5 py-10 text-center">
         <p className="text-muted">You have not created an event yet.</p>
@@ -132,12 +209,19 @@ export function EventsTable({
     <>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="sr-only">Your events</caption>
+          <caption className="sr-only">
+            {variant === "admin" ? "Every organizer's events" : "Your events"}
+          </caption>
           <thead className="bg-surface-subtle text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th scope="col" className={TH}>
                 Event
               </th>
+              {variant === "admin" && (
+                <th scope="col" className={TH}>
+                  Organizer
+                </th>
+              )}
               <th scope="col" className={cn(TH, "whitespace-nowrap")}>
                 Dates
               </th>
@@ -186,6 +270,13 @@ export function EventsTable({
                       </div>
                     </div>
                   </td>
+                  {variant === "admin" && (
+                    // Plain text: the row is one link (to the event); the organizer's page is
+                    // in the row's menu ("View organizer").
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {event.organizer.name}
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-4 py-3">
                     {formatEventDates(
                       event.startAt,
@@ -227,7 +318,7 @@ export function EventsTable({
                   <td className="px-4 py-3 text-right">
                     <ActionMenu
                       label={`Actions for ${event.title}`}
-                      items={rowActions(event, onCancel, onDelete)}
+                      items={rowActions(event, variant, onCancel, onDelete)}
                     />
                   </td>
                 </ClickableRow>

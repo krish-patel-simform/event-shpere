@@ -12,6 +12,7 @@ export { DatePicker } from "./DatePicker";
 export { DescriptionList, type DescriptionItem } from "./DescriptionList";
 export { Dialog, DialogBody, DialogFooter } from "./Dialog";
 export { FormSection } from "./FormSection";
+export { Kpi } from "./Kpi";
 export { LoadingImage } from "./LoadingImage";
 export { Logo } from "./Logo";
 export { PasswordField } from "./PasswordField";
@@ -20,6 +21,7 @@ export {
   SearchableSelect,
   type SelectOption,
 } from "./SearchableSelect";
+export { SearchBox } from "./SearchBox";
 export { SourceBadge, type DataSource } from "./SourceBadge";
 export { Spinner } from "./Spinner";
 export { TablePagination } from "./TablePagination";

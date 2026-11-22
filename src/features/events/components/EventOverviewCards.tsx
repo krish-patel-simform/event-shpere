@@ -13,6 +13,7 @@ import {
   Card,
   cn,
   DescriptionList,
+  Kpi,
   type DescriptionItem,
 } from "@/src/core/ui";
 import type { EventOverviewData } from "../types/event-manage.types";
@@ -30,29 +31,7 @@ import type { PublishChecklist } from "../utils/publish-checklist";
 import { publicEventHref } from "../routes";
 import { SeatsBar } from "./SeatsBar";
 
-//* The four figures at the top
-
-function Kpi({
-  label,
-  value,
-  note,
-  warn = false,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  warn?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="text-muted">{label}</p>
-      <p className={cn("text-2xl font-semibold", warn && "text-warning")}>
-        {value}
-      </p>
-      <p className="text-sm text-muted">{note}</p>
-    </div>
-  );
-}
+//* The four figures at the top (the count card is core/ui's Kpi)
 
 /** Registrations, sessions, halls and speakers. A draft has no registrations yet. */
 export function KpiGrid({ overview }: { overview: EventOverviewData }) {

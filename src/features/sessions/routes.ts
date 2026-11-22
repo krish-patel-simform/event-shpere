@@ -11,6 +11,8 @@ export const SESSION_ROUTES = {
   list: "/speaker/sessions",
   /** The "Submit a session" form. `new` is matched before the [sessionId] segment. */
   create: "/speaker/sessions/new",
+  /** The admin's "Manage sessions": every session of every event (sample data until its API). */
+  manage: "/admin/sessions",
 } as const;
 
 /** The page of one session. `id` = sessions.id. */
@@ -53,6 +55,14 @@ export function parseSessionSpeaker(
   return typeof value === "string" && z.uuid().safeParse(value).success
     ? value
     : undefined;
+}
+
+/**
+ * One session's page for its organizer or an admin: its facts and who booked a seat (and, later,
+ * the session door). What a click on a session row opens; editing is a separate, explicit action.
+ */
+export function eventSessionHref(eventId: string, sessionId: string): string {
+  return `${eventSessionsHref(eventId)}/${sessionId}`;
 }
 
 /** The form that edits one session, on a step. `sessionId` = sessions.id. */
