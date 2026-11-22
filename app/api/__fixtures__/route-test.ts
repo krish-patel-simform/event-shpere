@@ -18,7 +18,7 @@ import { assertRateLimit } from "@/src/core/http/rate-limit";
 //     readAccessTokenCookie: jest.fn(),
 //     readRefreshTokenCookie: jest.fn(),
 //     clearAuthCookies: jest.fn(),
-//     setAuthCookies: jest.fn(),
+//     writeAuthCookies: jest.fn(),
 //   }));
 //   jest.mock("@/src/core/auth/server/auth-session", () => ({
 //     ...jest.requireActual("@/src/core/auth/server/auth-session"),
