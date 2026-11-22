@@ -56,6 +56,13 @@ describe("GET /api/me/organizer-application", () => {
     expect(await body(res)).toEqual({ data: rejected });
   });
 
+  it("keeps the answer out of every cache (only this organizer's application)", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
+  });
+
   it("looks the application up by the signed-in organizer's id, never one from the request", async () => {
     await call(GET, "GET", PATH, {
       query: { userId: users.admin.id },

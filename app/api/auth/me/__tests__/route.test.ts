@@ -48,6 +48,13 @@ describe("GET /api/auth/me", () => {
     });
   });
 
+  it("keeps the answer out of every cache (it carries the email and permissions)", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
+  });
+
   it("sorts the permissions whatever order the session holds them in", async () => {
     signInAs(userWith(["POLL_VOTE", "EVENT_CREATE", "PROFILE_VIEW"]));
 

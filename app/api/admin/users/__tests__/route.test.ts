@@ -44,6 +44,9 @@ describe("GET /api/admin/users", () => {
 
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ data: userRows, meta });
+    // Emails: no cache may keep it.
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
   });
 
   it("hands the service the defaults when nothing is asked", async () => {

@@ -181,6 +181,9 @@ describe("GET /api/admin/organizers", () => {
 
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ data: pendingRows, meta });
+    // Names and emails: no cache may keep it.
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
   });
 
   it("hands the service the parsed query, with defaults and emailVerified as a boolean", async () => {
@@ -199,6 +202,17 @@ describe("GET /api/admin/organizers", () => {
       search: "acme",
       verification: "pending",
       emailVerified: false,
+      sort: "newest",
+    });
+  });
+
+  it("answers a request with no query at all: page 1, 10 per page", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.status).toBe(200);
+    expect(service.getOrganizerListItem).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 10,
       sort: "newest",
     });
   });

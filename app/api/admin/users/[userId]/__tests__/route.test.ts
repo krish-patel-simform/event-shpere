@@ -58,6 +58,9 @@ describe("GET /api/admin/users/[userId]", () => {
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ data: detail });
     expect(service.getUserDetail).toHaveBeenCalledWith(USER_ID);
+    // The user's email: no cache may keep it.
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
   });
 
   it("never answers the password hash, even if the service returns it", async () => {

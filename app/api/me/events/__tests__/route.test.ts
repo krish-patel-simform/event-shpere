@@ -48,6 +48,13 @@ describe("GET /api/me/events", () => {
     expect(await body(res)).toEqual({ data: rows, meta });
   });
 
+  it("keeps the answer out of every cache (it depends on who asks)", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
+  });
+
   it("hands the service the defaults when no query is sent, and the caller", async () => {
     await call(GET, "GET", PATH);
 

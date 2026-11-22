@@ -73,6 +73,9 @@ describe("GET /api/admin/organizers/[organizerId]", () => {
     expect(res.status).toBe(200);
     expect(await body(res)).toEqual({ data: detail });
     expect(service.getOrganizerDetail).toHaveBeenCalledWith(ORGANIZER_ID);
+    // The applicant's email: no cache may keep it.
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
   });
 
   it("refuses an organizer id that is not a uuid (400)", async () => {

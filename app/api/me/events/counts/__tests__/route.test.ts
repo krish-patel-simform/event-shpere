@@ -53,6 +53,13 @@ describe("GET /api/me/events/counts", () => {
     expect(await body(res)).toEqual({ data: counts });
   });
 
+  it("keeps the answer out of every cache (it depends on who asks)", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
+  });
+
   it("asks the service for the caller's counts, whatever the query says", async () => {
     await call(GET, "GET", PATH, { query: { search: "summit" } });
 

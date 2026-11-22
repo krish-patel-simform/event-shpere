@@ -67,6 +67,13 @@ describe("GET /api/me/speaker-profile", () => {
     expect(await body(res)).toEqual({ data: profile });
   });
 
+  it("keeps the answer out of every cache (only this speaker's profile)", async () => {
+    const res = await call(GET, "GET", PATH);
+
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("vary")).toBe("Cookie");
+  });
+
   it("looks the profile up by the signed-in speaker's id, never one from the request", async () => {
     await call(GET, "GET", PATH, { query: { userId: users.admin.id } });
 

@@ -106,6 +106,8 @@ const ADMIN: readonly PermissionCode[] = [
   "ORGANIZER_VERIFY",
   "ORGANIZER_MANAGE",
   "MODERATION_MANAGE",
+  "VENUE_MANAGE",
+  "HALL_MANAGE",
 ];
 
 function makeUser(
