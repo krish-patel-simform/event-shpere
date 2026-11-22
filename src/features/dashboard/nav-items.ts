@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Clock,
   LayoutDashboard,
+  ListChecks,
   MapPin,
   Mic,
   ShieldCheck,
@@ -22,6 +23,7 @@ import { NOTIFICATION_ROUTES } from "@/src/features/notifications";
 import { ORGANIZER_ROUTES } from "@/src/features/organizer";
 import { POLL_ROUTES } from "@/src/features/polls";
 import { PROFILE_ROUTES } from "@/src/features/profile";
+import { REGISTRATION_ROUTES } from "@/src/features/registrations";
 import { SCHEDULE_ROUTES } from "@/src/features/schedule";
 import { SESSION_ROUTES } from "@/src/features/sessions";
 import { SPEAKER_PROFILE_ROUTE } from "@/src/features/speakers";
@@ -50,6 +52,8 @@ export type NavSection = { heading?: string; items: readonly NavItem[] };
  */
 export const ADMIN_ROUTES = {
   organizers: ORGANIZER_ROUTES.list,
+  events: EVENT_ROUTES.manage,
+  sessions: SESSION_ROUTES.manage,
   users: USER_ROUTES.list,
   venues: VENUE_ROUTES.list,
 } as const;
@@ -91,8 +95,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     heading: "My activity",
     items: [
       {
-        label: "My events",
-        href: "/my-events",
+        label: "My tickets",
+        href: REGISTRATION_ROUTES.myTickets,
         icon: Ticket,
         access: "REGISTRATION_VIEW_OWN",
       },
@@ -105,7 +109,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     ],
   },
   {
-    // Organizer workspace. "My events" above is the attendee's registrations; this one lists the
+    // Organizer workspace. "My tickets" above is the attendee's registrations; this one lists the
     // events the organizer runs, so it needs a permission only organizers (and admins) have.
     heading: "Manage events",
     items: [
@@ -149,6 +153,19 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         href: ADMIN_ROUTES.organizers,
         icon: ShieldCheck,
         access: "ORGANIZER_VERIFY",
+      },
+      {
+        // Every organizer's events. Organizers have "My Events" (EVENT_MANAGE_OWN) instead.
+        label: "Manage events",
+        href: ADMIN_ROUTES.events,
+        icon: CalendarCheck,
+        access: "EVENT_MANAGE_ALL",
+      },
+      {
+        label: "Manage sessions",
+        href: ADMIN_ROUTES.sessions,
+        icon: ListChecks,
+        access: "EVENT_MANAGE_ALL",
       },
       {
         label: "Users",

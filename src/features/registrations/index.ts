@@ -1,4 +1,29 @@
 // Client-safe public API of the registrations feature. Never export anything from ./server here.
+// A "use client" module: the event page shows it in its price box.
+export {
+  EventAttendeeList,
+  type AttendeeListEvent,
+} from "./components/EventAttendeeList";
+export { EventCheckInDesk } from "./components/EventCheckInDesk";
+export { EventRegistrationCard } from "./components/EventRegistrationCard";
+export { MyTickets } from "./components/MyTickets";
+export {
+  SessionAttendeeList,
+  type AttendeeListSession,
+} from "./components/SessionAttendeeList";
+export { SessionBookingCard } from "./components/SessionBookingCard";
+export { publicEventPath, REGISTRATION_ROUTES } from "./routes";
+export {
+  adjustPublicSeatsLeft,
+  adjustPublicSessionSeatsLeft,
+  PUBLIC_EVENT_DETAILS_KEY,
+  PUBLIC_SESSION_DETAILS_KEY,
+} from "./hooks/registration-cache";
+export type { RegistrationCardEvent } from "./utils/registration-card-state";
+export type {
+  SessionBookingEvent,
+  SessionBookingTarget,
+} from "./utils/session-booking-state";
 export {
   attendeeCheckInFilters,
   attendeeCountsSchema,
@@ -22,6 +47,8 @@ export {
 } from "./schemas/attendees.schemas";
 export {
   checkInBodySchema,
+  eventCheckInBodySchema,
+  type EventCheckInBody,
   checkInCountsSchema,
   checkInListQuerySchema,
   checkInLogItemSchema,

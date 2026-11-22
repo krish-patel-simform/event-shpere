@@ -4,7 +4,6 @@ import { CalendarDays, CalendarX, MapPin } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ApiError } from "@/src/core/api-client/base-api.service";
-import { formatDate } from "@/src/core/format/format-date";
 import {
   Alert,
   Badge,
@@ -14,6 +13,7 @@ import {
   Card,
   SourceBadge,
 } from "@/src/core/ui";
+import { EventRegistrationCard } from "@/src/features/registrations";
 import { speakerHref, SPEAKER_ROUTES } from "@/src/features/speakers";
 import { useGetPublicEvent } from "../hooks/useGetPublicEvent";
 import { EVENT_ROUTES } from "../routes";
@@ -56,27 +56,13 @@ function Section({
   );
 }
 
-/** "Registration opens 12 Nov 2026", or when it closed or closes; null when there is no limit. */
-function registrationNote(
-  event: PublicEventDetailDto,
-  now: Date,
-): string | null {
-  const { registrationOpensAt: opens, registrationClosesAt: closes } = event;
-  if (opens && new Date(opens) > now) {
-    return `Registration opens ${formatDate(opens)}.`;
-  }
-  if (closes) {
-    return new Date(closes) > now
-      ? `Registration closes ${formatDate(closes)}.`
-      : "Registration has closed.";
-  }
-  return null;
-}
-
+/**
+ * The price box: price and seats left, then the registration card (the registrations feature),
+ * which knows the user's standing and every reason they can or cannot register.
+ */
 function RegistrationBox({ event }: { event: PublicEventDetailDto }) {
   const cancelled = event.status === "cancelled";
   const seats = seatsLeftBadge(event.seatsLeft);
-  const note = cancelled ? null : registrationNote(event, new Date());
 
   return (
     <aside
@@ -89,26 +75,13 @@ function RegistrationBox({ event }: { event: PublicEventDetailDto }) {
         </span>
         <span className="text-sm text-muted">Ticket price</span>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <Badge tone={seats.tone}>{seats.text}</Badge>
-      </div>
-      {note && <p className="text-sm text-muted">{note}</p>}
-      {cancelled ? (
-        <p className="text-sm font-semibold text-danger">
-          This event was cancelled.
-        </p>
-      ) : (
-        <>
-          {/* Registering is not built yet: the button is shown but switched off. */}
-          <Button fullWidth disabled>
-            Register
-          </Button>
-          <p className="flex items-center gap-2 text-sm text-muted">
-            <SourceBadge source="static" />
-            Registration is not open in this build yet.
-          </p>
-        </>
+      {/* A cancelled event has no seats to offer: the card says it was cancelled. */}
+      {!cancelled && (
+        <div className="flex items-center justify-between gap-2">
+          <Badge tone={seats.tone}>{seats.text}</Badge>
+        </div>
       )}
+      <EventRegistrationCard event={event} eventTitle={event.title} />
     </aside>
   );
 }
@@ -356,7 +329,8 @@ function EventDetail({ event }: { event: PublicEventDetailDto }) {
 /**
  * One event's public page (GET /api/events/slug/[slug]): hero, price and seats, the programme
  * by day, speakers, venue and FAQ. Open to guests. A draft or an unknown link is "not found".
- * Registering and the organiser's name are not built yet and carry a Static badge.
+ * The price box holds the registration card (register, ticket, cancel). The organiser's name is
+ * not built yet and carries a Static badge.
  */
 export function PublicEventDetail({ slug }: { slug: string }) {
   const event = useGetPublicEvent(slug);

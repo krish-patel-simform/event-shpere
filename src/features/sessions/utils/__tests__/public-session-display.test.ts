@@ -7,10 +7,13 @@ import {
 } from "../public-session-display";
 
 const event: PublicSessionDetailDto["event"] = {
+  id: "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f",
   slug: "summit",
   title: "Summit",
   status: "published",
   timezone: "Asia/Kolkata",
+  startAt: "2026-12-03T03:30:00.000Z",
+  registrationClosesAt: null,
 };
 
 describe("sessionWhen", () => {

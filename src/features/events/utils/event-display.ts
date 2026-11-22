@@ -35,6 +35,14 @@ export const TAB_DESCRIPTIONS: Record<EventTabKey, string> = {
   cancelled: "Registration is closed. The page stays visible with a banner.",
 };
 
+/** The same tabs as the admin reads them: every organizer's events, not "yours". */
+export const ADMIN_TAB_DESCRIPTIONS: Record<EventTabKey, string> = {
+  ...TAB_DESCRIPTIONS,
+  all: "Every event from every organizer.",
+  draft:
+    "Drafts are not public yet. Only their organizer (and admins) can see them.",
+};
+
 /** The search box and the sort select; the tab is kept next to them. */
 export type EventFilters = { search: string; sort: EventSort };
 
@@ -48,82 +56,14 @@ export function isFiltering(tab: EventTabKey, filters: EventFilters): boolean {
 }
 
 //* Dates and times, in the event's own time zone
-
-const ZONE_NAMES: Record<string, string> = { "Asia/Kolkata": "IST" };
-
-/** "IST" for India; any other zone shows its IANA name. */
-export function zoneLabel(timezone: string): string {
-  return ZONE_NAMES[timezone] ?? timezone;
-}
-
-function zonedParts(iso: string, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-
-  return {
-    weekday: get("weekday"),
-    day: get("day"),
-    month: get("month"),
-    year: get("year"),
-    hour: get("hour"),
-    minute: get("minute"),
-  };
-}
-
-/**
- * "3 – 5 Dec 2026", or "14 Nov 2026" for a single day. With `weekday`: "Wed 3 – Fri 5 Dec 2026".
- * Built from parts, because Intl's own joiners differ between browsers and Node versions.
- */
-export function formatEventDates(
-  startAt: string,
-  endAt: string,
-  timezone: string,
-  { weekday = false }: { weekday?: boolean } = {},
-): string {
-  const start = zonedParts(startAt, timezone);
-  const end = zonedParts(endAt, timezone);
-  const day = (p: typeof start) => (weekday ? `${p.weekday} ${p.day}` : p.day);
-  const full = (p: typeof start) => `${day(p)} ${p.month} ${p.year}`;
-
-  if (full(start) === full(end)) return full(start);
-  if (start.month === end.month && start.year === end.year) {
-    return `${day(start)} – ${day(end)} ${end.month} ${end.year}`;
-  }
-  if (start.year === end.year) {
-    return `${day(start)} ${start.month} – ${full(end)}`;
-  }
-  return `${full(start)} – ${full(end)}`;
-}
-
-/** "09:00 – 18:00 IST": the first day's start to the last day's end. */
-export function formatEventTimes(
-  startAt: string,
-  endAt: string,
-  timezone: string,
-): string {
-  const start = zonedParts(startAt, timezone);
-  const end = zonedParts(endAt, timezone);
-  return `${start.hour}:${start.minute} – ${end.hour}:${end.minute} ${zoneLabel(timezone)}`;
-}
-
-/** The little date block in front of a title: { day: "03", month: "DEC" }. */
-export function thumbDate(
-  startAt: string,
-  timezone: string,
-): { day: string; month: string } {
-  const { day, month } = zonedParts(startAt, timezone);
-  return { day: day.padStart(2, "0"), month: month.toUpperCase() };
-}
+// They live in core (the registrations feature shows event dates too, and cannot import this
+// feature); re-exported here so the events code keeps importing them from one place.
+export {
+  formatEventDates,
+  formatEventTimes,
+  thumbDate,
+  zoneLabel,
+} from "@/src/core/format/format-zoned";
 
 /** The date and time as the form's inputs want them: "2026-12-12" and "09:30", in the zone. */
 export function toFormDateTime(

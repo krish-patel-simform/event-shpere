@@ -1,25 +1,73 @@
 import Link from "next/link";
-import { Button, buttonStyles, Card, cn } from "@/src/core/ui";
+import { buttonStyles, Card, cn } from "@/src/core/ui";
+import { SessionBookingCard } from "@/src/features/registrations";
 import { formatTicketPrice, publicEventHref } from "../../events";
+import { SESSION_ROUTES } from "../routes";
 import type { PublicSessionDetailDto } from "../schemas/session-public.schemas";
-import { seatsTakenPercent } from "../utils/public-session-display";
+import {
+  seatsTakenPercent,
+  sessionPlace,
+  sessionWhen,
+} from "../utils/public-session-display";
+
+/** The seats line: a bar for a hall, "No seat limit" online, or what kind of session it is. */
+function Seats({ session }: { session: PublicSessionDetailDto }) {
+  const { requiresRegistration, seatsLeft, hallCapacity, mode } = session;
+
+  if (requiresRegistration && seatsLeft !== null && hallCapacity !== null) {
+    const taken = seatsTakenPercent(hallCapacity, seatsLeft);
+    return (
+      <div>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="font-semibold">Seats</span>
+          <span className="text-muted">
+            {seatsLeft === 0
+              ? "Fully booked"
+              : `${seatsLeft} of ${hallCapacity} left`}
+          </span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label="Seats taken"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={taken}
+          className="mt-2 h-2 overflow-hidden rounded-full bg-surface-subtle"
+        >
+          <div
+            className={cn(
+              "h-full rounded-full",
+              taken >= 90 ? "bg-warning" : "bg-brand",
+            )}
+            style={{ width: `${taken}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <p className="text-sm font-medium">
+      {!requiresRegistration
+        ? "No separate registration"
+        : mode === "online"
+          ? "No seat limit"
+          : "Registration required"}
+    </p>
+  );
+}
 
 /**
- * "Book this session": what it costs, how many seats are left, and the booking button. Booking a
- * seat is not built yet, so the button is a disabled placeholder that says so; the price and the
- * seats are real.
+ * "Book this session": what it costs, how many seats are left, and the booking card (the
+ * registrations feature), which knows whether the user holds a seat and every reason they can or
+ * cannot book one.
  */
 export function PublicSessionBooking({
   session,
 }: {
   session: PublicSessionDetailDto;
 }) {
-  const { event, price, requiresRegistration, seatsLeft, hallCapacity } =
-    session;
-  const cancelled = event.status === "cancelled";
-  const showSeats =
-    requiresRegistration && seatsLeft !== null && hallCapacity !== null;
-  const taken = showSeats ? seatsTakenPercent(hallCapacity, seatsLeft) : 0;
+  const { event, price } = session;
+  const slot = sessionWhen(session);
 
   return (
     <Card title="Book this session">
@@ -33,60 +81,20 @@ export function PublicSessionBooking({
           </p>
         </div>
 
-        {showSeats ? (
-          <div>
-            <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="font-semibold">Seats</span>
-              <span className="text-muted">
-                {seatsLeft === 0
-                  ? "Fully booked"
-                  : `${seatsLeft} of ${hallCapacity} left`}
-              </span>
-            </div>
-            <div
-              role="progressbar"
-              aria-label="Seats taken"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={taken}
-              className="mt-2 h-2 overflow-hidden rounded-full bg-surface-subtle"
-            >
-              <div
-                className={cn(
-                  "h-full rounded-full",
-                  taken >= 90 ? "bg-warning" : "bg-brand",
-                )}
-                style={{ width: `${taken}%` }}
-              />
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm font-medium">
-            {requiresRegistration
-              ? "Registration required"
-              : "No separate registration"}
-          </p>
-        )}
+        <Seats session={session} />
 
-        {cancelled ? (
-          <p className="text-sm text-muted">
-            This event was cancelled, so this session cannot be booked.
-          </p>
-        ) : requiresRegistration ? (
-          <>
-            <Button disabled className="w-full">
-              Booking opens soon
-            </Button>
-            <p className="text-sm text-muted">
-              You will book your seat here once you have registered for the
-              event.
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-muted">
-            No booking needed: come along with your event ticket.
-          </p>
-        )}
+        <SessionBookingCard
+          session={session}
+          sessionTitle={session.title}
+          event={event}
+          eventHref={publicEventHref(event.slug)}
+          mySessionsHref={SESSION_ROUTES.list}
+          when={
+            slot
+              ? `${slot.date} · ${slot.time} · ${sessionPlace(session)}`
+              : null
+          }
+        />
 
         <Link
           href={publicEventHref(event.slug)}
