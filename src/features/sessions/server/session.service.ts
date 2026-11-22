@@ -493,8 +493,8 @@ export function createSessionService(deps: SessionServiceDeps) {
     /**
      * Edits or moves a session: only the fields that were sent change (`null` clears the hall
      * or the join link). The speakers and the Strapi content have their own routes. The
-     * permission (SESSION_MANAGE) is checked by the route wrapper; the owning organizer or an
-     * admin may edit.
+     * permission (SESSION_MANAGE) is checked by the route wrapper; only the owning organizer may
+     * edit (an admin may only read: the event access answers 403 EVENT_READ_ONLY).
      *
      * Order: the event is theirs → the session is in it, not cancelled, not ended → the saved
      * session with the changes applied ("merged") is valid under the same rules as create → if the
@@ -628,7 +628,8 @@ export function createSessionService(deps: SessionServiceDeps) {
      * Same rules as create (at least one speaker, no repeats, at least one with the role speaker,
      * every id a real speaker PROFILE) and a speaker who is new to the session must be free during
      * its slot (409 SPEAKER_BUSY). The permission (SESSION_MANAGE) is checked by the route
-     * wrapper; the owning organizer or an admin may change them. A cancelled or ended session is
+     * wrapper; only the owning organizer may change them (an admin gets 403 EVENT_READ_ONLY). A
+     * cancelled or ended session is
      * read-only. Saved in one transaction; the Strapi content is not touched.
      */
     async replaceSpeakers(
@@ -673,7 +674,8 @@ export function createSessionService(deps: SessionServiceDeps) {
     /**
      * Cancels a session: it is kept (not deleted), its hall is free again, and the seats booked
      * for it are cancelled with it. Cancelling is final. The permission (SESSION_MANAGE) is
-     * checked by the route wrapper; the owning organizer or an admin may cancel. A session that
+     * checked by the route wrapper; only the owning organizer may cancel (an admin gets 403
+     * EVENT_READ_ONLY). A session that
      * is already cancelled is answered as it is (cancelling twice is harmless); one that has
      * ended can no longer be cancelled. The speakers and the Strapi content are left alone.
      */
