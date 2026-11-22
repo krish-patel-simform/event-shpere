@@ -121,6 +121,7 @@ describe("eventService.listOwnEvents", () => {
         city: "Pune",
         state: "Maharashtra",
       },
+      organizer: { id: organizerId, name: "Kinetic Events" },
       sessions: { total: 2, scheduled: 0, cancelled: 0 },
     });
     expect(result.items[1].venue).toBeNull();
@@ -544,12 +545,25 @@ describe("eventService.updateEvent", () => {
     expect(repo.updateEvent).not.toHaveBeenCalled();
   });
 
-  it("lets an admin edit any event", async () => {
+  it("refuses an admin (403 EVENT_READ_ONLY): an admin may view an organizer's event, not change it", async () => {
     const { service, repo } = setup();
 
-    await service.updateEvent(eventId, body({ title: "Admin edit" }), admin);
+    await expect(
+      service.updateEvent(eventId, body({ title: "Admin edit" }), admin),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "EVENT_READ_ONLY",
+      message: "An admin can view an organizer's event but not change it",
+    });
+    expect(repo.updateEvent).not.toHaveBeenCalled();
+  });
 
-    expect(repo.updateEvent).toHaveBeenCalled();
+  it("still lets an admin open any event's overview (a read)", async () => {
+    const { service } = setup();
+
+    await expect(
+      service.getEventOverview(eventId, admin),
+    ).resolves.toBeDefined();
   });
 
   it("refuses a user with no event permission", async () => {

@@ -9,6 +9,7 @@ import {
   EventPageHeader,
   eventEditHref,
   isEventEditable,
+  useCanEditEvent,
   type EventOverviewData,
 } from "../../events";
 import { useGetVenueDetail } from "../../venues";
@@ -44,7 +45,7 @@ export function EventSchedule({ eventId }: { eventId: string }) {
 
 function SchedulePage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
-  const editable = isEventEditable(event.status);
+  const editable = useCanEditEvent(event.status);
   const venue = event.venue;
 
   return (
@@ -92,7 +93,7 @@ function LiveSchedule({
   venueId: string;
 }) {
   const { event } = overview;
-  const editable = isEventEditable(event.status);
+  const editable = useCanEditEvent(event.status);
   const venue = useGetVenueDetail(venueId);
   const sessions = useGetEventSessions(event.id);
   const moveSession = useMoveSession(event.id);
@@ -172,8 +173,9 @@ function LiveSchedule({
     <>
       {!editable && (
         <Alert tone="info">
-          This event can no longer be changed, so its sessions can&apos;t be
-          moved.
+          {isEventEditable(event.status)
+            ? "View only: only the organizer can move this event's sessions."
+            : "This event can no longer be changed, so its sessions can't be moved."}
         </Alert>
       )}
       {other.length > 0 && (

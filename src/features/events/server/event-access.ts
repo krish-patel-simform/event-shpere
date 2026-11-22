@@ -45,10 +45,13 @@ export function createEventAccess(deps: EventAccessDeps) {
 
     /**
      * Returns the event if the organizer owns it, or throws. EVENT_MANAGE_OWN (organizer) reaches
-     * only their own events; EVENT_MANAGE_ALL (admin) passes for any event. Somebody else's event
-     * is a 404, never a 403, so its existence is not revealed. A write also needs a not-cancelled
-     * event. The WHOLE event row comes back, so an action that needs more than the owner and the
-     * status (dates, price, venue...) does not read it a second time. Callers that only need an
+     * only their own events; EVENT_MANAGE_ALL (admin) passes for any event, but only to LOOK
+     * (overview, lists, attendees, check-in): a write (`write: true`: the event's details, content
+     * and images, and every session change) needs EVENT_MANAGE_OWN, so an admin gets 403
+     * EVENT_READ_ONLY. An event is the organizer's to change. Somebody else's event is a 404,
+     * never a 403, so its existence is not revealed. A write also needs a not-cancelled event. The
+     * WHOLE event row comes back, so an action that needs more than the owner and the status
+     * (dates, price, venue...) does not read it a second time. Callers that only need an
      * `EventRef` still accept it: the row has everything an `EventRef` has.
      */
     async getEventIfOrgOwns(
@@ -66,6 +69,12 @@ export function createEventAccess(deps: EventAccessDeps) {
       const event = await deps.eventRepository.findEventById(eventId);
       if (!event || (!hasAll(actor) && event.organizerId !== organizerId)) {
         throw new NotFoundError("Event not found");
+      }
+      if (write && !hasOwn(actor)) {
+        throw new ForbiddenError(
+          "An admin can view an organizer's event but not change it",
+          "EVENT_READ_ONLY",
+        );
       }
       if (write && event.status === "cancelled") {
         throw new ConflictError(

@@ -25,7 +25,11 @@ import {
   workshop,
 } from "../../__fixtures__/organizer-sessions";
 import { renderWithClient } from "../../__fixtures__/render";
-import { eventSessionEditHref, eventSessionNewHref } from "../../routes";
+import {
+  eventSessionEditHref,
+  eventSessionHref,
+  eventSessionNewHref,
+} from "../../routes";
 import { EventSessions } from "../EventSessions";
 
 jest.mock("../../../events/api/event-api.service", () => ({
@@ -189,12 +193,12 @@ describe("EventSessions: the list", () => {
     expect(await screen.findByText("Not scheduled yet")).toBeInTheDocument();
   });
 
-  it("opens the edit page from the title", async () => {
+  it("opens the session's page (facts and attendees) from the title, not the edit form", async () => {
     await renderPage();
 
     expect(
       await screen.findByRole("link", { name: talk.title }),
-    ).toHaveAttribute("href", eventSessionEditHref(SUMMIT_ID, talk.id));
+    ).toHaveAttribute("href", eventSessionHref(SUMMIT_ID, talk.id));
   });
 
   it("explains an empty event and offers the first session", async () => {
@@ -339,8 +343,29 @@ describe("EventSessions: adding", () => {
   });
 });
 
+describe("EventSessions: an admin views, never changes", () => {
+  it("says view only, offers no Add session, and the titles still open the session pages", async () => {
+    // An admin holds SESSION_CREATE, but not the organizer's EVENT_MANAGE_OWN.
+    hasPermission.mockImplementation((code) => code !== "EVENT_MANAGE_OWN");
+    await renderPage();
+
+    expect(await screen.findByText(talk.title)).toBeInTheDocument();
+    expect(screen.getByText("View only")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Only the organizer can add, change or cancel this event's sessions.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add session" })).toBeNull();
+    expect(screen.getByRole("link", { name: talk.title })).toHaveAttribute(
+      "href",
+      eventSessionHref(SUMMIT_ID, talk.id),
+    );
+  });
+});
+
 describe("EventSessions: a read-only event", () => {
-  it("has no Add session, no edit links and no Cancel, and says why", async () => {
+  it("has no Add session, no edit and no Cancel, and says why; the session page still opens", async () => {
     await renderPage(MEETUP_ID);
 
     expect(await screen.findByText(talk.title)).toBeInTheDocument();
@@ -349,15 +374,17 @@ describe("EventSessions: a read-only event", () => {
     expect(
       screen.queryByRole("link", { name: "Add session" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: talk.title }),
-    ).not.toBeInTheDocument();
+    // The title opens the session's page (to see who booked), never the edit form.
+    expect(screen.getByRole("link", { name: talk.title })).toHaveAttribute(
+      "href",
+      eventSessionHref(MEETUP_ID, talk.id),
+    );
     expect(
       screen.queryByRole("button", { name: `Cancel ${talk.title}` }),
     ).not.toBeInTheDocument();
   });
 
-  it("still offers only 'View public page' on a scheduled session (a cancelled event keeps its pages)", async () => {
+  it("offers only the session page and 'View public page' on a scheduled session (a cancelled event keeps its pages)", async () => {
     const user = userEvent.setup();
     await renderPage(MEETUP_ID);
 
@@ -366,12 +393,15 @@ describe("EventSessions: a read-only event", () => {
     );
 
     const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual(["View public page"]);
+    expect(items.map((item) => item.textContent)).toEqual([
+      "View session",
+      "View public page",
+    ]);
   });
 });
 
 describe("EventSessions: row actions", () => {
-  it("offers every edit step, the public page, and cancel last", async () => {
+  it("offers the session page first, then every edit step, the public page, and cancel last", async () => {
     const user = userEvent.setup();
     await renderPage();
 
@@ -382,6 +412,7 @@ describe("EventSessions: row actions", () => {
     const menu = within(screen.getByRole("menu"));
     const items = menu.getAllByRole("menuitem");
     expect(items.map((item) => item.textContent)).toEqual([
+      "View session",
       "Edit details & speakers",
       "Edit content",
       "Cover image",
@@ -424,15 +455,35 @@ describe("EventSessions: row actions", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("has no menu on a cancelled session", async () => {
+  it("offers only the session page on a cancelled session (no edit, no public page)", async () => {
+    const user = userEvent.setup();
     await renderPage();
 
-    await screen.findByText(cancelledKeynote.title);
-    expect(
-      screen.queryByRole("button", {
+    await user.click(
+      await screen.findByRole("button", {
         name: `Actions for ${cancelledKeynote.title}`,
       }),
-    ).not.toBeInTheDocument();
+    );
+
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["View session"]);
+  });
+
+  it("names the menu's first item after the attendees for a session that needs booking", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Actions for ${workshop.title}`,
+      }),
+    );
+
+    expect(
+      within(screen.getByRole("menu")).getByRole("menuitem", {
+        name: "View session & attendees",
+      }),
+    ).toHaveAttribute("href", eventSessionHref(SUMMIT_ID, workshop.id));
   });
 
   it("does not offer the public page while the event is a draft", async () => {
@@ -459,7 +510,10 @@ describe("EventSessions: row actions", () => {
     );
 
     const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual(["View public page"]);
+    expect(items.map((item) => item.textContent)).toEqual([
+      "View session",
+      "View public page",
+    ]);
   });
 
   it("shows a visible Cancel button on the row that opens the confirm dialog", async () => {
@@ -475,7 +529,7 @@ describe("EventSessions: row actions", () => {
     ).toBeInTheDocument();
   });
 
-  it("gives a cancelled session no link and no menu", async () => {
+  it("still opens a cancelled session's page (to see who had a seat), with no Cancel button", async () => {
     await renderPage();
 
     const row = within(
@@ -484,8 +538,12 @@ describe("EventSessions: row actions", () => {
       ) as HTMLElement,
     );
     expect(row.getByText("Cancelled")).toBeInTheDocument();
-    expect(row.queryByRole("link")).not.toBeInTheDocument();
-    expect(row.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      row.getByRole("link", { name: cancelledKeynote.title }),
+    ).toHaveAttribute("href", eventSessionHref(SUMMIT_ID, cancelledKeynote.id));
+    expect(
+      row.queryByRole("button", { name: `Cancel ${cancelledKeynote.title}` }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -729,10 +787,10 @@ describe("EventSessions: cancelling", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    // The list was loaded again: the talk is cancelled now, so it lost its menu.
+    // The list was loaded again: the talk is cancelled now, so it lost its Cancel button.
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: `Actions for ${talk.title}` }),
+        screen.queryByRole("button", { name: `Cancel ${talk.title}` }),
       ).not.toBeInTheDocument(),
     );
     expect(api.listForEvent).toHaveBeenCalledTimes(2);

@@ -11,6 +11,7 @@ import {
   Button,
   buttonStyles,
   Card,
+  SearchBox,
   SourceBadge,
   TablePagination,
   type ActionMenuItem,
@@ -18,9 +19,8 @@ import {
 import {
   EventLoader,
   EventPageHeader,
-  SearchBox,
   eventSessionNewHref,
-  isEventEditable,
+  useCanEditEvent,
   type EventOverviewData,
 } from "../../events";
 import { useGetSpeakerList } from "../../speakers";
@@ -55,7 +55,7 @@ export function EventSpeakers({ eventId }: { eventId: string }) {
 
 function SpeakersPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
-  const editable = isEventEditable(event.status);
+  const editable = useCanEditEvent(event.status);
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">

@@ -3,15 +3,15 @@
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Alert, Button, buttonStyles } from "@/src/core/ui";
+import { Alert, Button, buttonStyles, SearchBox } from "@/src/core/ui";
 import { useHasPermission } from "@/src/features/auth";
 import {
   EventLoader,
   EventPageHeader,
   eventSessionsHref,
   isEventEditable,
+  useCanEditEvent,
   plural,
-  SearchBox,
   type EventOverviewData,
 } from "../../events";
 import { useCancelSession } from "../hooks/useCancelSession";
@@ -58,7 +58,7 @@ function SessionsPage({
 }) {
   const { event } = overview;
   const canCreate = useHasPermission("SESSION_CREATE");
-  const editable = isEventEditable(event.status);
+  const editable = useCanEditEvent(event.status);
 
   const sessions = useGetEventSessions(event.id);
   const cancel = useCancelSession(event.id);
@@ -119,11 +119,22 @@ function SessionsPage({
         }
       />
 
+      {/* Read-only for one of two reasons: the event can no longer change, or the viewer is an
+          admin (the event can change, but only its organizer changes it). */}
       {!editable && (
-        <Alert tone="info" title="Sessions are read-only">
-          {event.status === "cancelled"
-            ? "This event is cancelled."
-            : "This event has ended."}
+        <Alert
+          tone="info"
+          title={
+            isEventEditable(event.status)
+              ? "View only"
+              : "Sessions are read-only"
+          }
+        >
+          {isEventEditable(event.status)
+            ? "Only the organizer can add, change or cancel this event's sessions."
+            : event.status === "cancelled"
+              ? "This event is cancelled."
+              : "This event has ended."}
         </Alert>
       )}
 

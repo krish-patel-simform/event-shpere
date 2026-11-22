@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { useHasPermission } from "@/src/features/auth";
 import { venueApiService } from "@/src/features/venues/api/venue-api.service";
 import {
   FINTECH_ID,
@@ -33,6 +34,12 @@ jest.mock("@/src/features/venues/api/venue-api.service", () => ({
   venueApiService: { get: jest.fn() },
 }));
 
+// Who is looking: the organizer by default (EVENT_MANAGE_OWN); a test can be an admin.
+jest.mock("@/src/features/auth", () => ({
+  ...jest.requireActual("@/src/features/auth"),
+  useHasPermission: jest.fn(),
+}));
+const hasPermission = jest.mocked(useHasPermission);
 const events = jest.mocked(eventApiService);
 const sessionsApi = jest.mocked(sessionApiService);
 const venues = jest.mocked(venueApiService);
@@ -94,6 +101,7 @@ const cancelledInHallB = {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  hasPermission.mockReturnValue(true);
   events.getOverview.mockResolvedValue(overviewOf(FINTECH_ID));
   venues.get.mockResolvedValue(venueDetail());
   sessionsApi.listForEvent.mockResolvedValue([
@@ -322,5 +330,20 @@ describe("EventSchedule: when it can not be shown or changed", () => {
         screen.getByRole("region", { name: /Schedule board/ }),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+describe("EventSchedule: an admin views, never changes", () => {
+  it("shows the board with no grips and no Create session, and says it is view only", async () => {
+    hasPermission.mockImplementation((code) => code !== "EVENT_MANAGE_OWN");
+    await renderSchedule();
+
+    expect(
+      screen.getByText(
+        "View only: only the organizer can move this event's sessions.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Move / })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Create session" })).toBeNull();
   });
 });

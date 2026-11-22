@@ -435,10 +435,9 @@ describe("EventOverview: a draft", () => {
       "href",
       eventHallsHref(FINTECH_ID),
     );
-    expect(sections.getByRole("link", { name: /Attendees/ })).toHaveAttribute(
-      "href",
-      eventAttendeesHref(FINTECH_ID),
-    );
+    expect(
+      sections.getByRole("link", { name: /Registrations/ }),
+    ).toHaveAttribute("href", eventAttendeesHref(FINTECH_ID));
   });
 
   it("shows the details, with the public link as text", async () => {
@@ -967,5 +966,62 @@ describe("EventOverview: completed and cancelled events", () => {
         },
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("EventOverview: an admin views, never changes", () => {
+  // The admin's permissions: everything an admin holds (SESSION_CREATE too), but not the
+  // organizer's own EVENT_MANAGE_OWN / EVENT_PUBLISH_OWN.
+  beforeEach(() => {
+    hasPermission.mockImplementation(
+      (code) => code !== "EVENT_MANAGE_OWN" && code !== "EVENT_PUBLISH_OWN",
+    );
+  });
+
+  it("says the page is view only, naming the organizer", async () => {
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.getByText("View only")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /only the organizer can change, publish, cancel or delete it/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("a published event: no Edit, no Create session, no Cancel, no danger zone; the public page stays", async () => {
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.queryByRole("link", { name: "Edit event" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Create session" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel event" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Danger zone" })).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "Details" })).queryByRole(
+        "link",
+        { name: "Edit" },
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "View public page" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a draft: no Delete draft and no way to publish", async () => {
+    await renderOverview(sample(FINTECH_ID));
+
+    expect(screen.queryByRole("button", { name: "Delete draft" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Edit event" })).toBeNull();
+    const publishButtons = screen.queryAllByRole("button", {
+      name: /publish/i,
+    });
+    publishButtons.forEach((button) => expect(button).toBeDisabled());
+  });
+
+  it("the organizer sees no View only notice", async () => {
+    hasPermission.mockReturnValue(true);
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.queryByText("View only")).toBeNull();
   });
 });

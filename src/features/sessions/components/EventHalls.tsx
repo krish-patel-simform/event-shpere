@@ -17,7 +17,7 @@ import {
   eventEditHref,
   eventScheduleHref,
   eventSessionsHref,
-  isEventEditable,
+  useCanEditEvent,
   type EventOverviewData,
 } from "../../events";
 import { useGetVenueDetail } from "../../venues";
@@ -43,7 +43,7 @@ export function EventHalls({ eventId }: { eventId: string }) {
 function HallsPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
   const venue = event.venue;
-  const editable = isEventEditable(event.status);
+  const editable = useCanEditEvent(event.status);
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">

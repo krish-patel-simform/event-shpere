@@ -21,8 +21,8 @@ import type {
   EventOverviewData,
   ManagedEvent,
 } from "../types/event-manage.types";
+import { useCanEditEvent } from "../hooks/useCanEditEvent";
 import { getAttentionItems } from "../utils/event-attention";
-import { isEditable } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import {
   CoverStrip,
@@ -60,7 +60,10 @@ export function EventOverview({ eventId }: { eventId: string }) {
 /** The overview of one loaded event. */
 function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
-  const editable = isEditable(event.status);
+  // Only the event's organizer changes it; an admin (EVENT_MANAGE_ALL) views it read-only, and
+  // the server refuses an admin's change (403 EVENT_READ_ONLY), cancel and delete.
+  const isOrganizer = useHasPermission("EVENT_MANAGE_OWN");
+  const editable = useCanEditEvent(event.status);
   const canCreateSession = useHasPermission("SESSION_CREATE");
   const checklist = getPublishChecklist({
     eventId: event.id,
@@ -152,7 +155,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
                 Create session
               </Link>
             )}
-            {event.status === "published" && (
+            {isOrganizer && event.status === "published" && (
               <Button
                 variant="secondary"
                 className="text-danger"
@@ -175,6 +178,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         }
       />
 
+      {!isOrganizer && (
+        <Alert tone="info" title="View only">
+          This is {overview.event.organizer.name}&apos;s event. As an admin you
+          can see everything and check people in, but only the organizer can
+          change, publish, cancel or delete it.
+        </Alert>
+      )}
       {event.status === "cancelled" && (
         <Alert tone="error" title="This event is cancelled">
           Registration is closed, and the event page shows a cancelled banner.
@@ -253,13 +263,14 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
             editHref={editable ? eventEditHref(event.id) : null}
           />
           {event.status !== "cancelled" && <QuickActionsCard />}
-          {(event.status === "draft" || event.status === "published") && (
-            <DangerZoneCard
-              status={event.status}
-              onCancel={askToCancel}
-              onDelete={askToDelete}
-            />
-          )}
+          {isOrganizer &&
+            (event.status === "draft" || event.status === "published") && (
+              <DangerZoneCard
+                status={event.status}
+                onCancel={askToCancel}
+                onDelete={askToDelete}
+              />
+            )}
         </div>
       </div>
 
