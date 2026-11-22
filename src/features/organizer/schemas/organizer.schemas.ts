@@ -92,7 +92,8 @@ export type OrganizerSort = (typeof organizerSorts)[number];
 // undefined (parseQuery reads the URL into an object), so .optional() is enough.
 export const organizerQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(50),
+  // 10 when not sent, like the users list: a request without ?pageSize= is not a 400.
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
   /** Matches organisation name, applicant name (first, last or full) or email. */
   search: z.string().trim().max(100).optional(),
   verification: z.enum(organizerVerificationFilters).optional(),

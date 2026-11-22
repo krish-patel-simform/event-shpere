@@ -149,7 +149,14 @@ Where one permission is shared by Organizer and Admin, the scope differs by role
 | 52  | ORGANIZER_MANAGE   | Edit any organizer's organization details                                              | All   | Admin   |
 | 53  | MODERATION_MANAGE  | Remove inappropriate events, content, or poll entries                                  | All   | Admin   |
 
-**53 permissions** (64 in the original list; see Changes).
+### Venues
+
+| #   | Permission Code | Description                                                         | Scope | Used By |
+| --- | --------------- | ------------------------------------------------------------------- | ----- | ------- |
+| 54  | VENUE_MANAGE    | Create, edit, activate or deactivate, and delete venues (VEN-1/2/3) | All   | Admin   |
+| 55  | HALL_MANAGE     | Add, edit, activate or deactivate, and delete a venue's halls       | All   | Admin   |
+
+**55 permissions** (64 in the original list; see Changes).
 
 ## Changes from the original list
 
@@ -163,6 +170,7 @@ Where one permission is shared by Organizer and Admin, the scope differs by role
 | Merged `SESSION_MANAGE_EVENT` + `SESSION_MANAGE_ALL` → `SESSION_MANAGE`                          | Same reason.                                                                                                                                                                                                                                                   |
 | Removed `OFFLINE_PUBLIC_VIEW`, `OFFLINE_PERSONAL_VIEW`                                           | Offline mode is a client capability of the installed app (PWA-1..5), not a role-based permission. The data cached offline is already limited by the permissions the user has online (public pages for everyone, own tickets and schedule for signed-in users). |
 | Removed `CONTENT_VIEW`, `CONTENT_CREATE`, `CONTENT_MANAGE`                                       | CMS content is public to read, and creating or editing it happens inside the headless CMS with its own editor accounts, not through app roles.                                                                                                                 |
+| Added `VENUE_MANAGE`, `HALL_MANAGE`                                                              | Venues and their halls are shared reference data that only an Admin manages (VEN-1/2/3): organizers pick a venue and its halls, they never change them. Not in the original list.                                                                              |
 
 Implementation rule for merged permissions: the role check is "Organizer or Admin"; the **service** then applies the scope: an Organizer must own the event (`event.organizerId === actor.id`, otherwise 404), an Admin skips the ownership check.
 

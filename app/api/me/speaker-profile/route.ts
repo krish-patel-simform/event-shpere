@@ -1,5 +1,5 @@
 import { PERMISSION } from "@/src/core/auth/permission-catalog";
-import { ok, parseBody, route } from "@/src/core/http";
+import { ok, parseBody, PER_USER_HEADERS, route } from "@/src/core/http";
 import {
   ownSpeakerProfileResponseSchema,
   updateOwnSpeakerProfileBodySchema,
@@ -9,7 +9,8 @@ import { speakerService } from "@/src/features/speakers/server";
 // The logged-in speaker's own profile. No id in the URL: the speaker comes from the login,
 // so nobody can reach another speaker's profile here.
 
-// The edit form's current values (bio as plain text, links as stored).
+// The edit form's current values (bio as plain text, links as stored). Only this speaker's, so no
+// cache may keep it.
 export const GET = route(
   {
     auth: "signed-in",
@@ -18,7 +19,9 @@ export const GET = route(
   },
   async ({ currentUser }) => {
     const profile = await speakerService.getOwnProfile(currentUser.id);
-    return ok(ownSpeakerProfileResponseSchema.parse(profile));
+    return ok(ownSpeakerProfileResponseSchema.parse(profile), {
+      headers: PER_USER_HEADERS,
+    });
   },
 );
 
