@@ -508,20 +508,42 @@ describe("route() rate limit", () => {
   it("refuses at compile time a policy of the wrong kind: a public route counts by IP, a signed-in one by user id", () => {
     // Checked by `pnpm typecheck`: each directive below must be an error, or the line fails.
     // @ts-expect-error a user policy on a public route
-    route({ auth: "public", rateLimit: "user-write" }, async () => ok(true));
+    const userPolicyOnPublic = route(
+      { auth: "public", rateLimit: "user-write" },
+      async () => ok(true),
+    );
     // @ts-expect-error an IP policy on a signed-in route
-    route({ auth: "signed-in", rateLimit: "auth-ip" }, async () => ok(true));
+    const ipPolicyOnSignedIn = route(
+      { auth: "signed-in", rateLimit: "auth-ip" },
+      async () => ok(true),
+    );
     // @ts-expect-error an IP policy on a permission route
-    route({ permission: ["X"], rateLimit: "public-read-ip" }, async () =>
-      ok(true),
+    const ipPolicyOnPermission = route(
+      { permission: ["X"], rateLimit: "public-read-ip" },
+      async () => ok(true),
     );
     // The right kinds compile.
-    route({ auth: "public", rateLimit: "public-read-ip" }, async () =>
-      ok(true),
+    const ipPolicyOnPublic = route(
+      { auth: "public", rateLimit: "public-read-ip" },
+      async () => ok(true),
     );
-    route({ auth: "signed-in", rateLimit: "user-upload" }, async () =>
-      ok(true),
+    const userPolicyOnSignedIn = route(
+      { auth: "signed-in", rateLimit: "user-upload" },
+      async () => ok(true),
     );
+
+    // The runtime check: the types are the real test, so all this proves is that route() still
+    // builds a handler for each call and does not throw while setting one up (the wrong pairings
+    // are refused by the compiler only, never at runtime).
+    for (const handler of [
+      userPolicyOnPublic,
+      ipPolicyOnSignedIn,
+      ipPolicyOnPermission,
+      ipPolicyOnPublic,
+      userPolicyOnSignedIn,
+    ]) {
+      expect(handler).toEqual(expect.any(Function));
+    }
   });
 
   it("skips the limit when a route says none", async () => {
