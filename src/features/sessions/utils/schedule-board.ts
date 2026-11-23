@@ -16,8 +16,12 @@ export type BoardFrame = { firstHour: number; lastHour: number };
 export const DEFAULT_FRAME: BoardFrame = { firstHour: 9, lastHour: 18 };
 
 const DAY_MS = 86_400_000;
-/** A guard for a badly dated event: more than this many days are not drawn. */
-const MAX_DAYS = 20;
+/**
+ * A guard for a badly dated event (an end date years away would draw thousands of tabs): more
+ * than this many days are not drawn. A year is far longer than any real event, and the day tabs
+ * scroll, so a two-month event shows every day.
+ */
+export const MAX_DAYS = 366;
 
 export type BoardDay = {
   /** 0 = the event's first day. */

@@ -157,10 +157,15 @@ export type PublicSessionRow = Pick<
   /** Where the event is held; null = no venue (an online event). */
   venue: { name: string; addressLine: string; city: string } | null;
   event: {
+    /** For the booking routes (/api/events/[eventId]/sessions/...) and the user's standing. */
+    id: string;
     slug: string;
     title: string;
     status: "published" | "cancelled";
     timezone: string;
+    startAt: Date;
+    /** Seats can be cancelled until event registration closes (or the event starts). */
+    registrationClosesAt: Date | null;
   };
   /** In display order. A suspended speaker is left out: they have no public page. */
   speakers: {
@@ -237,10 +242,13 @@ export const sessionRepository = {
         venueName: venuesTable.name,
         venueAddress: venuesTable.addressLine,
         venueCity: venuesTable.city,
+        eventId: eventsTable.id,
         eventSlug: eventsTable.slug,
         eventTitle: eventsTable.title,
         eventStatus: eventsTable.status,
         eventTimezone: eventsTable.timezone,
+        eventStartAt: eventsTable.startAt,
+        eventRegistrationClosesAt: eventsTable.registrationClosesAt,
       })
       .from(sessionsTable)
       .innerJoin(eventsTable, eq(eventsTable.id, sessionsTable.eventId))
@@ -281,10 +289,13 @@ export const sessionRepository = {
       .orderBy(asc(sessionSpeakersTable.displayOrder));
 
     const {
+      eventId,
       eventSlug,
       eventTitle,
       eventStatus,
       eventTimezone,
+      eventStartAt,
+      eventRegistrationClosesAt,
       venueName,
       venueAddress,
       venueCity,
@@ -297,11 +308,14 @@ export const sessionRepository = {
           ? { name: venueName, addressLine: venueAddress, city: venueCity }
           : null,
       event: {
+        id: eventId,
         slug: eventSlug,
         title: eventTitle,
         // The query only finds these two; a draft never gets here.
         status: eventStatus === "cancelled" ? "cancelled" : "published",
         timezone: eventTimezone,
+        startAt: eventStartAt,
+        registrationClosesAt: eventRegistrationClosesAt,
       },
       speakers,
     };

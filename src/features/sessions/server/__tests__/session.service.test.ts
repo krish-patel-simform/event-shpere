@@ -1172,14 +1172,19 @@ describe("sessionService.updateSession", () => {
       expect(repo.countActiveBookings).not.toHaveBeenCalled();
     });
 
-    it("lets an admin edit (SESSION_MANAGE reaches any event)", async () => {
-      const { service, repo } = editSetup();
+    it("asks the event access for a WRITE, so an admin is stopped (403 EVENT_READ_ONLY) and nothing is saved", async () => {
+      const { service, repo, access } = editSetup();
+      access.getEventIfOrgOwns.mockRejectedValue(
+        new ForbiddenError("read only", "EVENT_READ_ONLY"),
+      );
 
-      await run(service, { price: 49900 }, admin);
-
-      expect(repo.updateSession).toHaveBeenCalledWith(sessionId, {
-        price: 49900,
+      await expect(run(service, { price: 49900 }, admin)).rejects.toMatchObject(
+        { status: 403, code: "EVENT_READ_ONLY" },
+      );
+      expect(access.getEventIfOrgOwns).toHaveBeenCalledWith(eventId, admin, {
+        write: true,
       });
+      expect(repo.updateSession).not.toHaveBeenCalled();
     });
 
     it("treats the same time sent again as no change: no hall check", async () => {
@@ -1636,12 +1641,19 @@ describe("sessionService.replaceSpeakers", () => {
     expect(repo.replaceSessionSpeakers).toHaveBeenCalled();
   });
 
-  it("lets an admin change the speakers (SESSION_MANAGE reaches any event)", async () => {
-    const { service, repo } = replaceSetup();
+  it("asks the event access for a WRITE, so an admin cannot change the speakers (403 EVENT_READ_ONLY)", async () => {
+    const { service, repo, access } = replaceSetup();
+    access.getEventIfOrgOwns.mockRejectedValue(
+      new ForbiddenError("read only", "EVENT_READ_ONLY"),
+    );
 
-    await replace(service, { speakers: [{ speakerId }] }, admin);
-
-    expect(repo.replaceSessionSpeakers).toHaveBeenCalled();
+    await expect(
+      replace(service, { speakers: [{ speakerId }] }, admin),
+    ).rejects.toMatchObject({ code: "EVENT_READ_ONLY" });
+    expect(access.getEventIfOrgOwns).toHaveBeenCalledWith(eventId, admin, {
+      write: true,
+    });
+    expect(repo.replaceSessionSpeakers).not.toHaveBeenCalled();
   });
 
   it("refuses an id that is not a speaker profile (400), e.g. a user id, and writes nothing", async () => {
@@ -1761,12 +1773,19 @@ describe("sessionService.cancelSession", () => {
     expect(dto).not.toHaveProperty("cmsSessionId");
   });
 
-  it("lets an admin cancel (SESSION_MANAGE reaches any event)", async () => {
-    const { service, repo } = cancelSetup();
+  it("asks the event access for a WRITE, so an admin cannot cancel a session (403 EVENT_READ_ONLY)", async () => {
+    const { service, repo, access } = cancelSetup();
+    access.getEventIfOrgOwns.mockRejectedValue(
+      new ForbiddenError("read only", "EVENT_READ_ONLY"),
+    );
 
-    await service.cancelSession(eventId, sessionId, admin);
-
-    expect(repo.cancelSession).toHaveBeenCalledWith(sessionId, NOW);
+    await expect(
+      service.cancelSession(eventId, sessionId, admin),
+    ).rejects.toMatchObject({ code: "EVENT_READ_ONLY" });
+    expect(access.getEventIfOrgOwns).toHaveBeenCalledWith(eventId, admin, {
+      write: true,
+    });
+    expect(repo.cancelSession).not.toHaveBeenCalled();
   });
 
   it("leaves the Strapi content and the speakers alone", async () => {

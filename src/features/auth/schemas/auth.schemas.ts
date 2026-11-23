@@ -136,32 +136,6 @@ export const organizerSignupBodySchema = signupBaseSchema
 
 export type OrganizerSignupBody = z.infer<typeof organizerSignupBodySchema>;
 
-//* Post Verify the OPT
-export const verifyOtpBodySchema = z.object({
-  otp: z.coerce.number().min(6).max(6),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .pipe(z.email())
-    .pipe(z.string().max(255)),
-  token: z.string().min(1, "Missing link token").max(200),
-});
-
-export type VerifyOtpBody = z.infer<typeof verifyOtpBodySchema>;
-
-export const verifyOtpResponseSchema = z.object({
-  firstName: z.string().trim().min(1).max(255),
-  lastName: z.string().trim().min(1).max(255),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .pipe(z.email())
-    .pipe(z.string().max(255)),
-  verifiedAt: z.iso.datetime(),
-});
-
 //* Sign up for the user (AUTH-1): the shared signup fields + optional profile details.
 export const userSignupBodySchema = signupBaseSchema
   .extend({

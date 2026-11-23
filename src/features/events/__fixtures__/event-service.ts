@@ -87,6 +87,8 @@ export const managedRow: ManagedEventRow = {
   venueName: "Hotel Orchid",
   venueCity: "Pune",
   venueState: "Maharashtra",
+  organizerId,
+  organizerName: "Kinetic Events",
   registered: 0,
   cancelledRegistrations: 0,
   sessionsTotal: 2,

@@ -47,18 +47,22 @@ describe("SidebarNav", () => {
       "Browse events",
       "Speakers",
       "Browse venues",
-      "My events",
+      "My tickets",
       "My schedule",
       "Notifications",
       "Profile & settings",
     ]);
+    expect(screen.getByRole("link", { name: "My tickets" })).toHaveAttribute(
+      "href",
+      "/my-tickets",
+    );
   });
 
   it("drops links without the permission, and a section left empty loses its heading", () => {
     // An organizer does not register for events: no "My activity" links.
     renderNavFor("organizer", ["NOTIFICATION_VIEW", "PROFILE_VIEW"]);
 
-    expect(links()).not.toContain("My events");
+    expect(links()).not.toContain("My tickets");
     expect(links()).not.toContain("My schedule");
     expect(screen.queryByText("My activity")).not.toBeInTheDocument();
     expect(links()).toContain("Dashboard");
@@ -69,6 +73,7 @@ describe("SidebarNav", () => {
   it("an admin gets the Manage section, in the same place as for every role", () => {
     renderNavFor("admin", [
       "ORGANIZER_VERIFY",
+      "EVENT_MANAGE_ALL",
       "USER_VIEW",
       "VENUE_MANAGE",
       "NOTIFICATION_VIEW",
@@ -76,17 +81,43 @@ describe("SidebarNav", () => {
     ]);
 
     // Browsing venues is under Discover (public); managing them is under Manage (VENUE_MANAGE).
+    // EVENT_MANAGE_ALL adds Manage events and Manage sessions, after Organizers like the design.
     expect(links()).toEqual([
       "Dashboard",
       "Browse events",
       "Speakers",
       "Browse venues",
       "Organizers",
+      "Manage events",
+      "Manage sessions",
       "Users",
       "Venues",
       "Notifications",
       "Profile & settings",
     ]);
     expect(screen.getByText("Manage")).toBeInTheDocument();
+  });
+
+  it("an organizer (EVENT_MANAGE_OWN) gets My Events, never the admin's Manage events or sessions", () => {
+    renderNavFor("organizer", ["EVENT_MANAGE_OWN", "PROFILE_VIEW"]);
+
+    expect(screen.getByRole("link", { name: "My Events" })).toHaveAttribute(
+      "href",
+      "/organizer/events",
+    );
+    expect(links()).not.toContain("Manage events");
+    expect(links()).not.toContain("Manage sessions");
+  });
+
+  it("the admin's links go to the admin pages", () => {
+    renderNavFor("admin", ["EVENT_MANAGE_ALL"]);
+
+    expect(screen.getByRole("link", { name: "Manage events" })).toHaveAttribute(
+      "href",
+      "/admin/events",
+    );
+    expect(
+      screen.getByRole("link", { name: "Manage sessions" }),
+    ).toHaveAttribute("href", "/admin/sessions");
   });
 });

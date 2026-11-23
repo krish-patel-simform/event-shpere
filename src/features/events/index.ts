@@ -1,12 +1,12 @@
 // Client-safe public API of the events feature. Never export anything from ./server here.
 export { EventAttendees } from "./components/EventAttendees";
 export { EventBrowse } from "./components/EventBrowse";
+export { EventCheckIn } from "./components/EventCheckIn";
 export { EventFormPage } from "./components/EventFormPage";
 export { EventLoader } from "./components/EventLoader";
 export { EventOverview } from "./components/EventOverview";
 export { EventPageHeader } from "./components/EventPageHeader";
-export { SearchBox } from "./components/SearchBox";
-export { MyEvents } from "./components/MyEvents";
+export { ManageEvents, MyEvents } from "./components/MyEvents";
 export { PublicEventDetail } from "./components/PublicEventDetail";
 export { PublicEventDetailSkeleton } from "./components/PublicEventDetailSkeleton";
 export {
@@ -17,6 +17,8 @@ export {
   type EventImageType,
 } from "./constants";
 export {
+  eventAttendeesHref,
+  eventCheckInHref,
   eventEditHref,
   eventHref,
   eventScheduleHref,
@@ -29,6 +31,9 @@ export {
   publicSessionHref,
   type EventStep,
 } from "./routes";
+// Whether the signed-in user may change an event (its organizer only, never an admin): every
+// edit control on the event's pages, in this feature and in sessions, asks this.
+export { useCanEditEvent } from "./hooks/useCanEditEvent";
 // Cache keys and the "an event changed" refresh, for other features whose changes show on the
 // event's pages (a session added or cancelled changes the event's session counts and checklist).
 export {
@@ -114,10 +119,13 @@ export {
 export {
   createEventBodySchema,
   eventResponseSchema,
+  publishEventBodySchema,
   updateEventBodySchema,
   type CreateEventBody,
   type CreateEventRequest,
   type EventDto,
+  type PublishEventBody,
+  type PublishEventRequest,
   type UpdateEventBody,
   type UpdateEventRequest,
 } from "./schemas/events.schemas";

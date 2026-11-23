@@ -3,6 +3,7 @@ import {
   ForbiddenError,
   NotFoundError,
   ServiceUnavailableError,
+  ValidationError,
 } from "../../../../core/http/errors";
 import {
   admin,
@@ -29,6 +30,13 @@ const paragraph = (text: string) => ({
   type: "paragraph",
   children: [{ type: "text", text }],
 });
+
+// NOW is 2 Nov 15:30 in India and the event starts on 12 Dec, so this window is valid: it opens
+// tomorrow and closes two days before the start.
+const registrationWindow = {
+  registrationOpensAt: new Date("2026-11-03T04:00:00.000Z"),
+  registrationClosesAt: new Date("2026-12-10T12:00:00.000Z"),
+};
 
 /**
  * An event that is ready: a description written, an active hall at the venue, and two live
@@ -65,9 +73,17 @@ describe("eventService.publishEvent", () => {
   it("publishes a ready draft at the current time and answers it as published", async () => {
     const { service, repo } = setup();
 
-    const dto = await service.publishEvent(eventId, organizer);
+    const dto = await service.publishEvent(
+      eventId,
+      organizer,
+      registrationWindow,
+    );
 
-    expect(repo.publishEvent).toHaveBeenCalledWith(eventId, NOW);
+    expect(repo.publishEvent).toHaveBeenCalledWith(
+      eventId,
+      NOW,
+      registrationWindow,
+    );
     expect(() => eventResponseSchema.parse(dto)).not.toThrow();
     expect(dto.status).toBe("published");
     expect(dto).not.toHaveProperty("organizerId");
@@ -83,7 +99,7 @@ describe("eventService.publishEvent", () => {
     });
 
     await expect(
-      service.publishEvent(eventId, organizer),
+      service.publishEvent(eventId, organizer, registrationWindow),
     ).resolves.toBeDefined();
     expect(repo.publishEvent).toHaveBeenCalled();
   });
@@ -92,9 +108,9 @@ describe("eventService.publishEvent", () => {
     it("refuses an admin (403) before reading anything: an admin does not publish", async () => {
       const { service, repo } = setup();
 
-      await expect(service.publishEvent(eventId, admin)).rejects.toBeInstanceOf(
-        ForbiddenError,
-      );
+      await expect(
+        service.publishEvent(eventId, admin, registrationWindow),
+      ).rejects.toBeInstanceOf(ForbiddenError);
       expect(repo.findEventById).not.toHaveBeenCalled();
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -103,7 +119,7 @@ describe("eventService.publishEvent", () => {
       const { service, repo } = setup();
 
       await expect(
-        service.publishEvent(eventId, otherOrganizer),
+        service.publishEvent(eventId, otherOrganizer, registrationWindow),
       ).rejects.toBeInstanceOf(NotFoundError);
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -118,7 +134,7 @@ describe("eventService.publishEvent", () => {
       );
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "ORGANIZER_NOT_VERIFIED" });
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -128,7 +144,7 @@ describe("eventService.publishEvent", () => {
       repo.findEventById.mockResolvedValue(null);
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toBeInstanceOf(NotFoundError);
     });
   });
@@ -142,7 +158,11 @@ describe("eventService.publishEvent", () => {
         publishedAt: NOW,
       });
 
-      const dto = await service.publishEvent(eventId, organizer);
+      const dto = await service.publishEvent(
+        eventId,
+        organizer,
+        registrationWindow,
+      );
 
       expect(dto.status).toBe("published");
       expect(repo.publishEvent).not.toHaveBeenCalled();
@@ -158,7 +178,7 @@ describe("eventService.publishEvent", () => {
       });
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "EVENT_CANCELLED" });
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -172,7 +192,7 @@ describe("eventService.publishEvent", () => {
       });
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "EVENT_ENDED" });
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -184,7 +204,7 @@ describe("eventService.publishEvent", () => {
       missing: string[],
     ) {
       const failure = await service
-        .publishEvent(eventId, organizer)
+        .publishEvent(eventId, organizer, registrationWindow)
         .catch((error: unknown) => error);
       expect(failure).toBeInstanceOf(ConflictError);
       expect(failure).toMatchObject({
@@ -281,7 +301,7 @@ describe("eventService.publishEvent", () => {
       repo.findVenue.mockResolvedValue({ ...venue, isActive: false });
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "VENUE_INACTIVE" });
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -291,7 +311,7 @@ describe("eventService.publishEvent", () => {
       repo.countSessionsOutside.mockResolvedValue(1);
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "SESSIONS_OUTSIDE_DATES" });
       expect(repo.countSessionsOutside).toHaveBeenCalledWith(
         eventId,
@@ -306,7 +326,7 @@ describe("eventService.publishEvent", () => {
       repo.countSessionsInOtherVenue.mockResolvedValue(1);
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "SESSIONS_IN_OTHER_VENUE" });
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -318,7 +338,7 @@ describe("eventService.publishEvent", () => {
       );
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toBeInstanceOf(ServiceUnavailableError);
       expect(repo.publishEvent).not.toHaveBeenCalled();
     });
@@ -334,7 +354,11 @@ describe("eventService.publishEvent", () => {
         publishedAt: new Date("2026-11-02T09:59:59.000Z"),
       });
 
-      const dto = await service.publishEvent(eventId, organizer);
+      const dto = await service.publishEvent(
+        eventId,
+        organizer,
+        registrationWindow,
+      );
 
       expect(dto.status).toBe("published");
     });
@@ -350,7 +374,7 @@ describe("eventService.publishEvent", () => {
       });
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toMatchObject({ code: "EVENT_NOT_DRAFT" });
     });
 
@@ -360,8 +384,147 @@ describe("eventService.publishEvent", () => {
       repo.findEventRecord.mockResolvedValue(null);
 
       await expect(
-        service.publishEvent(eventId, organizer),
+        service.publishEvent(eventId, organizer, registrationWindow),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe("the registration window", () => {
+    // 2 Nov 03:30 in India, but still 1 Nov in New York (and in UTC).
+    const earlyToday = new Date("2026-11-01T22:00:00.000Z");
+    const eventStart = eventRecord.startAt;
+
+    async function publishWith(
+      window: typeof registrationWindow,
+      event: Partial<typeof eventRecord> = {},
+    ) {
+      const ctx = setup();
+      ctx.repo.findEventById.mockResolvedValue({ ...eventRecord, ...event });
+      const failure = await ctx.service
+        .publishEvent(eventId, organizer, window)
+        .then(() => null)
+        .catch((error: unknown) => error);
+      return { ...ctx, failure };
+    }
+
+    it("saves the dates with the status, so a published event always has them", async () => {
+      const { repo, failure } = await publishWith(registrationWindow);
+
+      expect(failure).toBeNull();
+      expect(repo.publishEvent).toHaveBeenCalledWith(eventId, NOW, {
+        registrationOpensAt: registrationWindow.registrationOpensAt,
+        registrationClosesAt: registrationWindow.registrationClosesAt,
+      });
+    });
+
+    it("lets registration open earlier today: today is the event's day, not the server's", async () => {
+      const { repo, failure } = await publishWith({
+        ...registrationWindow,
+        registrationOpensAt: earlyToday,
+      });
+
+      expect(failure).toBeNull();
+      expect(repo.publishEvent).toHaveBeenCalled();
+    });
+
+    it("refuses an opening day before today with a 400 on that field", async () => {
+      const { failure, repo } = await publishWith({
+        ...registrationWindow,
+        registrationOpensAt: new Date("2026-11-01T10:00:00.000Z"), // 1 Nov in India
+      });
+
+      expect(failure).toBeInstanceOf(ValidationError);
+      expect(failure).toMatchObject({
+        status: 400,
+        details: {
+          fieldErrors: { registrationOpensAt: expect.any(Array) },
+        },
+      });
+      expect(repo.publishEvent).not.toHaveBeenCalled();
+    });
+
+    it("counts today in the event's own zone: the same moment is yesterday in New York", async () => {
+      const { failure } = await publishWith(
+        { ...registrationWindow, registrationOpensAt: earlyToday },
+        { timezone: "America/New_York" },
+      );
+
+      expect(failure).toMatchObject({
+        details: { fieldErrors: { registrationOpensAt: expect.any(Array) } },
+      });
+    });
+
+    it("refuses an opening at or after the event's start", async () => {
+      const { failure } = await publishWith({
+        ...registrationWindow,
+        registrationOpensAt: eventStart,
+      });
+
+      expect(failure).toMatchObject({
+        details: { fieldErrors: { registrationOpensAt: expect.any(Array) } },
+      });
+    });
+
+    it.each([
+      ["exactly when the event starts", eventStart],
+      ["after the event starts", new Date(eventStart.getTime() + 60_000)],
+    ])("refuses a closing %s", async (_label, closesAt) => {
+      const { failure, repo } = await publishWith({
+        ...registrationWindow,
+        registrationClosesAt: closesAt,
+      });
+
+      expect(failure).toMatchObject({
+        details: { fieldErrors: { registrationClosesAt: expect.any(Array) } },
+      });
+      expect(repo.publishEvent).not.toHaveBeenCalled();
+    });
+
+    it("refuses a closing time that has already passed", async () => {
+      const { failure } = await publishWith({
+        registrationOpensAt: earlyToday,
+        registrationClosesAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+      });
+
+      expect(failure).toMatchObject({
+        details: { fieldErrors: { registrationClosesAt: expect.any(Array) } },
+      });
+    });
+
+    it("reports both fields at once when both are wrong", async () => {
+      const { failure } = await publishWith({
+        registrationOpensAt: new Date("2026-11-01T10:00:00.000Z"),
+        registrationClosesAt: new Date(eventStart.getTime() + 60_000),
+      });
+
+      expect(failure).toMatchObject({
+        details: {
+          fieldErrors: {
+            registrationOpensAt: expect.any(Array),
+            registrationClosesAt: expect.any(Array),
+          },
+        },
+      });
+    });
+
+    it("checks the dates before it asks the CMS anything", async () => {
+      const { strapi, failure } = await publishWith({
+        ...registrationWindow,
+        registrationClosesAt: eventStart,
+      });
+
+      expect(failure).toBeInstanceOf(ValidationError);
+      expect(strapi.findEventPageById).not.toHaveBeenCalled();
+    });
+
+    it("ignores the dates of an event that is already published", async () => {
+      const { failure, repo } = await publishWith(
+        { ...registrationWindow, registrationClosesAt: eventStart },
+        { status: "published", publishedAt: NOW },
+      );
+
+      expect(failure).toBeNull();
+      expect(repo.publishEvent).not.toHaveBeenCalled();
     });
   });
 });

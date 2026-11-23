@@ -20,10 +20,10 @@ export function istInstant(date: string, time: string): Date | null {
   return Number.isNaN(instant.getTime()) ? null : instant;
 }
 
-const dateField = (label: string) =>
+export const dateField = (label: string) =>
   z.string().trim().regex(DATE_PATTERN, `${label} is required`);
 
-const timeField = (label: string) =>
+export const timeField = (label: string) =>
   z.string().trim().regex(TIME_PATTERN, `${label} is required`);
 
 const eventFormFields = z.object({

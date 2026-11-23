@@ -130,6 +130,11 @@ export const publicEventContentSchema = z.object({
 export type PublicEventContentDto = z.infer<typeof publicEventContentSchema>;
 
 export const publicEventDetailSchema = z.object({
+  /**
+   * The event's id, for the registration routes (/api/events/[eventId]/registrations). Not a
+   * secret: session ids are public too, and every route behind it checks the login itself.
+   */
+  id: z.uuid(),
   slug: z.string(),
   title: z.string(),
   /** A cancelled event stays visible: its page shows a cancelled banner. */

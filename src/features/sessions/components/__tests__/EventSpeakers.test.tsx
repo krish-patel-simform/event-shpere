@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { useHasPermission } from "@/src/features/auth";
 import { speakersApiService } from "@/src/features/speakers/api/speakers-api.service";
 import {
   FINTECH_ID,
@@ -34,6 +35,12 @@ jest.mock("@/src/features/speakers/api/speakers-api.service", () => ({
   speakersApiService: { list: jest.fn() },
 }));
 
+// Who is looking: the organizer by default (EVENT_MANAGE_OWN); a test can be an admin.
+jest.mock("@/src/features/auth", () => ({
+  ...jest.requireActual("@/src/features/auth"),
+  useHasPermission: jest.fn(),
+}));
+const hasPermission = jest.mocked(useHasPermission);
 const events = jest.mocked(eventApiService);
 const sessionsApi = jest.mocked(sessionApiService);
 const speakers = jest.mocked(speakersApiService);
@@ -46,6 +53,7 @@ function overviewOf(id: string) {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  hasPermission.mockReturnValue(true);
   events.getOverview.mockResolvedValue(overviewOf(FINTECH_ID));
   sessionsApi.listForEvent.mockResolvedValue([
     talk,
@@ -220,5 +228,16 @@ describe("EventSpeakers", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Ananya Rao")).toBeInTheDocument();
+  });
+});
+
+describe("EventSpeakers: an admin views, never changes", () => {
+  it("offers no way to add a session, even on an event that can change", async () => {
+    hasPermission.mockImplementation((code) => code !== "EVENT_MANAGE_OWN");
+    sessionsApi.listForEvent.mockResolvedValue([]);
+    await renderSpeakers();
+
+    expect(await screen.findByText("No speakers yet")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add a session" })).toBeNull();
   });
 });

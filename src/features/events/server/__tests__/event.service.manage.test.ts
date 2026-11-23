@@ -121,6 +121,7 @@ describe("eventService.listOwnEvents", () => {
         city: "Pune",
         state: "Maharashtra",
       },
+      organizer: { id: organizerId, name: "Kinetic Events" },
       sessions: { total: 2, scheduled: 0, cancelled: 0 },
     });
     expect(result.items[1].venue).toBeNull();
@@ -166,19 +167,44 @@ describe("eventService.listOwnEvents", () => {
     expect(items[0].status).toBe("draft");
   });
 
-  it("gives an admin an empty page: an admin owns no events, so nothing is queried", async () => {
-    const { service, repo } = setup();
+  it("lists every organizer's events for an admin: no owner filter, same rows and figures", async () => {
+    const { service, repo, verification } = setup();
+    // An admin has no organizer profile, so the verification answers null.
+    verification.assertVerifiedOrganizer.mockResolvedValue(null);
+    repo.listOwnEvents.mockResolvedValue({
+      rows: [
+        { ...managedRow, registered: 42, capacity: 250 },
+        {
+          ...managedRow,
+          id: "2d6f0e1a-1111-4222-8333-444455556666",
+          venueName: "Hotel Orchid",
+          venueCity: "Pune",
+          registered: 7,
+        },
+      ],
+      total: 2,
+    });
 
     const result = await service.listOwnEvents(
       query({ page: 2, pageSize: 20 }),
       admin,
     );
 
-    expect(result).toEqual({
-      items: [],
-      meta: { page: 2, pageSize: 20, total: 0 },
+    expect(repo.listOwnEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerId: null,
+        limit: 20,
+        offset: 20,
+      }),
+    );
+    expect(result.meta).toEqual({ page: 2, pageSize: 20, total: 2 });
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({ registered: 42, capacity: 250 });
+    expect(result.items[1]).toMatchObject({
+      registered: 7,
+      venue: { name: "Hotel Orchid", city: "Pune" },
     });
-    expect(repo.listOwnEvents).not.toHaveBeenCalled();
+    expect(() => myEventListResponseSchema.parse(result.items)).not.toThrow();
   });
 
   it("asks for the events of the caller's organizer PROFILE, not of their user id", async () => {
@@ -238,20 +264,23 @@ describe("eventService.countOwnEvents", () => {
     expect(() => eventTabCountsSchema.parse(result)).not.toThrow();
   });
 
-  it("counts nothing for an admin, who owns no events, without a query", async () => {
-    const { service, repo } = setup();
+  it("counts every organizer's events for an admin: no owner filter", async () => {
+    const { service, repo, verification } = setup();
+    verification.assertVerifiedOrganizer.mockResolvedValue(null);
+    const counts = {
+      all: 12,
+      draft: 3,
+      published: 5,
+      completed: 3,
+      cancelled: 1,
+    };
+    repo.countOwnEventsByTab.mockResolvedValue(counts);
 
     const result = await service.countOwnEvents(admin);
 
-    expect(result).toEqual({
-      all: 0,
-      draft: 0,
-      published: 0,
-      completed: 0,
-      cancelled: 0,
-    });
+    expect(repo.countOwnEventsByTab).toHaveBeenCalledWith(null, NOW);
+    expect(result).toEqual(counts);
     expect(() => eventTabCountsSchema.parse(result)).not.toThrow();
-    expect(repo.countOwnEventsByTab).not.toHaveBeenCalled();
   });
 
   it("refuses a user with no event permission", async () => {
@@ -516,12 +545,25 @@ describe("eventService.updateEvent", () => {
     expect(repo.updateEvent).not.toHaveBeenCalled();
   });
 
-  it("lets an admin edit any event", async () => {
+  it("refuses an admin (403 EVENT_READ_ONLY): an admin may view an organizer's event, not change it", async () => {
     const { service, repo } = setup();
 
-    await service.updateEvent(eventId, body({ title: "Admin edit" }), admin);
+    await expect(
+      service.updateEvent(eventId, body({ title: "Admin edit" }), admin),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "EVENT_READ_ONLY",
+      message: "An admin can view an organizer's event but not change it",
+    });
+    expect(repo.updateEvent).not.toHaveBeenCalled();
+  });
 
-    expect(repo.updateEvent).toHaveBeenCalled();
+  it("still lets an admin open any event's overview (a read)", async () => {
+    const { service } = setup();
+
+    await expect(
+      service.getEventOverview(eventId, admin),
+    ).resolves.toBeDefined();
   });
 
   it("refuses a user with no event permission", async () => {

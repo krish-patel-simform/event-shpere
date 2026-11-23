@@ -27,10 +27,14 @@ export const PERMISSIONS = [
     description: "Publish or unpublish events the user created",
   },
   { code: "EVENT_PUBLISH_ALL", description: "Publish or unpublish any event" },
-  { code: "VENUE_MANAGE", description: "Create, edit, or retire venues" },
+  {
+    code: "VENUE_MANAGE",
+    description: "Create, edit, activate or deactivate, and delete venues",
+  },
   {
     code: "HALL_MANAGE",
-    description: "Create, edit, or retire the halls of a venue",
+    description:
+      "Add, edit, activate or deactivate, and delete the halls of a venue",
   },
   { code: "REGISTRATION_CREATE", description: "Register for an event" },
   {
@@ -46,8 +50,8 @@ export const PERMISSIONS = [
     description: "View every registration on the platform",
   },
   {
-    code: "REGISTRATION_MANAGE",
-    description: "Update or cancel own registration",
+    code: "REGISTRATION_MANAGE_OWN",
+    description: "Cancel own event registration or session booking",
   },
   {
     code: "REGISTRATION_CHECKIN_EVENT",

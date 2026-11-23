@@ -73,26 +73,32 @@ baseApiService.interceptors.response.use(undefined, async (error: unknown) => {
   return baseApiService.request({ ...config, _retriedAfterRefresh: true });
 });
 
-/** Every failure from the API, typed. `code` comes from the server (e.g. EMAIL_TAKEN). */
+/**
+ * Every failure from the API, typed. `code` comes from the server (e.g. EMAIL_TAKEN). `details`
+ * is the error's extra facts as sent (e.g. who is already checked in): untrusted until the
+ * feature that reads it Zod-parses it.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
     readonly fieldErrors: Record<string, string[]> = {},
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-// The failure envelope every route returns (core/http/route-handler).
+// The failure envelope every route returns (core/http/route-handler). `details` keeps any other
+// keys (loose), so a feature can read its own facts from it.
 const errorEnvelopeSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
     details: z
-      .object({
+      .looseObject({
         fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
       })
       .optional(),
@@ -125,6 +131,7 @@ function toApiError(error: unknown): ApiError {
     code,
     message,
     details?.fieldErrors ?? {},
+    details ?? {},
   );
 }
 

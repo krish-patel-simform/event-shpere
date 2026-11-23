@@ -7,7 +7,10 @@ import {
 } from "@/src/features/venues";
 import { venueService } from "@/src/features/venues/server";
 
-// An admin retires or reopens a venue. Retiring also retires all its halls.
+// An admin activates or deactivates a venue. Deactivating also deactivates all its halls, and is
+// refused with 409 VENUE_HAS_SESSIONS while a session that is not over uses it. Activating turns
+// the halls back on only with `activateHalls: "all"` (the default "none" keeps them inactive).
+// body: { isActive: boolean, activateHalls?: "all" | "none" }
 export const PATCH = route<{ venueId: string }>(
   { permission: [PERMISSION.VENUE_MANAGE], rateLimit: "user-write" },
   async ({ req, params }) => {

@@ -13,6 +13,7 @@ import {
   MEETUP_ID,
   SUMMIT_ID,
 } from "../../__fixtures__/event-manage";
+import { chooseDate, chooseTime } from "../../__fixtures__/pickers";
 import { eventApiService } from "../../api/event-api.service";
 import {
   eventAttendeesHref,
@@ -27,6 +28,7 @@ import {
 } from "../../routes";
 import type { EventContentDto } from "../../schemas/event-content.schemas";
 import type { EventOverviewData } from "../../types/event-manage.types";
+import { toFormDateTime } from "../../utils/event-display";
 import { EventOverview } from "../EventOverview";
 
 jest.mock("../../api/event-api.service", () => ({
@@ -103,6 +105,40 @@ function readyDraft(): EventOverviewData {
       sessions: { total: 2, scheduled: 2, cancelled: 0 },
     },
   };
+}
+
+const DAY = 86_400_000;
+
+/** The IST calendar day `days` from now, as "2026-12-12". */
+const dayKey = (days: number) =>
+  toFormDateTime(
+    new Date(Date.now() + days * DAY).toISOString(),
+    "Asia/Kolkata",
+  ).date;
+
+/**
+ * The ready draft, starting in 30 days: publishing asks for registration dates from today up to
+ * before the start, so the sample's fixed date must not drift into the past.
+ */
+function publishableDraft(): EventOverviewData {
+  const draft = readyDraft();
+  return {
+    ...draft,
+    event: {
+      ...draft.event,
+      startAt: new Date(Date.now() + 30 * DAY).toISOString(),
+      endAt: new Date(Date.now() + 31 * DAY).toISOString(),
+      timezone: "Asia/Kolkata",
+    },
+  };
+}
+
+/** Fills the publish dialog: opens today, closes the day before the event starts. */
+async function fillRegistrationWindow() {
+  await chooseDate("Registration start date", dayKey(0));
+  await chooseTime("Registration start time", "10:00");
+  await chooseDate("Registration end date", dayKey(29));
+  await chooseTime("Registration end time", "10:00");
 }
 
 /** Renders the overview of an event the API answers with, once it has loaded. */
@@ -233,9 +269,9 @@ describe("EventOverview: a draft", () => {
     expect(card.getAllByRole("link")).toHaveLength(2);
   });
 
-  it("enables Publish when nothing is missing, and publishes on click", async () => {
+  it("enables Publish when nothing is missing, and asks for the registration dates before publishing", async () => {
     const user = userEvent.setup();
-    const draft = readyDraft();
+    const draft = publishableDraft();
     api.publish.mockResolvedValue({
       ...draft.event,
       status: "published",
@@ -247,32 +283,89 @@ describe("EventOverview: a draft", () => {
     expect(publish).toBeEnabled();
     await user.click(publish);
 
-    expect(api.publish).toHaveBeenCalledWith(FINTECH_ID);
+    // Nothing is sent yet: the dialog asks when registration opens and closes first.
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Publish this event?" }),
+    );
+    expect(api.publish).not.toHaveBeenCalled();
+
+    await fillRegistrationWindow();
+    await user.click(dialog.getByRole("button", { name: "Publish event" }));
+
+    expect(api.publish).toHaveBeenCalledWith(FINTECH_ID, {
+      registrationOpensAt: `${dayKey(0)}T10:00:00+05:30`,
+      registrationClosesAt: `${dayKey(29)}T10:00:00+05:30`,
+    });
     expect(
       await screen.findByText(`${draft.event.title} was published`),
     ).toBeInTheDocument();
+    // The dialog closes once it is published.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // Now that it is public, the way to it is offered right in the notice.
     expect(
       screen.getByRole("link", { name: "View public page" }),
     ).toHaveAttribute("href", publicEventHref(draft.event.slug));
   });
 
-  it("shows the server's answer when it refuses to publish", async () => {
+  it("closes the dialog without publishing when it is cancelled", async () => {
+    const user = userEvent.setup();
+    await renderOverview(publishableDraft());
+
+    await user.click(screen.getByRole("button", { name: "Publish event" }));
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Publish this event?" }),
+    );
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.publish).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's answer in the dialog when it refuses to publish, and keeps it open", async () => {
     const user = userEvent.setup();
     api.publish.mockRejectedValue(
       new ApiError(409, "EVENT_NOT_READY", "Missing: content"),
     );
-    await renderOverview(readyDraft());
+    await renderOverview(publishableDraft());
 
     await user.click(screen.getByRole("button", { name: "Publish event" }));
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "Publish this event?" }),
+    );
+    await fillRegistrationWindow();
+    await user.click(dialog.getByRole("button", { name: "Publish event" }));
 
     expect(
-      await screen.findByText("We couldn't publish the event"),
+      await dialog.findByText("We couldn't publish the event"),
     ).toBeInTheDocument();
     // The checklist also says "Missing: content", so look inside the alert.
     expect(
       within(screen.getByRole("alert")).getByText("Missing: content"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Publish this event?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts the dialog empty again when it is opened a second time", async () => {
+    const user = userEvent.setup();
+    await renderOverview(publishableDraft());
+
+    await user.click(screen.getByRole("button", { name: "Publish event" }));
+    await screen.findByRole("dialog", { name: "Publish this event?" });
+    await fillRegistrationWindow();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Publish event" }));
+
+    await user.click(
+      within(
+        await screen.findByRole("dialog", { name: "Publish this event?" }),
+      ).getByRole("button", { name: "Publish event" }),
+    );
+    expect(
+      await screen.findByText("Registration start date is required"),
+    ).toBeInTheDocument();
+    expect(api.publish).not.toHaveBeenCalled();
   });
 
   it("keeps Publish disabled for someone without the publish permission (an admin)", async () => {
@@ -342,10 +435,9 @@ describe("EventOverview: a draft", () => {
       "href",
       eventHallsHref(FINTECH_ID),
     );
-    expect(sections.getByRole("link", { name: /Attendees/ })).toHaveAttribute(
-      "href",
-      eventAttendeesHref(FINTECH_ID),
-    );
+    expect(
+      sections.getByRole("link", { name: /Registrations/ }),
+    ).toHaveAttribute("href", eventAttendeesHref(FINTECH_ID));
   });
 
   it("shows the details, with the public link as text", async () => {
@@ -874,5 +966,62 @@ describe("EventOverview: completed and cancelled events", () => {
         },
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("EventOverview: an admin views, never changes", () => {
+  // The admin's permissions: everything an admin holds (SESSION_CREATE too), but not the
+  // organizer's own EVENT_MANAGE_OWN / EVENT_PUBLISH_OWN.
+  beforeEach(() => {
+    hasPermission.mockImplementation(
+      (code) => code !== "EVENT_MANAGE_OWN" && code !== "EVENT_PUBLISH_OWN",
+    );
+  });
+
+  it("says the page is view only, naming the organizer", async () => {
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.getByText("View only")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /only the organizer can change, publish, cancel or delete it/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("a published event: no Edit, no Create session, no Cancel, no danger zone; the public page stays", async () => {
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.queryByRole("link", { name: "Edit event" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Create session" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel event" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Danger zone" })).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "Details" })).queryByRole(
+        "link",
+        { name: "Edit" },
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "View public page" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a draft: no Delete draft and no way to publish", async () => {
+    await renderOverview(sample(FINTECH_ID));
+
+    expect(screen.queryByRole("button", { name: "Delete draft" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Edit event" })).toBeNull();
+    const publishButtons = screen.queryAllByRole("button", {
+      name: /publish/i,
+    });
+    publishButtons.forEach((button) => expect(button).toBeDisabled());
+  });
+
+  it("the organizer sees no View only notice", async () => {
+    hasPermission.mockReturnValue(true);
+    await renderOverview(sample(DESIGN_DAY_ID));
+
+    expect(screen.queryByText("View only")).toBeNull();
   });
 });

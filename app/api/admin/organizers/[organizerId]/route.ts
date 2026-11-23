@@ -1,5 +1,11 @@
 import { PERMISSION } from "@/src/core/auth/permission-catalog";
-import { noContent, ok, parseInput, route } from "@/src/core/http";
+import {
+  noContent,
+  ok,
+  parseInput,
+  PER_USER_HEADERS,
+  route,
+} from "@/src/core/http";
 import {
   deleteOrganizerParamsSchema,
   getOrganizerParamsSchema,
@@ -9,7 +15,8 @@ import { organizerService } from "@/src/features/organizer/server";
 
 // ADM-2: the admin opens one application (the review page): the organisation, the applicant's
 // account and whether another organizer uses the same name or website. 404 if there is none.
-// Read with the same permission as the list.
+// Read with the same permission as the list. It carries the applicant's email, so no cache may
+// keep it.
 export const GET = route<{ organizerId: string }>(
   {
     auth: "signed-in",
@@ -19,7 +26,9 @@ export const GET = route<{ organizerId: string }>(
   async ({ params }) => {
     const { organizerId } = parseInput(getOrganizerParamsSchema, await params);
     const organizer = await organizerService.getOrganizerDetail(organizerId);
-    return ok(organizerDetailResponseSchema.parse(organizer));
+    return ok(organizerDetailResponseSchema.parse(organizer), {
+      headers: PER_USER_HEADERS,
+    });
   },
 );
 

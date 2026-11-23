@@ -524,8 +524,12 @@ Goal: shared capacity is protected. This is not rate limiting; see
 What was built:
 
 - **CDN cache on public reads that are the same for everyone.** `PUBLIC_CACHE_HEADERS` in
-  `core/http/response.ts` (`public, max-age=0, s-maxage=30, stale-while-revalidate=60`) on the
-  event list, one event, one public session and a speaker's sessions. The CDN answers repeat
+  `core/http/response.ts` on the event list, one event, one public session and a speaker's
+  sessions: `Vercel-CDN-Cache-Control: s-maxage=30, stale-while-revalidate=60` for the CDN, and
+  `Cache-Control: public, max-age=0, must-revalidate` for browsers. They were one header at first
+  (`public, max-age=0, s-maxage=30, stale-while-revalidate=60`), but browsers apply
+  `stale-while-revalidate` to their own cache too, so a refetch got the old copy ("seats left" did
+  not move after registering). Fixed by keeping the CDN rule in the Vercel-only header. The CDN answers repeat
   requests without running our code (so without a DB query or a rate-limit count). Cost: an edit
   (publish, cancel) can take up to about 90 seconds to show for guests. Only `ok()` /
   `paginated()` carry it, so a 404, 429 or 503 is never kept.

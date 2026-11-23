@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { render, screen, within } from "@testing-library/react";
 import {
   eventAttendeesHref,
+  eventCheckInHref,
   eventHallsHref,
   eventHref,
   eventScheduleHref,
@@ -51,10 +52,22 @@ describe("EventSectionTabs", () => {
       "href",
       eventHallsHref(eventId),
     );
-    expect(tabs.getByRole("link", { name: /Attendees/ })).toHaveAttribute(
+    expect(tabs.getByRole("link", { name: /Registrations/ })).toHaveAttribute(
       "href",
       eventAttendeesHref(eventId),
     );
+    expect(tabs.getByRole("link", { name: "Check-in" })).toHaveAttribute(
+      "href",
+      eventCheckInHref(eventId),
+    );
+  });
+
+  it("puts Check-in last, after Registrations, with no count", () => {
+    const tabs = renderTabs("overview");
+
+    const links = tabs.getAllByRole("link");
+    expect(links.at(-2)).toHaveTextContent(/Registrations/);
+    expect(links.at(-1)).toHaveTextContent(/^Check-in$/);
   });
 
   it("shows the count of each tab", () => {
@@ -64,7 +77,7 @@ describe("EventSectionTabs", () => {
     expect(
       tabs.getByRole("link", { name: /Schedule board/ }),
     ).toHaveTextContent("1");
-    expect(tabs.getByRole("link", { name: /Attendees/ })).toHaveTextContent(
+    expect(tabs.getByRole("link", { name: /Registrations/ })).toHaveTextContent(
       "10",
     );
   });
@@ -75,7 +88,8 @@ describe("EventSectionTabs", () => {
     ["schedule", "Schedule board"],
     ["speakers", "Speakers"],
     ["halls", "Halls"],
-    ["attendees", "Attendees"],
+    ["attendees", "Registrations"],
+    ["check-in", "Check-in"],
   ] as const)(
     "marks only the tab of the page being shown as current (%s)",
     (current, label) => {

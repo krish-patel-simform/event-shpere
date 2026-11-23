@@ -30,8 +30,9 @@ export const GET = route(
   },
 );
 
-// An approved organizer (or an admin) creates an event. It is always saved as a draft owned by
-// the caller. Anyone else gets 401/403 from the wrapper or the service.
+// An approved organizer creates an event (EVENT_CREATE). It is always saved as a draft owned by
+// the caller's organizer profile, so an admin, who has none, cannot create events (403). Anyone
+// else gets 401/403 from the wrapper or the service.
 export const POST = route(
   { permission: [PERMISSION.EVENT_CREATE], rateLimit: "user-write" },
   async ({ req, currentUser }) => {

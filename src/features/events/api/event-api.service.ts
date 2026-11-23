@@ -34,6 +34,7 @@ import {
   eventResponseSchema,
   type CreateEventRequest,
   type EventDto,
+  type PublishEventRequest,
   type UpdateEventRequest,
 } from "../schemas/events.schemas";
 
@@ -167,12 +168,14 @@ export const eventApiService = {
   },
 
   /**
-   * Publishes the organizer's own draft. 409 EVENT_NOT_READY (with `details.missing`) when
-   * something is still missing; 409 when it is cancelled or has ended.
+   * Publishes the organizer's own draft, with the dates registration opens and closes (both
+   * required). 400 with a field error when a date is not allowed (before today, or not before the
+   * event starts); 409 EVENT_NOT_READY (with `details.missing`) when something is still missing;
+   * 409 when it is cancelled or has ended.
    */
-  publish(eventId: string): Promise<EventDto> {
+  publish(eventId: string, body: PublishEventRequest): Promise<EventDto> {
     return apiRequest(
-      { method: "POST", url: `/events/${eventId}/publish` },
+      { method: "POST", url: `/events/${eventId}/publish`, data: body },
       eventResponseSchema,
     );
   },

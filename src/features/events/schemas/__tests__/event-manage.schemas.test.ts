@@ -21,6 +21,10 @@ const event = {
     city: "Pune",
     state: "Maharashtra",
   },
+  organizer: {
+    id: "5d1c3a4b-7e8f-4a1b-9c2d-3e4f5a6b7c8d",
+    name: "Kinetic Events",
+  },
   capacity: 250,
   registered: 0,
   cancelledRegistrations: 0,
@@ -117,6 +121,18 @@ describe("managedEventSchema", () => {
     expect(
       managedEventSchema.safeParse({ ...event, startAt: "12 Dec 2026" })
         .success,
+    ).toBe(false);
+  });
+
+  it("needs the organizer (the admin's list shows it), with a real profile id", () => {
+    expect(
+      managedEventSchema.safeParse({ ...event, organizer: undefined }).success,
+    ).toBe(false);
+    expect(
+      managedEventSchema.safeParse({
+        ...event,
+        organizer: { id: "kinetic", name: "Kinetic Events" },
+      }).success,
     ).toBe(false);
   });
 });

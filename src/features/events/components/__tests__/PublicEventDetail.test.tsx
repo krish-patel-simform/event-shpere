@@ -14,6 +14,24 @@ jest.mock("../../api/event-api.service", () => ({
 }));
 const api = jest.mocked(eventApiService);
 
+// The registration card has its own tests (registrations feature): here it only has to receive
+// the event, so it is a stub that shows what it was given.
+jest.mock("@/src/features/registrations", () => ({
+  EventRegistrationCard: ({
+    event,
+    eventTitle,
+  }: {
+    event: { id: string; status: string };
+    eventTitle: string;
+  }) => (
+    <p>
+      Registration card: {event.id} · {event.status} · {eventTitle}
+    </p>
+  ),
+}));
+
+const EVENT_ID = "6a7b8c9d-0e1f-4a2b-8c3d-4e5f6a7b8c9d";
+
 const SESSION_ONE = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f01";
 const SESSION_TWO = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f02";
 const SESSION_THREE = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f03";
@@ -27,6 +45,7 @@ const ananya = {
 const detail = (
   overrides: Partial<PublicEventDetailDto> = {},
 ): PublicEventDetailDto => ({
+  id: EVENT_ID,
   slug: "product-engineering-summit-2026",
   title: "Product Engineering Summit 2026",
   status: "published",
@@ -169,27 +188,23 @@ describe("PublicEventDetail", () => {
     ]);
   });
 
-  it("shows the registration button switched off, marked Static", async () => {
+  it("puts the registration card in the price box, with the event's id and title", async () => {
     renderWithClient(<PublicEventDetail slug="summit" />);
     await screen.findByRole("heading", { level: 1 });
 
     const box = within(
       screen.getByRole("complementary", { name: "Registration" }),
     );
-    expect(box.getByRole("button", { name: "Register" })).toBeDisabled();
-    expect(box.getByText("Static")).toBeInTheDocument();
+    expect(
+      box.getByText(
+        `Registration card: ${EVENT_ID} · published · Product Engineering Summit 2026`,
+      ),
+    ).toBeInTheDocument();
+    // Nothing on the page is static any more except the organiser's name.
+    expect(box.queryByText("Static")).not.toBeInTheDocument();
   });
 
-  it("says when registration opens", async () => {
-    api.getPublic.mockResolvedValue(
-      detail({ registrationOpensAt: "2099-01-10T00:00:00.000Z" }),
-    );
-    renderWithClient(<PublicEventDetail slug="summit" />);
-
-    expect(await screen.findByText(/Registration opens/)).toBeInTheDocument();
-  });
-
-  it("shows a cancelled event with a banner and no way to register", async () => {
+  it("shows a cancelled event with a banner, no seats, and tells the card", async () => {
     api.getPublic.mockResolvedValue(detail({ status: "cancelled" }));
     renderWithClient(<PublicEventDetail slug="summit" />);
 
@@ -198,9 +213,11 @@ describe("PublicEventDetail", () => {
         selector: "p, div, strong, span",
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Register" }),
-    ).not.toBeInTheDocument();
+    const box = within(
+      screen.getByRole("complementary", { name: "Registration" }),
+    );
+    expect(box.queryByText("120 seats left")).not.toBeInTheDocument();
+    expect(box.getByText(/· cancelled ·/)).toBeInTheDocument();
   });
 
   it("still shows the facts when the CMS did not answer", async () => {

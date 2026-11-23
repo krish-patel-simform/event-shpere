@@ -2,9 +2,13 @@ import {
   apiRequest,
   apiRequestPage,
 } from "../../../../core/api-client/base-api.service";
-import { resendInviteResponseSchema } from "../../../auth";
+import {
+  resendInviteResponseSchema,
+  sendResetLinkResponseSchema,
+} from "../../../auth";
 import {
   getUsersResponseSchema,
+  userDetailResponseSchema,
   userStatusResponseSchema,
 } from "../../schemas/users.schema";
 import { usersApiService } from "../users-api.service";
@@ -100,5 +104,46 @@ describe("usersApiService status changes", () => {
       { method: "POST", url: `/admin/users/${id}/reactivate` },
       userStatusResponseSchema,
     );
+  });
+});
+
+describe("usersApiService.get", () => {
+  it("reads one user by id and parses the detail answer", () => {
+    usersApiService.get(id);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "GET", url: `/admin/users/${id}` },
+      userDetailResponseSchema,
+    );
+  });
+
+  it("passes on the API's failure (e.g. 404) to the caller", async () => {
+    const failure = new Error("User not found");
+    jest.mocked(apiRequest).mockRejectedValueOnce(failure);
+
+    await expect(usersApiService.get(id)).rejects.toBe(failure);
+  });
+});
+
+describe("usersApiService.sendResetLink", () => {
+  it("posts to the user's send-reset-link URL with no body, and parses the answer", () => {
+    usersApiService.sendResetLink(id);
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      { method: "POST", url: `/admin/users/${id}/send-reset-link` },
+      sendResetLinkResponseSchema,
+    );
+  });
+
+  it("its answer schema accepts only the expiry, never the link itself", () => {
+    const expiresAt = "2026-11-22T10:00:00.000Z";
+
+    expect(
+      sendResetLinkResponseSchema.parse({
+        expiresAt,
+        link: "https://example.test/reset#token=secret",
+      }),
+    ).toEqual({ expiresAt });
+    expect(sendResetLinkResponseSchema.safeParse({}).success).toBe(false);
   });
 });

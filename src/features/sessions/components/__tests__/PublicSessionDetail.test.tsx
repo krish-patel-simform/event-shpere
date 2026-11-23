@@ -15,10 +15,34 @@ jest.mock("../../api/session-api.service", () => ({
 jest.mock("@/src/features/speakers/api/speakers-api.service", () => ({
   speakersApiService: { list: jest.fn() },
 }));
+// The booking card has its own tests (registrations feature): here it only has to receive the
+// session, the event and the links, so it is a stub that shows what it was given.
+jest.mock("@/src/features/registrations", () => ({
+  SessionBookingCard: ({
+    session,
+    event,
+    eventHref,
+    mySessionsHref,
+    when,
+  }: {
+    session: { id: string };
+    event: { id: string; status: string };
+    eventHref: string;
+    mySessionsHref: string;
+    when: string | null;
+  }) => (
+    <p>
+      Booking card: {session.id} · {event.id} · {event.status} · {eventHref} ·{" "}
+      {mySessionsHref} · {when ?? "no time"}
+    </p>
+  ),
+}));
+
 const api = jest.mocked(sessionApiService);
 const speakersApi = jest.mocked(speakersApiService);
 
 const SESSION_ID = "3f2b8a10-6c4d-4e57-8b19-0a1d2c3e4f01";
+const EVENT_ID = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f";
 const ANANYA_ID = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d01";
 const DEV_ID = "6b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d02";
 
@@ -46,10 +70,13 @@ const detail = (
     { id: DEV_ID, slug: "dev-shah", name: "Dev Shah", role: "moderator" },
   ],
   event: {
+    id: EVENT_ID,
     slug: "summit",
     title: "Product Engineering Summit 2026",
     status: "published",
     timezone: "Asia/Kolkata",
+    startAt: "2026-12-03T03:30:00.000Z",
+    registrationClosesAt: "2026-12-02T12:30:00.000Z",
   },
   content: {
     description: "First paragraph.\n\nSecond paragraph.",
@@ -319,7 +346,7 @@ describe("the speakers", () => {
 });
 
 describe("booking and attending", () => {
-  it("shows the price on top of the ticket, the seats left on a bar, and a placeholder button", async () => {
+  it("shows the price on top of the ticket, the seats left on a bar, and the event link", async () => {
     show();
     await screen.findByRole("heading", { level: 1 });
 
@@ -332,14 +359,31 @@ describe("booking and attending", () => {
     expect(
       box.getByRole("progressbar", { name: "Seats taken" }),
     ).toHaveAttribute("aria-valuenow", "73");
-    // Booking is not built yet: the button says so and does nothing.
-    expect(
-      box.getByRole("button", { name: "Booking opens soon" }),
-    ).toBeDisabled();
     expect(box.getByRole("link", { name: "View the event" })).toHaveAttribute(
       "href",
       "/events/summit",
     );
+  });
+
+  it("hands the booking card the session, the event, the links and the slot", async () => {
+    show();
+    await screen.findByRole("heading", { level: 1 });
+
+    const box = within(
+      screen.getByRole("region", { name: "Book this session" }),
+    );
+    expect(
+      box.getByText(
+        `Booking card: ${SESSION_ID} · ${EVENT_ID} · published · /events/summit · /speaker/sessions · Fri 4 Dec 2026 · 10:00 – 12:00 IST · Lab 3`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the card when the session has no time yet", async () => {
+    show({ startAt: null, endAt: null });
+    await screen.findByRole("heading", { level: 1 });
+
+    expect(screen.getByText(/· no time$/)).toBeInTheDocument();
   });
 
   it("says a full session is fully booked", async () => {
@@ -351,7 +395,7 @@ describe("booking and attending", () => {
     ).toHaveAttribute("aria-valuenow", "100");
   });
 
-  it("says a free session with no booking is part of the event ticket, with no button", async () => {
+  it("says a free session with no booking is part of the event ticket, with no seats bar", async () => {
     show({ price: 0, requiresRegistration: false, seatsLeft: null });
 
     const box = within(
@@ -360,11 +404,10 @@ describe("booking and attending", () => {
     expect(box.getByText("Included")).toBeInTheDocument();
     expect(box.getByText("in your event ticket")).toBeInTheDocument();
     expect(box.getByText("No separate registration")).toBeInTheDocument();
-    expect(box.queryByRole("button")).not.toBeInTheDocument();
     expect(box.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("says registration is required when the seat count is not known", async () => {
+  it("says an online session has no seat limit", async () => {
     show({
       seatsLeft: null,
       hallCapacity: null,
@@ -375,11 +418,20 @@ describe("booking and attending", () => {
     const box = within(
       await screen.findByRole("region", { name: "Book this session" }),
     );
-    expect(box.getByText("Registration required")).toBeInTheDocument();
+    expect(box.getByText("No seat limit")).toBeInTheDocument();
     expect(box.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("cannot be booked when the event was cancelled", async () => {
+  it("says registration is required for an in-person session with no hall yet", async () => {
+    show({ seatsLeft: null, hallCapacity: null, hallName: null });
+
+    const box = within(
+      await screen.findByRole("region", { name: "Book this session" }),
+    );
+    expect(box.getByText("Registration required")).toBeInTheDocument();
+  });
+
+  it("tells the card a cancelled event is cancelled", async () => {
     show({ event: { ...detail().event, status: "cancelled" } });
 
     expect(
@@ -388,8 +440,7 @@ describe("booking and attending", () => {
     const box = within(
       screen.getByRole("region", { name: "Book this session" }),
     );
-    expect(box.getByText(/cannot be booked/)).toBeInTheDocument();
-    expect(box.queryByRole("button")).not.toBeInTheDocument();
+    expect(box.getByText(/· cancelled ·/)).toBeInTheDocument();
   });
 });
 

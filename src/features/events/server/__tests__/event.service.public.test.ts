@@ -292,10 +292,12 @@ describe("eventService.listPublicEvents", () => {
 
 //* The public page of one event
 
+const DETAIL_EVENT_ID = "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f";
+
 const detailRow = (
   overrides: Partial<PublicEventRow> = {},
 ): PublicEventRow => ({
-  id: "e-1",
+  id: DETAIL_EVENT_ID,
   slug: "tech-conf-2026",
   title: "Tech Conf",
   status: "published",
@@ -358,7 +360,16 @@ describe("eventService.getPublicEvent", () => {
     await service.getPublicEvent("tech-conf-2026");
 
     expect(repo.findPublicEventBySlug).toHaveBeenCalledWith("tech-conf-2026");
-    expect(repo.listPublicSessions).toHaveBeenCalledWith("e-1");
+    expect(repo.listPublicSessions).toHaveBeenCalledWith(DETAIL_EVENT_ID);
+  });
+
+  it("sends the event's id, so the page can call the registration routes", async () => {
+    const { service, repo } = setupEventService();
+    repo.findPublicEventBySlug.mockResolvedValue(detailRow());
+
+    const event = await service.getPublicEvent("tech-conf-2026");
+
+    expect(event.id).toBe(DETAIL_EVENT_ID);
   });
 
   it("shows the facts, the venue's address, the written content and the sessions", async () => {
@@ -501,7 +512,8 @@ describe("eventService.getPublicEvent", () => {
   });
 
   describe("what the public never sees", () => {
-    it("leaves out the ids, the capacity, the booking count, the CMS link, join links and the Strapi file ids", async () => {
+    // The event's own id is sent on purpose (registration routes need it); nothing else is.
+    it("leaves out the capacity, the booking count, the CMS link, join links, the organizer and the Strapi file ids", async () => {
       const { service, repo, strapi } = setupEventService();
       repo.findPublicEventBySlug.mockResolvedValue(detailRow());
       repo.listPublicSessions.mockResolvedValue([sessionRow()]);
@@ -519,7 +531,6 @@ describe("eventService.getPublicEvent", () => {
         "doc-1",
         "onlineUrl",
         "organizer",
-        "e-1",
       ]) {
         expect(serialized).not.toContain(secret);
       }

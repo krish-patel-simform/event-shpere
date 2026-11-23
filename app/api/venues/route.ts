@@ -17,7 +17,7 @@ import {
 import { venueService } from "@/src/features/venues/server";
 
 // Public: a page of venues, with search (name or city), status, sort and paging. Guests only get
-// active venues; a signed-in admin with VENUE_MANAGE sees retired ones too (and can filter them).
+// active venues; a signed-in admin with VENUE_MANAGE sees inactive ones too (and can filter them).
 // The answer depends on the cookie, so no cache may keep it.
 export const GET = route(
   { auth: "public", rateLimit: "public-read-ip" },

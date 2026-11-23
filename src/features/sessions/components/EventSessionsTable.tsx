@@ -3,6 +3,7 @@ import {
   FileText,
   Image as ImageIcon,
   Pencil,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -16,7 +17,11 @@ import {
   type ActionMenuItem,
 } from "@/src/core/ui";
 import { publicSessionHref, type EventDisplayStatus } from "../../events";
-import { eventSessionEditHref, type SessionStep } from "../routes";
+import {
+  eventSessionEditHref,
+  eventSessionHref,
+  type SessionStep,
+} from "../routes";
 import type { SessionDto } from "../schemas/sessions.schemas";
 import {
   hasPublicPage,
@@ -44,10 +49,12 @@ const EDIT_STEPS: {
 ];
 
 /**
- * The organizer's sessions of one event, one row each; a click on the row opens its edit page.
- * A cancelled session, or any session of an event that can no longer change, is read-only: no
- * edit link and no cancel. Its menu still offers "View public page" when that page exists (an
- * event that has ended keeps its public pages).
+ * The organizer's sessions of one event, one row each. A click on the row (or its title) opens the
+ * session's page: its facts and who booked a seat, for every session, also a cancelled one or one
+ * of an event that has ended. Editing is an explicit action in the "⋮" menu (and on that page),
+ * only while the session can still change: a cancelled session, or any session of an event that
+ * can no longer change, has no edit and no cancel. The menu still offers "View public page" when
+ * that page exists (an event that has ended keeps its public pages).
  */
 export function EventSessionsTable({
   eventId,
@@ -75,20 +82,31 @@ export function EventSessionsTable({
     session: SessionDto,
     editable: boolean,
   ): ActionMenuItem[] {
-    const items: ActionMenuItem[] = editable
-      ? EDIT_STEPS.map(({ step, label, icon }) => ({
-          label,
-          icon,
-          href: eventSessionEditHref(eventId, session.id, step),
-        }))
-      : [];
+    // First: what the row click does, said out loud for keyboard and screen-reader users.
+    const items: ActionMenuItem[] = [
+      {
+        label: session.requiresRegistration
+          ? "View session & attendees"
+          : "View session",
+        icon: Users,
+        href: eventSessionHref(eventId, session.id),
+      },
+      ...(editable
+        ? EDIT_STEPS.map(({ step, label, icon }, index) => ({
+            label,
+            icon,
+            href: eventSessionEditHref(eventId, session.id, step),
+            separatorBefore: index === 0,
+          }))
+        : []),
+    ];
     if (hasPublicPage(session, eventStatus)) {
       items.push({
         label: "View public page",
         icon: ExternalLink,
         href: publicSessionHref(eventSlug, session.id),
         newTab: true,
-        separatorBefore: editable,
+        separatorBefore: true,
       });
     }
     if (editable) {
@@ -148,17 +166,13 @@ export function EventSessionsTable({
                 )}
               >
                 <td className="min-w-56 px-4 py-3">
-                  {editable ? (
-                    <Link
-                      href={eventSessionEditHref(eventId, session.id)}
-                      data-row-link
-                      className="font-semibold hover:underline"
-                    >
-                      {session.title}
-                    </Link>
-                  ) : (
-                    <span className="font-semibold">{session.title}</span>
-                  )}
+                  <Link
+                    href={eventSessionHref(eventId, session.id)}
+                    data-row-link
+                    className="font-semibold hover:underline"
+                  >
+                    {session.title}
+                  </Link>
                   <p className="text-muted">
                     {SESSION_TYPE_LABELS[session.type]} ·{" "}
                     {SESSION_MODE_LABELS[session.mode]}

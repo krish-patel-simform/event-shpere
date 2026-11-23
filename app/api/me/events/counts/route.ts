@@ -1,13 +1,16 @@
-import { ok, route } from "@/src/core/http";
+import { ok, PER_USER_HEADERS, route } from "@/src/core/http";
 import { eventTabCountsSchema } from "@/src/features/events";
 import { eventService } from "@/src/features/events/server";
 
-// How many of the signed-in organizer's events each tab holds (all, draft, published, completed,
-// cancelled). Separate from the list so the tab numbers do not change with the search.
+// How many events each tab holds (all, draft, published, completed, cancelled): the signed-in
+// organizer's own, or every event for an admin. Separate from the list so the tab numbers do not
+// change with the search. The answer depends on who asks, so no cache may keep it.
 export const GET = route(
   { auth: "signed-in", rateLimit: "user-read" },
   async ({ currentUser }) => {
     const counts = await eventService.countOwnEvents(currentUser);
-    return ok(eventTabCountsSchema.parse(counts));
+    return ok(eventTabCountsSchema.parse(counts), {
+      headers: PER_USER_HEADERS,
+    });
   },
 );

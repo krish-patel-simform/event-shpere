@@ -16,12 +16,13 @@ import {
   EVENT_ROUTES,
   publicEventHref,
 } from "../routes";
+import type { PublishEventRequest } from "../schemas/events.schemas";
 import type {
   EventOverviewData,
   ManagedEvent,
 } from "../types/event-manage.types";
+import { useCanEditEvent } from "../hooks/useCanEditEvent";
 import { getAttentionItems } from "../utils/event-attention";
-import { isEditable } from "../utils/event-display";
 import { getPublishChecklist } from "../utils/publish-checklist";
 import {
   CoverStrip,
@@ -30,6 +31,7 @@ import {
   QuickActionsCard,
 } from "./EventContentCards";
 import { CancelEventDialog, DeleteDraftDialog } from "./EventDialogs";
+import { PublishEventDialog } from "./PublishEventDialog";
 import {
   AttentionCard,
   DangerZoneCard,
@@ -58,7 +60,10 @@ export function EventOverview({ eventId }: { eventId: string }) {
 /** The overview of one loaded event. */
 function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const { event } = overview;
-  const editable = isEditable(event.status);
+  // Only the event's organizer changes it; an admin (EVENT_MANAGE_ALL) views it read-only, and
+  // the server refuses an admin's change (403 EVENT_READ_ONLY), cancel and delete.
+  const isOrganizer = useHasPermission("EVENT_MANAGE_OWN");
+  const editable = useCanEditEvent(event.status);
   const canCreateSession = useHasPermission("SESSION_CREATE");
   const checklist = getPublishChecklist({
     eventId: event.id,
@@ -84,9 +89,25 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
   const remove = useDeleteEvent();
   useLayoutEffect(() => () => setDeleting(null), []);
 
-  // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else.
+  // Publishing is the organizer's own action (EVENT_PUBLISH_OWN); the API refuses anyone else. It
+  // asks when registration opens and closes first, in a dialog that stays open if the server
+  // refuses and closes when the event is published (or when the page is hidden).
   const canPublish = useHasPermission("EVENT_PUBLISH_OWN");
+  const [publishing, setPublishing] = useState<ManagedEvent | null>(null);
   const publish = usePublishEvent();
+  useLayoutEffect(() => () => setPublishing(null), []);
+
+  function askToPublish() {
+    publish.reset();
+    setPublishing(event);
+  }
+  function confirmPublish(body: PublishEventRequest) {
+    if (publish.isPending) return;
+    publish.mutate(
+      { eventId: event.id, body },
+      { onSuccess: () => setPublishing(null) },
+    );
+  }
 
   function askToCancel() {
     cancel.reset();
@@ -134,7 +155,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
                 Create session
               </Link>
             )}
-            {event.status === "published" && (
+            {isOrganizer && event.status === "published" && (
               <Button
                 variant="secondary"
                 className="text-danger"
@@ -157,6 +178,13 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
         }
       />
 
+      {!isOrganizer && (
+        <Alert tone="info" title="View only">
+          This is {overview.event.organizer.name}&apos;s event. As an admin you
+          can see everything and check people in, but only the organizer can
+          change, publish, cancel or delete it.
+        </Alert>
+      )}
       {event.status === "cancelled" && (
         <Alert tone="error" title="This event is cancelled">
           Registration is closed, and the event page shows a cancelled banner.
@@ -177,11 +205,6 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
             <ExternalLink aria-hidden="true" className="size-4" />
             View public page
           </Link>
-        </Alert>
-      )}
-      {publish.isError && (
-        <Alert tone="error" title="We couldn't publish the event">
-          {publish.error.message}
         </Alert>
       )}
       {cancel.isSuccess && (
@@ -215,9 +238,7 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
           {event.status === "draft" && (
             <PublishChecklistCard
               checklist={checklist}
-              onPublish={
-                canPublish ? () => publish.mutate(event.id) : undefined
-              }
+              onPublish={canPublish ? askToPublish : undefined}
               isPublishing={publish.isPending}
             />
           )}
@@ -242,16 +263,24 @@ function OverviewPage({ overview }: { overview: EventOverviewData }) {
             editHref={editable ? eventEditHref(event.id) : null}
           />
           {event.status !== "cancelled" && <QuickActionsCard />}
-          {(event.status === "draft" || event.status === "published") && (
-            <DangerZoneCard
-              status={event.status}
-              onCancel={askToCancel}
-              onDelete={askToDelete}
-            />
-          )}
+          {isOrganizer &&
+            (event.status === "draft" || event.status === "published") && (
+              <DangerZoneCard
+                status={event.status}
+                onCancel={askToCancel}
+                onDelete={askToDelete}
+              />
+            )}
         </div>
       </div>
 
+      <PublishEventDialog
+        event={publishing}
+        isPending={publish.isPending}
+        error={publish.error}
+        onClose={() => setPublishing(null)}
+        onSubmit={confirmPublish}
+      />
       <CancelEventDialog
         event={cancelling}
         isPending={cancel.isPending}

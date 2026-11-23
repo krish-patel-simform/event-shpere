@@ -4,6 +4,7 @@ import {
   paginated,
   parseBody,
   parseQuery,
+  PER_USER_HEADERS,
   route,
 } from "@/src/core/http";
 import {
@@ -28,8 +29,8 @@ export const POST = route(
   },
 );
 
-//* GET api/auth/organizer
-
+// GET /api/admin/organizers: one page of organizers for the admin. It carries names and emails,
+// so no cache may keep it.
 export const GET = route(
   {
     auth: "signed-in",
@@ -39,6 +40,8 @@ export const GET = route(
   async ({ req }) => {
     const query = parseQuery(req, organizerQuerySchema);
     const { items, meta } = await organizerService.getOrganizerListItem(query);
-    return paginated(getOrganizersResponseSchema.parse(items), meta);
+    return paginated(getOrganizersResponseSchema.parse(items), meta, {
+      headers: PER_USER_HEADERS,
+    });
   },
 );

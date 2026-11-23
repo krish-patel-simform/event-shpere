@@ -24,9 +24,24 @@ const envSchema = z.object({
   // Strapi API token (Settings → API Tokens, Custom) for the content API, e.g. creating the
   // draft Speaker entry. Optional so the app boots without; the Strapi client checks it.
   STRAPI_API_TOKEN: z.string().min(1).optional(),
+  // How many hours before an event starts the door opens for check-in. Production is always 6
+  // unless you set this. Anywhere else (next dev, tests) it defaults to a year, so an event weeks
+  // away can be tested; set it to 6 locally to try the real rule.
+  CHECK_IN_OPENS_HOURS_BEFORE: z.coerce
+    .number()
+    .positive()
+    .default(process.env.NODE_ENV === "production" ? 6 : 24 * 365),
+  // The same for one SESSION: how many hours before it starts the door of that session opens.
+  // Production is 2 unless you set this (big sessions need time to let everyone in); anywhere else
+  // it is a year, so a session weeks away can be tested.
+  SESSION_CHECK_IN_OPENS_HOURS_BEFORE: z.coerce
+    .number()
+    .positive()
+    .default(process.env.NODE_ENV === "production" ? 2 : 24 * 365),
   // Only the seed script needs these, so they stay optional: the app must still boot
   // (locally and on Vercel) without them. seedAdmin validates them when it runs.
   SEED_ADMIN_EMAIL: z.string().optional(),
+
   SEED_ADMIN_PASSWORD: z.string().optional(),
 });
 

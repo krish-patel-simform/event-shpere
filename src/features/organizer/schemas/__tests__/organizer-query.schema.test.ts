@@ -61,9 +61,16 @@ describe("organizerQuerySchema", () => {
     ).toBe(false);
   });
 
-  it("still needs a page size, and caps it at 50", () => {
-    expect(organizerQuerySchema.safeParse({}).success).toBe(false);
-    expect(organizerQuerySchema.safeParse({ pageSize: "51" }).success).toBe(
+  it("defaults the page size to 10 when none is sent, like the users list", () => {
+    expect(organizerQuerySchema.parse({})).toEqual({
+      page: 1,
+      pageSize: 10,
+      sort: "newest",
+    });
+  });
+
+  it.each(["0", "51", "ten"])("rejects a page size of %s (1 to 50)", (size) => {
+    expect(organizerQuerySchema.safeParse({ pageSize: size }).success).toBe(
       false,
     );
   });

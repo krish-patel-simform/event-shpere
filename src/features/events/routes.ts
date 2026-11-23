@@ -1,7 +1,7 @@
 /**
  * Page paths of the events feature, so a route is renamed in one place (like VENUE_ROUTES).
- * The organizer's pages live under /organizer: /my-events is the attendee's "events I registered
- * for".
+ * The organizer's pages live under /organizer; the attendee's "events I registered for" is the
+ * registrations feature's /my-tickets.
  */
 export const EVENT_ROUTES = {
   /** The organizer's list of their events (drafts, published, completed, cancelled). */
@@ -10,6 +10,11 @@ export const EVENT_ROUTES = {
   new: "/organizer/events/new",
   /** Discover: the public events page everyone can browse. */
   browse: "/events",
+  /**
+   * The admin's "Manage events": every organizer's events. Its rows open the same event pages
+   * as the organizer's (/organizer/events/…), which let an admin in with EVENT_MANAGE_ALL.
+   */
+  manage: "/admin/events",
 } as const;
 
 /** The organizer's overview of one event. `id` = events.id. */
@@ -37,9 +42,14 @@ export function eventHallsHref(id: string): string {
   return `${eventHref(id)}/halls`;
 }
 
-/** The people registered for one event (its last tab). `id` = events.id. */
+/** The people registered for one event (its Registrations tab). `id` = events.id. */
 export function eventAttendeesHref(id: string): string {
   return `${eventHref(id)}/attendees`;
+}
+
+/** The event's check-in door (its last tab): the staff check people in here. `id` = events.id. */
+export function eventCheckInHref(id: string): string {
+  return `${eventHref(id)}/check-in`;
 }
 
 /** The form that adds a session to an event. `id` = events.id. */

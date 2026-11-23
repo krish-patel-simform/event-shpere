@@ -3,6 +3,7 @@ import "@testing-library/jest-dom";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "@/src/core/api-client/base-api.service";
+import { useHasPermission } from "@/src/features/auth";
 import { venueApiService } from "@/src/features/venues/api/venue-api.service";
 import {
   FUTURES_ID,
@@ -36,6 +37,12 @@ jest.mock("@/src/features/venues/api/venue-api.service", () => ({
   venueApiService: { get: jest.fn() },
 }));
 
+// Who is looking: the organizer by default (EVENT_MANAGE_OWN); a test can be an admin.
+jest.mock("@/src/features/auth", () => ({
+  ...jest.requireActual("@/src/features/auth"),
+  useHasPermission: jest.fn(),
+}));
+const hasPermission = jest.mocked(useHasPermission);
 const events = jest.mocked(eventApiService);
 const sessionsApi = jest.mocked(sessionApiService);
 const venues = jest.mocked(venueApiService);
@@ -82,6 +89,7 @@ function overviewOf(id: string) {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  hasPermission.mockReturnValue(true);
   events.getOverview.mockResolvedValue(overviewOf(FINTECH_ID));
   venues.get.mockResolvedValue(venueDetail());
   sessionsApi.listForEvent.mockResolvedValue([
@@ -257,5 +265,17 @@ describe("EventHalls", () => {
       screen.getByRole("link", { name: "Choose a venue" }),
     ).toHaveAttribute("href", eventEditHref(FINTECH_ID));
     expect(venues.get).not.toHaveBeenCalled();
+  });
+});
+
+describe("EventHalls: an admin views, never changes", () => {
+  it("lists the halls but offers no Change venue", async () => {
+    hasPermission.mockImplementation((code) => code !== "EVENT_MANAGE_OWN");
+    await renderHalls();
+
+    expect(
+      screen.getByText(/Halls belong to the venue, not to the event/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Change venue" })).toBeNull();
   });
 });

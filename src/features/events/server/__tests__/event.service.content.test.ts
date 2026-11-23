@@ -113,12 +113,19 @@ describe("who may use an event's page", () => {
     );
   });
 
-  it("lets an admin (EVENT_MANAGE_ALL) edit any event", async () => {
+  it("refuses an admin (403 EVENT_READ_ONLY) before touching Strapi", async () => {
     const { service, strapi } = setup();
 
-    await service.updateContent(eventId, { tagline: "x" }, admin);
+    await expect(
+      service.updateContent(eventId, { tagline: "x" }, admin),
+    ).rejects.toMatchObject({ status: 403, code: "EVENT_READ_ONLY" });
+    expect(strapi.updateEventPage).not.toHaveBeenCalled();
+  });
 
-    expect(strapi.updateEventPage).toHaveBeenCalled();
+  it("still lets an admin read any event's content", async () => {
+    const { service } = setup();
+
+    await expect(service.getContent(eventId, admin)).resolves.toBeDefined();
   });
 
   it("stops an organizer an admin has not approved, before touching Strapi", async () => {

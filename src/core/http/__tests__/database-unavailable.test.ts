@@ -35,6 +35,24 @@ describe("isDatabaseUnavailable", () => {
     expect(isDatabaseUnavailable(withCode(message, code))).toBe(true);
   });
 
+  it("is true when Redis is unreachable (ioredis gave up after its retries)", () => {
+    // ioredis does not export this class; it is told apart by its name. No `code` on it.
+    const redisDown = Object.assign(
+      new Error(
+        'Reached the max retries per request limit (which is 1). Refer to "maxRetriesPerRequest" option for details.',
+      ),
+      { name: "MaxRetriesPerRequestError" },
+    );
+
+    expect(isDatabaseUnavailable(redisDown)).toBe(true);
+    // A fail-closed policy may wrap it in another error on the way up.
+    expect(
+      isDatabaseUnavailable(
+        new Error("rate limit failed", { cause: redisDown }),
+      ),
+    ).toBe(true);
+  });
+
   it("looks inside a Drizzle error's cause", () => {
     const error = failedQuery(
       new Error("timeout exceeded when trying to connect"),

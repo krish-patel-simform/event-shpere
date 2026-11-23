@@ -130,6 +130,7 @@ describe("what the public contract leaves out", () => {
   it("only knows the two public statuses: a draft can never be described", () => {
     const base = {
       ...listItem,
+      id: "5d6e7f80-9a1b-4c2d-8e3f-4a5b6c7d8e9f",
       status: "published",
       venue: null,
       registrationOpensAt: null,
@@ -145,6 +146,23 @@ describe("what the public contract leaves out", () => {
     ).toBe(true);
     expect(
       publicEventDetailSchema.safeParse({ ...base, status: "draft" }).success,
+    ).toBe(false);
+  });
+
+  it("needs the event's id as a uuid (the registration routes are called with it)", () => {
+    const base = {
+      ...listItem,
+      status: "published",
+      venue: null,
+      registrationOpensAt: null,
+      registrationClosesAt: null,
+      content: null,
+      sessions: [],
+    };
+
+    expect(publicEventDetailSchema.safeParse(base).success).toBe(false);
+    expect(
+      publicEventDetailSchema.safeParse({ ...base, id: "not-a-uuid" }).success,
     ).toBe(false);
   });
 });

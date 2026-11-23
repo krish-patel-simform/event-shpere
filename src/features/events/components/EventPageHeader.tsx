@@ -1,6 +1,9 @@
+"use client";
+
 import { CalendarDays, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import { Breadcrumb } from "@/src/core/ui";
+import { useHasPermission } from "@/src/features/auth";
 import { eventHref, EVENT_ROUTES } from "../routes";
 import type { EventOverviewData } from "../types/event-manage.types";
 import { unscheduledCount } from "../utils/event-attention";
@@ -14,7 +17,9 @@ import { EventStatusBadge } from "./EventStatusBadge";
 
 /**
  * The top of every organizer page of an event: where you are, the title and status, when and
- * where, the buttons of this page (`actions`) and the section tabs.
+ * where, the buttons of this page (`actions`) and the section tabs. The breadcrumb starts where
+ * the viewer came from: the organizer's "My events", or the admin's "Manage events" (an admin
+ * has no events of their own).
  */
 export function EventPageHeader({
   overview,
@@ -27,12 +32,16 @@ export function EventPageHeader({
   actions?: ReactNode;
 }) {
   const { event } = overview;
+  const isOrganizer = useHasPermission("EVENT_MANAGE_OWN");
+  const home = isOrganizer
+    ? { label: "My events", href: EVENT_ROUTES.list }
+    : { label: "Manage events", href: EVENT_ROUTES.manage };
 
   return (
     <header className="space-y-3.5">
       <Breadcrumb
         items={[
-          { label: "My events", href: EVENT_ROUTES.list },
+          home,
           current === "overview"
             ? { label: event.title }
             : { label: event.title, href: eventHref(event.id) },
