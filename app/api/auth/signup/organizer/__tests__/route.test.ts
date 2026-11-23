@@ -12,17 +12,7 @@ import {
 } from "../../../../__fixtures__/route-test";
 import { POST } from "../route";
 
-jest.mock("@/src/core/auth/server/auth-cookies", () => ({
-  readAccessTokenCookie: jest.fn(),
-  readRefreshTokenCookie: jest.fn(),
-  clearAuthCookies: jest.fn(),
-  writeAuthCookies: jest.fn(),
-}));
-jest.mock("@/src/core/auth/server/auth-session", () => ({
-  ...jest.requireActual("@/src/core/auth/server/auth-session"),
-  resolveCurrentUser: jest.fn(),
-}));
-jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
+// The cookie, session and rate limit mocks are in jest.route.setup.ts (loaded for every route test).
 // Creating the pending organizer and sending the code are the service's job, tested there.
 jest.mock("@/src/features/auth/server", () => ({
   authService: { signUpOrganizer: jest.fn() },

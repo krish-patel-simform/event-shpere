@@ -11,20 +11,10 @@ import { assertRateLimit } from "@/src/core/http/rate-limit";
 // (401 / 403), how it reads params, query and body (400), what it hands the service, and the
 // status and envelope it answers. The service is faked; its rules have their own tests.
 //
-// Every route test file starts with these three mocks (jest only hoists `jest.mock` written in
-// the test file itself), then imports from here:
-//
-//   jest.mock("@/src/core/auth/server/auth-cookies", () => ({
-//     readAccessTokenCookie: jest.fn(),
-//     readRefreshTokenCookie: jest.fn(),
-//     clearAuthCookies: jest.fn(),
-//     writeAuthCookies: jest.fn(),
-//   }));
-//   jest.mock("@/src/core/auth/server/auth-session", () => ({
-//     ...jest.requireActual("@/src/core/auth/server/auth-session"),
-//     resolveCurrentUser: jest.fn(),
-//   }));
-//   jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
+// The three mocks every route test needs (cookie, session, rate limit) are NOT written in each
+// test file: jest.route.setup.ts registers them for every `app/api/**/route.test.ts` (the "routes"
+// project in jest.config.ts). A test that needs different ones writes its own `jest.mock` for the
+// same module (see the logout, refresh and health tests); that replaces the shared one.
 //
 // The role permission lists mirror the role → permission matrix (docs/permissions.md). They are
 // written out here on purpose: tests must not import the seed data.
@@ -174,7 +164,7 @@ type CallOptions<P> = {
   headers?: Record<string, string>;
 };
 
-type Handler<P> = (
+export type Handler<P> = (
   req: NextRequest,
   ctx: { params: Promise<P> },
 ) => Promise<Response>;

@@ -12,17 +12,7 @@ import {
 } from "../../../__fixtures__/route-test";
 import { POST } from "../route";
 
-jest.mock("@/src/core/auth/server/auth-cookies", () => ({
-  readAccessTokenCookie: jest.fn(),
-  readRefreshTokenCookie: jest.fn(),
-  clearAuthCookies: jest.fn(),
-  writeAuthCookies: jest.fn(),
-}));
-jest.mock("@/src/core/auth/server/auth-session", () => ({
-  ...jest.requireActual("@/src/core/auth/server/auth-session"),
-  resolveCurrentUser: jest.fn(),
-}));
-jest.mock("@/src/core/http/rate-limit", () => ({ assertRateLimit: jest.fn() }));
+// The cookie, session and rate limit mocks are in jest.route.setup.ts (loaded for every route test).
 // The link + code checks (DB token, Redis code, wrong-try counter) have their own tests.
 jest.mock("@/src/features/auth/server", () => ({
   accountActivationService: { verifyEmail: jest.fn() },
