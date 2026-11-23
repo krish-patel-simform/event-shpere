@@ -15,6 +15,11 @@ const UNAVAILABLE_SOCKET_CODES = new Set([
   "ECONNRESET",
   "ETIMEDOUT",
 ]);
+// ioredis: Redis is unreachable and the command gave up after `maxRetriesPerRequest` tries (see
+// core/redis/redis.ts). It has no `code` and its message is long, so it is matched by its name.
+// This is what a fail-closed limit (login attempts, auth-ip, user-write) throws while Redis is
+// down: a 503 "try again shortly", not a 500 as if the code had a bug.
+const UNAVAILABLE_ERROR_NAMES = new Set(["MaxRetriesPerRequestError"]);
 // node-postgres: the pool waited `connectionTimeoutMillis` for a free connection, or the
 // connection died. Matched at the START of the message, so a query that merely mentions these
 // words (a Drizzle "Failed query: ..." message) never matches.
@@ -25,6 +30,7 @@ const UNAVAILABLE_MESSAGE =
 const MAX_CAUSE_DEPTH = 5;
 
 function isUnavailableLink(error: Error): boolean {
+  if (UNAVAILABLE_ERROR_NAMES.has(error.name)) return true;
   const code = (error as { code?: unknown }).code;
   if (typeof code === "string") {
     if (UNAVAILABLE_SQLSTATES.has(code)) return true;

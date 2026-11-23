@@ -232,6 +232,33 @@ describe("route()", () => {
     log.mockRestore();
   });
 
+  it("answers 503 + Retry-After, not 500, when Redis is down under a fail-closed limit (login)", async () => {
+    const log = jest.spyOn(console, "error").mockImplementation(() => {});
+    // What ioredis throws once it gives up reaching Redis.
+    const redisDown = Object.assign(
+      new Error("Reached the max retries per request limit (which is 1)."),
+      { name: "MaxRetriesPerRequestError" },
+    );
+    const POST = route({ auth: "public" }, async () => {
+      throw redisDown;
+    });
+
+    const res = await POST(get(), noParams);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("5");
+    expect(body).toEqual({
+      error: {
+        code: "SERVICE_BUSY",
+        message: "The service is busy, try again shortly",
+      },
+    });
+    // The answer never says what is down.
+    expect(JSON.stringify(body)).not.toMatch(/redis|retries/i);
+    log.mockRestore();
+  });
+
   it("keeps any other database failure a 500 with no Retry-After", async () => {
     const log = jest.spyOn(console, "error").mockImplementation(() => {});
     const GET = route({ auth: "public" }, async () => {
