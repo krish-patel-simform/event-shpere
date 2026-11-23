@@ -178,6 +178,31 @@ describe("useCheckInQueue", () => {
     );
   });
 
+  it("a send that throws at once is 'no answer' too, and the line keeps moving", async () => {
+    // Not a rejected promise: `send` itself throws before it returns one.
+    const send = jest
+      .fn<Promise<CheckInOutcome>, [string, CheckInContext]>()
+      .mockImplementationOnce(() => {
+        throw new Error("could not start");
+      })
+      .mockImplementation(async (code) => OK(code));
+    const hook = renderHook(() => useCheckInQueue(send));
+
+    act(() => {
+      hook.result.current.enqueue("AAA", DAY_2);
+      hook.result.current.enqueue("BBB", DAY_2);
+    });
+
+    // Without the cleanup, the line would be stuck on AAA and BBB would never go out.
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(hook.result.current.pending).toBe(0));
+    const byCode = Object.fromEntries(
+      hook.result.current.entries.map((entry) => [entry.code, entry.outcome]),
+    );
+    expect(byCode.AAA).toMatchObject({ ok: false, status: 0, code: null });
+    expect(byCode.BBB).toMatchObject({ ok: true });
+  });
+
   it("retry sends a finished code again, at the BACK of the line", async () => {
     const { send, calls, hook } = setup();
     act(() => {

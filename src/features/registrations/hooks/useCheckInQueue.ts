@@ -98,23 +98,36 @@ export function createCheckInLine(
   const waiting: Pick<CheckInEntry, "id" | "code" | "context">[] = [];
   const unfinished = new Set<string>();
 
-  function pump(): void {
+  // Everything up to the first `await` runs at once, so a code goes out on the same tick it is
+  // added. Callers start it with `void`: nothing waits for it, and it never rejects (the send
+  // is caught, and the cleanup below always runs).
+  async function pump(): Promise<void> {
     if (inFlight) return;
     const next = waiting.shift();
     if (!next) return;
 
     inFlight = true;
     setEntries((all) => update(all, next.id, { state: "sending" }));
-    send(next.code, next.context)
-      .catch(() => NO_ANSWER)
-      .then((outcome) => {
-        unfinished.delete(queueKey(next.code, next.context));
-        setEntries((all) =>
-          trimDone(update(all, next.id, { state: "done", outcome })),
-        );
-        inFlight = false;
-        pump();
-      });
+
+    // A send that throws (or fails to start) is "no answer", never a stuck line.
+    let outcome = NO_ANSWER;
+    try {
+      outcome = await send(next.code, next.context);
+    } catch {
+      // keeps NO_ANSWER
+    }
+
+    try {
+      setEntries((all) =>
+        trimDone(update(all, next.id, { state: "done", outcome })),
+      );
+    } finally {
+      // Whatever happened above, free the line and move on to the next code: if this were
+      // skipped, `inFlight` would stay true and the door would stop checking people in.
+      unfinished.delete(queueKey(next.code, next.context));
+      inFlight = false;
+      void pump();
+    }
   }
 
   return {
@@ -133,7 +146,7 @@ export function createCheckInLine(
         ...all,
         { ...ticket, state: "waiting", outcome: null },
       ]);
-      pump();
+      void pump();
       return "queued";
     },
 
@@ -147,7 +160,7 @@ export function createCheckInLine(
       setEntries((all) =>
         update(all, entry.id, { state: "waiting", outcome: null }),
       );
-      pump();
+      void pump();
     },
   };
 }
